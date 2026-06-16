@@ -1,0 +1,9 @@
+src/
+node_modules/
+.gitignore
+biome.json
+tsconfig.json
+tsconfig.build.json
+bun.lock
+*.test.ts
+__tests__/

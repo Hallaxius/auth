@@ -1,0 +1,62 @@
+{
+  "name": "@hallaxius/auth",
+  "version": "1.0.0",
+  "description": "Plug-and-play Discord OAuth2 authentication for Elysia + Bun. Session management, route guards, and Discord API integration.",
+  "author": { "name": "hallaxius", "url": "https://github.com/hallaxius" },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build --target=bun --outdir=dist ./src/index.ts && tsc -p tsconfig.build.json --outDir dist",
+    "dev": "bun --watch run src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "bunx --bun @biomejs/biome check --write --unsafe src/",
+    "lint:check": "bunx --bun @biomejs/biome check src/",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "prepublish": "bun run lint && bun run typecheck && bun run build && bun test"
+  },
+  "peerDependencies": {
+    "elysia": ">= 1.4.28",
+    "next": "*"
+  },
+  "dependencies": {
+    "@elysiajs/jwt": "^1.4.2",
+    "jose": "^6.2.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.16",
+    "bun-types": "latest",
+    "typescript": "^5.9.0"
+  },
+  "keywords": [
+    "discord",
+    "oauth2",
+    "auth",
+    "authentication",
+    "elysia",
+    "bun",
+    "discord-api",
+    "discord-oauth",
+    "discord-auth",
+    "elysia-plugin"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hallaxius/auth.git"
+  },
+  "homepage": "https://github.com/hallaxius/auth"
+}
