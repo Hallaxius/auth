@@ -1,11 +1,18 @@
 {
-	"extends": "./tsconfig.json",
 	"compilerOptions": {
+		"target": "ESNext",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"strict": true,
+		"skipLibCheck": true,
 		"noEmit": false,
 		"emitDeclarationOnly": true,
 		"declaration": true,
 		"declarationMap": true,
-		"outDir": "./dist"
+		"sourceMap": true,
+		"outDir": "./dist",
+		"rootDir": "./src",
+		"types": ["bun-types"]
 	},
 	"include": ["src/**/*.ts"],
 	"exclude": ["src/**/*.test.ts", "src/**/*.spec.ts"]
