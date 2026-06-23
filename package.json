@@ -1,6 +1,6 @@
 {
   "name": "@hallaxius/auth",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Plug-and-play Discord OAuth2 authentication for Elysia + Bun. Session management, route guards, and Discord API integration.",
   "author": {
     "name": "hallaxius",
@@ -71,6 +71,6 @@
     "branches": [
       "main"
     ],
-    "initialVersion": "1.0.1"
+    "initialVersion": "1.0.2"
   }
 }
