@@ -11,8 +11,7 @@ permissions:
 jobs:
   publish-npm:
     runs-on: ubuntu-latest
-    env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    environment: publish
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -29,3 +28,5 @@ jobs:
           registry-url: https://registry.npmjs.org/
       - name: Publish to npm
         run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
