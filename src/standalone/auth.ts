@@ -17,6 +17,10 @@ export function auth(config: DiscordAuthConfig) {
 		sessionType: config.session.type,
 		cookieName,
 		storage,
+		client,
+		clientId: config.clientId,
+		clientSecret: config.clientSecret,
+		autoRefresh: internalConfig.autoRefresh,
 	});
 
 	return {

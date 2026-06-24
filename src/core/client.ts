@@ -3,7 +3,7 @@ import {
 	generateCodeVerifier,
 	isValidCodeVerifier,
 } from "./config";
-import { RateLimitError } from "./errors";
+import { RateLimitError, TokenExpiredError } from "./errors";
 import type {
 	AddMemberParams,
 	DiscordConnection,
@@ -34,37 +34,6 @@ export class DiscordClient {
 	constructor(clientId: string, clientSecret: string) {
 		this.clientId = clientId;
 		this.clientSecret = clientSecret;
-	}
-
-	/**
-	 * Generates a code_verifier for PKCE (S256)
-	 * Implementation according to RFC 7636
-	 */
-	generateCodeVerifier(): string {
-		return generateCodeVerifier();
-	}
-
-	/**
-	 * Generates a code_challenge from code_verifier using S256
-	 */
-	async generateCodeChallenge(verifier: string): Promise<string> {
-		if (!isValidCodeVerifier(verifier)) {
-			throw new Error("Invalid code verifier");
-		}
-		return generateCodeChallenge(verifier);
-	}
-
-	/**
-	 * Generates code_verifier and code_challenge for PKCE
-	 */
-	async generatePKCE(): Promise<PKCEParams> {
-		const codeVerifier = this.generateCodeVerifier();
-		const codeChallenge = await this.generateCodeChallenge(codeVerifier);
-		return {
-			codeVerifier,
-			codeChallenge,
-			codeChallengeMethod: "S256",
-		};
 	}
 
 	/**
@@ -219,6 +188,111 @@ export class DiscordClient {
 	}
 
 	/**
+	 * Executes a request with automatic token refresh on 401/403 (expired token)
+	 * @param accessToken Current access token
+	 * @param refreshToken Refresh token
+	 * @param requestFn Function that makes the request with the access token
+	 * @param options Optional configuration for retry behavior
+	 * @returns The response from requestFn
+	 * @throws TokenExpiredError if token is expired and refresh fails
+	 */
+	async fetchWithAutoRefresh<T>(
+		accessToken: string,
+		refreshToken: string,
+		requestFn: (token: string) => Promise<T>,
+		options?: { maxRetries?: number },
+	): Promise<T> {
+		const maxRetries = options?.maxRetries ?? 1;
+		let lastError: Error | undefined;
+
+		for (let attempt = 0; attempt <= maxRetries; attempt++) {
+			try {
+				return await requestFn(accessToken);
+			} catch (error) {
+				lastError = error as Error;
+
+				const status = this.getErrorStatus(error);
+				const isExpiredError = await this.isExpiredError(error);
+
+				if ((status === 401 || status === 403) && isExpiredError) {
+					try {
+						const newTokens = await this.refreshToken({
+							clientId: this.clientId,
+							clientSecret: this.clientSecret,
+							refreshToken,
+						});
+						accessToken = newTokens.access_token;
+						continue;
+					} catch {
+						if (attempt >= maxRetries) {
+							throw new TokenExpiredError(
+								"Token has expired and could not be refreshed",
+								{ cause: lastError },
+							);
+						}
+						continue;
+					}
+				}
+
+				throw error;
+			}
+		}
+
+		throw lastError ?? new TokenExpiredError("Token has expired and max retries exceeded");
+	}
+
+	private async isExpiredError(error: unknown): Promise<boolean> {
+		if (!error || typeof error !== "object") return false;
+
+		const obj = error as Record<string, unknown>;
+
+		if (typeof obj.code === "string" && obj.code.toLowerCase().includes("expired")) return true;
+		if (typeof obj.message === "string" && obj.message.toLowerCase().includes("expired")) return true;
+
+		if (obj.response && typeof obj.response === "object") {
+			const resp = obj.response as Record<string, unknown>;
+			if (typeof resp.json === "function") {
+				try {
+					const body = await resp.json();
+					if (body && typeof body === "object") {
+						const data = body as Record<string, unknown>;
+						if (typeof data.code === "number" && data.code === 50001) return true;
+						if (typeof data.message === "string" && data.message.toLowerCase().includes("expired")) return true;
+					}
+				} catch { /* ignore */ }
+			}
+			if (typeof resp.code === "string" && resp.code.toLowerCase().includes("expired")) return true;
+			if (typeof resp.message === "string" && resp.message.toLowerCase().includes("expired")) return true;
+		}
+
+		if (obj.error && typeof obj.error === "object") {
+			const data = obj.error as Record<string, unknown>;
+			if (typeof data.code === "number" && data.code === 50001) return true;
+			if (typeof data.message === "string" && data.message.toLowerCase().includes("expired")) return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Extracts HTTP status code from an error
+	 */
+	private getErrorStatus(error: unknown): number | undefined {
+		if (error && typeof error === "object" && "status" in error) {
+			const status = (error as { status: unknown }).status;
+			return typeof status === "number" ? status : undefined;
+		}
+		if (error && typeof error === "object" && "response" in error) {
+			const response = (error as { response: unknown }).response;
+			if (response && typeof response === "object" && "status" in response) {
+				const status = (response as { status: unknown }).status;
+				return typeof status === "number" ? status : undefined;
+			}
+		}
+		return undefined;
+	}
+
+	/**
 	 * Revokes an access token
 	 */
 	async revokeToken(params: RevokeTokenParams): Promise<void> {
@@ -360,5 +434,14 @@ export class DiscordClient {
 		}
 
 		return res.json() as Promise<DiscordGuildMember>;
+	}
+
+	async getGuildMemberRoles(
+		guildId: string,
+		userId: string,
+		botToken: string,
+	): Promise<string[]> {
+		const member = await this.getGuildMember(guildId, userId, botToken);
+		return member.roles;
 	}
 }

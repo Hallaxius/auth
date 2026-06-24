@@ -107,8 +107,9 @@ describe("redirect", () => {
 	});
 
 	test("blocks absolute URLs (open redirect protection)", () => {
-		const res = redirect("https://evil.com/phish");
-		expect(res.headers.get("Location")).toBe("/");
+		expect(() => redirect("https://evil.com/phish")).toThrow(
+			"Only relative URLs allowed for redirect",
+		);
 	});
 });
 

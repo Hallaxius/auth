@@ -1,6 +1,6 @@
 {
 	"compilerOptions": {
-		"target": "ESNext",
+		"target": "ES2022",
 		"module": "ESNext",
 		"moduleResolution": "bundler",
 		"strict": true,
@@ -10,8 +10,7 @@
 		"declarationMap": true,
 		"sourceMap": true,
 		"outDir": "./dist",
-		"rootDir": "./src",
-		"types": ["bun-types"]
+		"rootDir": "./src"
 	},
 	"include": ["src/**/*.ts"]
 }

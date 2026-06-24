@@ -11,7 +11,7 @@ import {
 export function middlewareAuth(config: EdgeAuthConfig) {
 	const loginUrl = config.loginUrl ?? "/auth/discord";
 	const publicPaths = config.publicPaths ?? [];
-	const cookieName = config.cookieName ?? "discord-auth-session";
+	const cookieName = config.cookieName;
 
 	return async function authMiddleware(
 		request: Request,
@@ -39,7 +39,7 @@ export function middlewareAuth(config: EdgeAuthConfig) {
 export function middlewareRole(config: EdgeRoleConfig) {
 	const loginUrl = config.loginUrl ?? "/auth/discord";
 	const roles = config.roles;
-	const cookieName = config.cookieName ?? "discord-auth-session";
+	const cookieName = config.cookieName;
 
 	return async function roleMiddleware(
 		request: Request,

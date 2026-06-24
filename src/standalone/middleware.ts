@@ -1,9 +1,13 @@
 import type {
+	AutoRefreshConfig,
 	SafeStoredUser,
 	SessionData,
 	SessionType,
+	StoredUser,
 	UserStorage,
 } from "../core/types";
+import { DiscordClient } from "../core/client";
+import { refreshTokenIfNeeded } from "../core/token";
 import { parseCookies } from "./cookies";
 import { verifyToken } from "./jwt";
 
@@ -20,6 +24,10 @@ export interface MiddlewareDeps {
 	sessionType: SessionType;
 	cookieName: string;
 	storage?: UserStorage;
+	client?: DiscordClient;
+	clientId?: string;
+	clientSecret?: string;
+	autoRefresh?: AutoRefreshConfig;
 }
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -30,6 +38,8 @@ function jsonResponse(data: unknown, status = 200): Response {
 }
 
 export function createMiddlewares(deps: MiddlewareDeps) {
+	const autoRefresh = deps.autoRefresh ?? { enabled: true, thresholdSeconds: 300, maxRetries: 1 };
+
 	function withAuth(handler: AuthHandler) {
 		return async (request: Request): Promise<Response> => {
 			const cookies = parseCookies(request);
@@ -57,7 +67,37 @@ export function createMiddlewares(deps: MiddlewareDeps) {
 			};
 
 			let storedUser: SafeStoredUser | null = null;
-			if (deps.storage) {
+			if (deps.storage && deps.client && deps.clientId && deps.clientSecret && autoRefresh?.enabled) {
+				const stored = await deps.storage.findByDiscordId(user.discordId);
+				if (stored) {
+					const result = await refreshTokenIfNeeded(stored, {
+						client: deps.client,
+						clientId: deps.clientId,
+						clientSecret: deps.clientSecret,
+						autoRefresh,
+					});
+					if (result.refreshed && result.storedUser) {
+						await deps.storage.update(result.storedUser.discordId, {
+							accessToken: result.storedUser.accessToken,
+							refreshToken: result.storedUser.refreshToken,
+							tokenExpiresAt: result.storedUser.tokenExpiresAt,
+						});
+						const updated = await deps.storage.findByDiscordId(user.discordId);
+						if (updated) {
+							const { accessToken: _, refreshToken: __, ...safe } = updated;
+							storedUser = safe;
+						}
+					} else if (!result.storedUser) {
+						return jsonResponse(
+							{ error: "Session token has expired and could not be refreshed" },
+							401,
+						);
+					} else {
+						const { accessToken, refreshToken, ...safe } = stored;
+						storedUser = safe;
+					}
+				}
+			} else if (deps.storage) {
 				const stored = await deps.storage.findByDiscordId(user.discordId);
 				if (stored) {
 					const { accessToken, refreshToken, ...safe } = stored;
@@ -103,7 +143,33 @@ export function createMiddlewares(deps: MiddlewareDeps) {
 			};
 
 			let storedUser: SafeStoredUser | null = null;
-			if (deps.storage) {
+			if (deps.storage && deps.client && deps.clientId && deps.clientSecret && autoRefresh?.enabled) {
+				const stored = await deps.storage.findByDiscordId(user.discordId);
+				if (stored) {
+					const result = await refreshTokenIfNeeded(stored, {
+						client: deps.client,
+						clientId: deps.clientId,
+						clientSecret: deps.clientSecret,
+						autoRefresh,
+					});
+					if (result.refreshed && result.storedUser) {
+						await deps.storage.update(result.storedUser.discordId, {
+							accessToken: result.storedUser.accessToken,
+							refreshToken: result.storedUser.refreshToken,
+							tokenExpiresAt: result.storedUser.tokenExpiresAt,
+						});
+						const updated = await deps.storage.findByDiscordId(user.discordId);
+						if (updated) {
+							const { accessToken: _, refreshToken: __, ...safe } = updated;
+							storedUser = safe;
+						}
+					} else if (result.storedUser) {
+						const { accessToken, refreshToken, ...safe } = stored;
+						storedUser = safe;
+					}
+					// if result.storedUser is null (expired), proceed without storedUser
+				}
+			} else if (deps.storage) {
 				const stored = await deps.storage.findByDiscordId(user.discordId);
 				if (stored) {
 					const { accessToken, refreshToken, ...safe } = stored;

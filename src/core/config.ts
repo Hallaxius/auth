@@ -1,8 +1,13 @@
 import type {
+	AutoRefreshConfig,
+	BruteForceConfig,
 	Callbacks,
+	CsrfConfig,
 	DiscordAuthConfig,
 	DiscordScope,
+	GuildRoleSyncConfig,
 	InternalConfig,
+	MfaConfig,
 	RoutesConfig,
 } from "./types";
 
@@ -17,6 +22,43 @@ const DEFAULT_ROUTES: Required<RoutesConfig> = {
 const DEFAULT_CALLBACKS: Required<Callbacks> = {
 	onSuccess: async () => undefined,
 	onError: async () => undefined,
+};
+
+const DEFAULT_AUTO_REFRESH: AutoRefreshConfig = {
+	enabled: true,
+	thresholdSeconds: 300,
+	maxRetries: 1,
+};
+
+const DEFAULT_BRUTE_FORCE: BruteForceConfig = {
+	enabled: true,
+	maxAttempts: 5,
+	windowMs: 15 * 60 * 1000,
+	blockDurationMs: 30 * 60 * 1000,
+	storage: undefined,
+};
+
+const DEFAULT_MFA: MfaConfig = {
+	enabled: false,
+	requireMfa: false,
+	allowedMethods: ["totp", "sms", "backup_codes"],
+};
+
+const DEFAULT_GUILD_ROLE_SYNC: GuildRoleSyncConfig = {
+	enabled: false,
+	guildId: "",
+	roleMap: {},
+	cacheTtlMs: 60 * 60 * 1000,
+	syncOnLogin: false,
+	botToken: "",
+};
+
+const DEFAULT_CSRF: CsrfConfig = {
+	enabled: true,
+	ttlMs: 5 * 60 * 1000,
+	singleUse: true,
+	bindToSession: true,
+	bindToUserAgent: true,
 };
 
 /**
@@ -39,10 +81,26 @@ export function processConfig(config: DiscordAuthConfig): InternalConfig {
 		process.env.DISCORD_REDIRECT_URI ??
 		`${routerPrefix}/callback`.replace(/^\/\//, "");
 
+	const autoRefresh = config.autoRefresh ?? {};
+	const bruteForce = config.bruteForce ?? {};
+	const mfa = config.mfa ?? {};
+	const guildRoleSync = config.guildRoleSync ?? {};
+	const csrf = config.csrf ?? {};
+
+	if (guildRoleSync.enabled && !guildRoleSync.guildId) {
+		throw new Error("guildRoleSync.guildId is required when guildRoleSync.enabled is true");
+	}
+	if (guildRoleSync.enabled && !guildRoleSync.botToken) {
+		throw new Error("guildRoleSync.botToken is required when guildRoleSync.enabled is true");
+	}
+
 	return {
 		clientId: config.clientId,
 		clientSecret: config.clientSecret,
-		session: config.session,
+		session: {
+			...config.session,
+			cookieName: config.session.cookieName ?? "discord-auth-session",
+		},
 		scopes: (config.scopes ?? [...DEFAULT_SCOPES]) as DiscordScope[],
 		prompt: config.prompt ?? "consent",
 		routes: { ...DEFAULT_ROUTES, ...config.routes } as Required<RoutesConfig>,
@@ -54,6 +112,11 @@ export function processConfig(config: DiscordAuthConfig): InternalConfig {
 		storage: config.storage,
 		meRoute: config.meRoute ?? "/auth/me",
 		disablePKCE: config.disablePKCE ?? false,
+		autoRefresh: { ...DEFAULT_AUTO_REFRESH, ...autoRefresh },
+		bruteForce: { ...DEFAULT_BRUTE_FORCE, ...bruteForce },
+		mfa: { ...DEFAULT_MFA, ...mfa },
+		guildRoleSync: { ...DEFAULT_GUILD_ROLE_SYNC, ...guildRoleSync },
+		csrf: { ...DEFAULT_CSRF, ...csrf },
 	};
 }
 
