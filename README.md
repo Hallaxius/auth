@@ -1,16 +1,17 @@
 # @hallaxius/auth
 
-> Plug-and-play Discord OAuth2 authentication for Elysia/Bun, Next.js, and any Node/edge runtime.
+> Plug-and-play Discord OAuth2 authentication for Bun, Next.js, and any Node/edge runtime.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/@hallaxius/auth)](https://www.npmjs.com/package/@hallaxius/auth)
 [![Bundle Size](https://img.shields.io/bundlephobia/minzip/@hallaxius/auth)](https://bundlephobia.com/package/@hallaxius/auth@latest)
+[![npm downloads](https://img.shields.io/npm/dm/@hallaxius/auth)](https://www.npmjs.com/package/@hallaxius/auth)
+[![Last Commit](https://img.shields.io/github/last-commit/hallaxius/auth)](https://github.com/hallaxius/auth)
 
 ## Features
 
 - **Discord OAuth2** — Authorization code flow with CSRF protection (Web Crypto HMAC)
 - **Elysia plugin** — `discordAuth(config)` with macros `auth`, `optionalAuth`, `requireRole`
-- **Class wrapper** — `new Discord(config)` with method chaining
 - **Standalone mode** — For Next.js App Router, Node.js, or any edge runtime
 - **Route guards** — `withAuth`, `withOptionalAuth`, `withRole(roles)` for route handlers
 - **Edge/Next.js middleware** — `middlewareAuth`, `middlewareRole`, `combine`, `nextAuth`, `nextRole`
@@ -19,7 +20,7 @@
 - **Server sessions** — In-memory Map with TTL (dev/light use)
 - **Auto-join guild** — `DiscordClient.addMember()` to add users to your server after login
 - **Edge compatible** — Web Crypto API, zero Node dependencies
-- **Zero unnecessary deps** — Only `jose` and `@elysiajs/jwt`
+- **Zero unnecessary deps** — Only `jose`
 
 ## Installation
 
@@ -30,7 +31,9 @@ bun add @hallaxius/auth
 # yarn add @hallaxius/auth
 ```
 
-> **Peer dependencies:** `elysia >= 1.4.28` (required for plugin), `next` (optional, required for `nextAuth`/`nextRole`)
+> **Peer dependency:** `next` (optional, required for `nextAuth`/`nextRole`)
+> 
+> **Elysia plugin** available at `@hallaxius/auth/elysia` — requires `elysia >= 1.4.29` and `@elysiajs/jwt` installed separately
 
 ---
 
@@ -45,6 +48,7 @@ bun add @hallaxius/auth
 - [Edge / Next.js Middleware](#edge--nextjs-middleware)
 - [User Persistence](#user-persistence)
 - [Auto-Join Guild](#auto-join-guild)
+- [Security Features](#security-features)
 - [Utility Helpers](#utility-helpers)
 - [Security Best Practices](#security-best-practices)
 - [Migration Guide](#migration-guide)
@@ -60,7 +64,7 @@ bun add @hallaxius/auth
 
 ```ts
 import { Elysia } from "elysia"
-import { discordAuth } from "@hallaxius/auth"
+import { discordAuth } from "@hallaxius/auth/elysia"
 
 const app = new Elysia()
   .use(discordAuth({
@@ -93,6 +97,8 @@ app.get("/dashboard", ({ user }) => `Welcome, ${user.username}!`, {
 })
 app.listen(3000)
 ```
+
+> **Note:** `Discord` class wrapper is deprecated. Use `discordAuth` from `@hallaxius/auth/elysia` instead.
 
 ### Next.js (Standalone Route Handlers)
 
@@ -155,13 +161,13 @@ export default combine(
 
 ### Simplified with Presets
 
-The v1.1.0 introduced **presets** for common configurations and a **factory pattern** for explicit usage. **Updated in v1.2.0** with utility helpers, `getGuildMember()`, and `DISCORD_REDIRECT_URI` fallback.
+The v2.0.0 introduced **Security Features** (CSRF, brute-force, MFA, auto-refresh, guild role sync, type-safe routes) and moved the Elysia plugin to a sub-path. The v1.1.0 introduced **presets** for common configurations.
 
 #### SPA (React, Vue, Svelte, etc.)
 
 ```ts
 import { Elysia } from "elysia"
-import { discordAuth } from "@hallaxius/auth"
+import { discordAuth } from "@hallaxius/auth/elysia"
 
 const app = new Elysia()
     .use(discordAuth.presets.spa({
@@ -212,7 +218,7 @@ const app = new Elysia()
 #### Factory Pattern
 
 ```ts
-import { from } from "@hallaxius/auth"
+import { from } from "@hallaxius/auth/elysia"
 
 const app = from({
     clientId: process.env.DISCORD_CLIENT_ID!,
@@ -398,7 +404,7 @@ Registers OAuth2 login, callback, logout routes and exposes auth macros.
 
 ```ts
 import { Elysia } from "elysia"
-import { discordAuth } from "@hallaxius/auth"
+import { discordAuth } from "@hallaxius/auth/elysia"
 
 const app = new Elysia()
   .use(discordAuth({
@@ -416,14 +422,14 @@ const app = new Elysia()
 
 ### Factory Pattern / Presets
 
-> **New in v1.1.0** — explicit factory and presets for common configurations.
+> **New in v2.0.0** — Elysia plugin moved to `@hallaxius/auth/elysia`. Requires `elysia >= 1.4.29` and `@elysiajs/jwt` installed separately.
 
 #### `discordAuth.from(config)`
 
 Explicit factory alias for `discordAuth()`. Use when you prefer a factory-style API.
 
 ```ts
-import { discordAuth } from "@hallaxius/auth"
+import { discordAuth } from "@hallaxius/auth/elysia"
 
 const app = discordAuth.from({
     clientId: process.env.DISCORD_CLIENT_ID!,
@@ -470,7 +476,7 @@ Use `InferUser`, `InferSession`, and `InferStoredUser` to extract the JWT payloa
 
 ```ts
 import { Elysia } from "elysia"
-import { discordAuth, type InferUser } from "@hallaxius/auth"
+import { discordAuth, type InferUser } from "@hallaxius/auth/elysia"
 
 const app = new Elysia()
     .use(discordAuth({
@@ -1249,7 +1255,7 @@ Automatically add authenticated users to your Discord server using the `DiscordC
 
 ```ts
 import { Elysia } from "elysia"
-import { discordAuth, DiscordClient } from "@hallaxius/auth"
+import { discordAuth, DiscordClient } from "@hallaxius/auth/elysia"
 
 const GUILD_ID = "123456789"
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN!
@@ -1403,9 +1409,190 @@ callbacks: {
 
 ---
 
-## Utility Helpers
+## Security Features
 
-> **New in v1.2.0** — standalone utility functions for common tasks. All are available as top-level exports from `@hallaxius/auth`.
+> **New in v2.0.0** — six advanced security controls for production-grade deployments.
+
+### ✅ CSRF Protection
+
+```ts
+interface CsrfConfig {
+  enabled?: boolean = true;        // Enables CSRF protection
+  ttlMs?: number = 5 * 60 * 1000;  // State token TTL (5 minutes)
+  singleUse?: boolean = true;      // Tokens can only be used once
+  bindToSession?: boolean = true;  // Binds state to session ID
+  bindToUserAgent?: boolean = true;// Binds state to User-Agent
+}
+```
+
+State tokens carry HMAC-signed payloads (`crypto.subtle.sign`) containing:
+- Random UUID generation for uniqueness
+- Timestamp for expiry validation
+- Optional: `codeVerifier` (PKCE), `sessionId`, `userAgentHash` (bound)
+
+Tokens are validated on callback — fails if:
+- Signature mismatch (forgery attempt)
+- Token expired (TTL exceeded)
+- Token reused (`singleUse` prevents replay attacks)
+- Session/User-Agent mismatch (binding validation)
+
+```ts
+discordAuth({
+  csrf: {
+    enabled: true,
+    ttlMs: 5 * 60 * 1000, // 5 minutes
+    singleUse: true,
+  },
+})
+```
+
+---
+
+### ✅ Brute Force Protection
+
+```ts
+interface BruteForceConfig {
+  enabled?: boolean = true;              // Enables brute force protection
+  maxAttempts?: number = 5;              // Max attempts allowed in window
+  windowMs?: number = 15 * 60 * 1000;    // Sliding window (15 minutes)
+  blockDurationMs?: number = 30 * 60 * 1000; // Block duration (30 minutes)
+  storage?: BruteForceStorage;           // Custom storage adapter (Redis for production)
+}
+```
+
+IP-based rate limiting prevents automated attacks:
+- Tracks attempts per `(IP + User-Agent)` key
+- Increments on failure, resets on success
+- Blocks key for `blockDurationMs` when `maxAttempts` exceeded
+
+```ts
+discordAuth({
+  bruteForce: {
+    enabled: true,
+    maxAttempts: 10,
+    blockDurationMs: 10 * 60 * 1000, // 10 minute block
+  },
+})
+```
+
+---
+
+### ✅ MFA Enforcement
+
+```ts
+interface MfaConfig {
+  enabled?: boolean = false;     // Enables MFA checks
+  requireMfa?: boolean = false;  // Rejects users without MFA
+}
+```
+
+Blocks OAuth2 callback with **403 Forbidden** if Discord user lacks 2FA:
+- Checks `mfa_enabled` flag in Discord user object (`/users/@me`)
+- Throws `MfaRequiredError` for consistent error handling
+- Protects high-security applications against credential theft
+
+```ts
+discordAuth({
+  mfa: {
+    enabled: process.env.NODE_ENV === "production",
+    requireMfa: true, // Only allow users with MFA
+  },
+})
+```
+
+---
+
+### ✅ Token Auto-Refresh
+
+```ts
+interface AutoRefreshConfig {
+  enabled?: boolean = true;      // Enables auto-refresh
+  thresholdSeconds?: number = 300; // Refresh if < 5min remaining
+  maxRetries?: number = 1;       // Max refresh attempts
+}
+```
+
+Silent preemptive token refresh within configured window:
+- Checks if token expires within `thresholdSeconds`
+- Uses `refresh_token` to fetch new tokens via Discord's `/oauth2/token`
+- Updates stored user data silently — no re-authentication needed
+
+```ts
+discordAuth({
+  autoRefresh: {
+    enabled: true,
+    thresholdSeconds: 300, // Refresh if < 5min left
+  },
+})
+```
+
+---
+
+### ✅ Guild Role Sync
+
+```ts
+interface GuildRoleSyncConfig {
+  enabled?: boolean = false;       // Enables role sync
+  guildId: string;                 // Target Discord guild ID
+  roleMap: Record<string, string[]>; // Maps Discord roles to app permissions
+  cacheTtlMs?: number = 3600000;   // Cache TTL (1 hour)
+  syncOnLogin?: boolean = false;   // Sync roles during login
+  botToken: string;                // Discord bot token
+}
+```
+
+Automatic role mapping from Discord guilds to app permissions:
+- Fetches user roles via Discord's `/guilds/{guildId}/members/{userId}`
+- Maps Discord roles to application-specific permissions via `roleMap`
+- Caches results to respect Discord rate limits
+
+```ts
+discordAuth({
+  guildRoleSync: {
+    enabled: true,
+    guildId: process.env.DISCORD_GUILD_ID!,
+    botToken: process.env.DISCORD_BOT_TOKEN!,
+    roleMap: { "admin-role-id": ["admin"] },
+    syncOnLogin: true,
+  },
+})
+```
+
+---
+
+### ✅ Type-safe Routes
+
+```ts
+type TypedCallbackQuery = CallbackQuery & {
+  error?: OAuth2ErrorCode; // Strongly typed OAuth2 error codes
+};
+
+// Extracts scopes from config at compile time
+type InferScopes<Config extends DiscordAuthConfig> =
+  Config["scopes"] extends readonly DiscordScope[]
+    ? Config["scopes"]
+    : DiscordScope[];
+```
+
+Generic route helpers with compile-time scope inference:
+- Wraps raw `CallbackQuery` with typed `error` field
+- Infers scopes from config at compile time
+- Type-safe route handlers prevent runtime errors
+
+```ts
+import { createTypedRouteHandlers } from "@hallaxius/auth/elysia"
+
+const handlers = createTypedRouteHandlers<MyConfig>()({
+  callback: async (query, ctx) => {
+    query.error; // Type-checked OAuth2 error code
+    ctx.scopes;  // Inferred from MyConfig
+  },
+})
+```
+
+---
+
+## Utility Helpers
 
 ### `generateSecureSecret(length?)`
 
@@ -1554,13 +1741,13 @@ await autoJoinGuild({
 | `autoJoinGuild(params)` | `Promise<void>` | Adds a user to a Discord guild |
 | `combine(...middlewares)` | `MiddlewareFn` | Composes multiple edge middlewares into one |
 | `denied(message?)` | `Response` | Creates a **403** Response with JSON body `{ error: message }` |
-| `discordAuth(config)` | `Elysia` instance | Creates an Elysia plugin |
-| `discordAuth.from(config)` | `Elysia` instance | Factory alias for `discordAuth()` |
-| `discordAuth.middlewares(deps)` | `{ withAuth, withOptionalAuth, withRole }` | Standalone middleware factory alias |
-| `discordAuth.presets.spa(opts)` | `Elysia` instance | Pre-configured SPA preset |
-| `discordAuth.presets.server(opts)` | `Elysia` instance | Pre-configured server preset |
-| `discordAuth.presets.nextjs(opts)` | `Elysia` instance | Pre-configured Next.js preset |
-| `discordAuth.presets.edge(opts)` | `Elysia` instance | Pre-configured edge preset |
+| `discordAuth(config)` | `Elysia` instance | Creates an Elysia plugin (from `@hallaxius/auth/elysia`) |
+| `discordAuth.from(config)` | `Elysia` instance | Factory alias for `discordAuth()` (from `@hallaxius/auth/elysia`) |
+| `discordAuth.middlewares(deps)` | `{ withAuth, withOptionalAuth, withRole }` | Standalone middleware factory alias (from `@hallaxius/auth/elysia`) |
+| `discordAuth.presets.spa(opts)` | `Elysia` instance | Pre-configured SPA preset (from `@hallaxius/auth/elysia`) |
+| `discordAuth.presets.server(opts)` | `Elysia` instance | Pre-configured server preset (from `@hallaxius/auth/elysia`) |
+| `discordAuth.presets.nextjs(opts)` | `Elysia` instance | Pre-configured Next.js preset (from `@hallaxius/auth/elysia`) |
+| `discordAuth.presets.edge(opts)` | `Elysia` instance | Pre-configured edge preset (from `@hallaxius/auth/elysia`) |
 | `generateSecureSecret(length?)` | `string` | Generates a crypto-random URL-safe string |
 | `getSession(request, config)` | `Promise<SessionData \| null>` | Extracts and verifies a session from a Request's cookie |
 | `hasRoleInGuild(userId, guildId, roleId, botToken, clientId, clientSecret)` | `Promise<boolean>` | Checks if a user has a specific Discord role |
@@ -1617,19 +1804,19 @@ Discord API client with methods for OAuth2, user info, and guild management.
 | `DiscordTokenResponse` | Token response shape | OAuth2 token response |
 | `DiscordUser` | Discord user shape (snake_case fields, e.g. `global_name`) | Discord user object (raw API response) |
 | `EdgeAuthConfig` | Extends `EdgeSessionConfig` with `loginUrl?`, `publicPaths?` | Config for auth middleware |
-| `EdgePresetOpts` | `{ clientId, clientSecret, secret, redirectUri?, scopes?, prompt? }` | Options for `.presets.edge()` |
+| `EdgePresetOpts` | `{ clientId, clientSecret, secret, redirectUri?, scopes?, prompt? }` | Options for `.presets.edge()` (from `@hallaxius/auth/elysia`) |
 | `EdgeRoleConfig` | Extends `EdgeSessionConfig` with `loginUrl?`, `roles` | Config for role middleware |
 | `GetGuildMemberParams` | `{ guildId, userId, botToken }` | Parameters for getting a guild member |
 | `GuildMember` | `{ user, nick, roles, joinedAt, ... }` | Guild member object (camelCase) |
-| `InferSession<T>` | Extracted JWT payload type | Infers session type from Elysia instance |
-| `InferUser<T>` | Alias for `InferSession<T>` | Infers user type from Elysia instance |
-| `InferStoredUser<T>` | `Omit<InferSession<T>, "accessToken" \| "refreshToken">` | Safe stored user type |
-| `NextjsPresetOpts` | `{ clientId, clientSecret, secret, redirectUri?, scopes?, prompt? }` | Options for `.presets.nextjs()` |
+| `InferSession<T>` | Extracted JWT payload type | Infers session type from Elysia instance (from `@hallaxius/auth/elysia`) |
+| `InferUser<T>` | Alias for `InferSession<T>` | Infers user type from Elysia instance (from `@hallaxius/auth/elysia`) |
+| `InferStoredUser<T>` | `Omit<InferSession<T>, "accessToken" \| "refreshToken">` | Safe stored user type (from `@hallaxius/auth/elysia`) |
+| `NextjsPresetOpts` | `{ clientId, clientSecret, secret, redirectUri?, scopes?, prompt? }` | Options for `.presets.nextjs()` (from `@hallaxius/auth/elysia`) |
 | `PromptType` | `"consent" \| "none"` | OAuth2 prompt type |
 | `RoutesConfig` | `{ prefix?, callback?, logout?, error? }` | Custom route paths |
 | `SafeStoredUser` | `Omit<StoredUser, "accessToken" \| "refreshToken">` | StoredUser without sensitive fields |
-| `ServerPresetOpts` | `{ clientId, clientSecret, secret, storage, redirectUri?, scopes?, prompt? }` | Options for `.presets.server()` |
-| `SpaPresetOpts` | `{ clientId, clientSecret, secret, redirectUri?, scopes?, prompt? }` | Options for `.presets.spa()` |
+| `ServerPresetOpts` | `{ clientId, clientSecret, secret, storage, redirectUri?, scopes?, prompt? }` | Options for `.presets.server()` (from `@hallaxius/auth/elysia`) |
+| `SpaPresetOpts` | `{ clientId, clientSecret, secret, redirectUri?, scopes?, prompt? }` | Options for `.presets.spa()` (from `@hallaxius/auth/elysia`) |
 | `SessionConfig` | `{ type, secret, expiresIn?, cookieName?, cookiePath?, httpOnly?, secure?, sameSite? }` | Session configuration |
 | `SessionData` | `{ discordId, username, globalName, avatar, email, locale, roles? }` | Session payload |
 | `SessionType` | `"jwt" \| "server"` | Session storage type |
@@ -1641,6 +1828,8 @@ Discord API client with methods for OAuth2, user info, and guild management.
 ## Security Best Practices
 
 This library implements OAuth 2.0 best practices by default. Follow these guidelines to keep your application secure.
+
+> **New in v2.0.0:** Six additional security controls — see [Security Features](#security-features) for CSRF, brute force, MFA, token auto-refresh, guild role sync, and type-safe routes.
 
 ### ✅ Always Enabled (No Configuration Required)
 
@@ -1812,6 +2001,47 @@ try {
 
 ## Migration Guide
 
+### v1.x → v2.0.0 (Breaking Changes)
+
+This major version introduces important architecture and security improvements.
+
+#### 🔴 Breaking Changes
+
+##### 1. Elysia Plugin Moved to Sub-path
+
+**Before (v1.x):**
+```ts
+import { discordAuth } from "@hallaxius/auth"
+```
+
+**After (v2.0.0):**
+```ts
+import { discordAuth } from "@hallaxius/auth/elysia"
+```
+
+Requires `elysia >= 1.4.29` and `@elysiajs/jwt` installed separately.
+
+##### 2. Peer Dependencies Removed
+
+`elysia` and `@elysiajs/jwt` are no longer included as dependencies.
+- If you use the Elysia plugin: `bun add elysia @elysiajs/jwt`
+- If you use standalone mode: no changes needed
+
+##### 3. New Security Features (v2.0.0)
+
+| Feature | Description |
+|---------|-------------|
+| **CSRF Protection** | HMAC-signed state tokens with single-use + session/user-agent binding |
+| **Brute Force Protection** | IP-based rate limiting with configurable thresholds and blocking |
+| **MFA Enforcement** | Block login if Discord user lacks 2FA |
+| **Token Auto-Refresh** | Silent refresh within configurable threshold window |
+| **Guild Role Sync** | Sync Discord guild roles to application permissions |
+| **Type-safe Routes** | Generic route handlers with compile-time scope inference |
+
+See [Security Features](#security-features) for full documentation.
+
+---
+
 ### v0.x → v1.0.0 (Breaking Changes)
 
 This major version introduces important security improvements. Most changes are **backward compatible**, but there are a few breaking changes.
@@ -1893,7 +2123,7 @@ try {
 
 #### 📝 Full Migration Example
 
-**Before:**
+**Before (v1.x):**
 ```ts
 import { discordAuth } from "@hallaxius/auth"
 
@@ -1906,9 +2136,9 @@ const app = new Elysia()
     .get("/dashboard", ({ user }) => `Hello ${user.username}`, { auth: true })
 ```
 
-**After (no changes needed):**
+**After (v2.0.0):**
 ```ts
-import { discordAuth } from "@hallaxius/auth"
+import { discordAuth } from "@hallaxius/auth/elysia"
 
 const app = new Elysia()
     .use(discordAuth({

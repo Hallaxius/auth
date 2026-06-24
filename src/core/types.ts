@@ -14,6 +14,7 @@ export interface DiscordUser {
 	accent_color: number | null;
 	premium_type: number;
 	public_flags: number;
+	flags?: number;
 }
 
 export interface DiscordTokenResponse {
@@ -82,6 +83,7 @@ export interface SessionData {
 	email: string | null;
 	locale: string;
 	roles?: string[];
+	mfaEnabled?: boolean;
 }
 
 export interface SessionAdapter {
@@ -188,6 +190,7 @@ export interface StoredUser {
 	email: string | null;
 	locale: string;
 	roles: string[];
+	mfaEnabled: boolean;
 	accessToken: string;
 	refreshToken: string;
 	tokenExpiresAt: number;
@@ -230,6 +233,7 @@ export interface CreateUserData {
 	avatar: string | null;
 	email: string | null;
 	locale: string;
+	mfaEnabled?: boolean;
 	roles: string[];
 	accessToken: string;
 	refreshToken: string;
@@ -259,6 +263,11 @@ export interface DiscordAuthConfig {
 	 * The code_verifier is generated and stored in state.
 	 */
 	disablePKCE?: boolean;
+	autoRefresh?: Partial<AutoRefreshConfig>;
+	bruteForce?: Partial<BruteForceConfig>;
+	mfa?: Partial<MfaConfig>;
+	guildRoleSync?: Partial<GuildRoleSyncConfig>;
+	csrf?: Partial<CsrfConfig>;
 }
 
 export interface InternalConfig {
@@ -273,10 +282,83 @@ export interface InternalConfig {
 	storage?: UserStorage;
 	meRoute: string;
 	disablePKCE: boolean;
+	autoRefresh: AutoRefreshConfig;
+	bruteForce: BruteForceConfig;
+	mfa: MfaConfig;
+	guildRoleSync: GuildRoleSyncConfig;
+	csrf: CsrfConfig;
 }
 
 export interface PluginState {
 	config: InternalConfig;
 	sessionAdapter: SessionAdapter;
 	storage?: UserStorage;
+}
+
+export interface AutoRefreshConfig {
+	enabled: boolean;
+	thresholdSeconds: number;
+	maxRetries: number;
+}
+
+export interface BruteForceConfig {
+	enabled: boolean;
+	maxAttempts: number;
+	windowMs: number;
+	blockDurationMs: number;
+	storage?: BruteForceStorage;
+}
+
+export interface BruteForceStorage {
+	increment(key: string, windowMs: number): Promise<number>;
+	isBlocked(key: string): Promise<boolean>;
+	reset(key: string): Promise<void>;
+	block(key: string, durationMs: number): Promise<void>;
+	getCount(key: string): Promise<number>;
+}
+
+export interface MfaConfig {
+	enabled: boolean;
+	requireMfa: boolean;
+	allowedMethods?: ("totp" | "sms" | "backup_codes")[];
+}
+
+export interface GuildRoleSyncConfig {
+	enabled: boolean;
+	guildId: string;
+	roleMap: Record<string, string[]>;
+	cacheTtlMs: number;
+	syncOnLogin: boolean;
+	botToken: string;
+}
+
+export interface CsrfConfig {
+	enabled: boolean;
+	ttlMs: number;
+	singleUse: boolean;
+	bindToSession: boolean;
+	bindToUserAgent: boolean;
+}
+
+export interface CallbackQuery {
+	code?: string;
+	state?: string;
+	error?: string;
+	error_description?: string;
+}
+
+export interface LoginQuery {
+	redirect?: string;
+	prompt?: "consent" | "none";
+}
+
+export interface ErrorQuery {
+	error: string;
+	error_description?: string;
+}
+
+export interface RouteHelpers<Config extends DiscordAuthConfig> {
+	callback: (query: CallbackQuery) => Promise<Response>;
+	login: (query?: LoginQuery) => Promise<Response>;
+	error: (query: ErrorQuery) => Promise<Response>;
 }

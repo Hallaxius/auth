@@ -6,19 +6,24 @@ export {
 	processConfig,
 } from "./core/config";
 export {
+	BruteForceBlockedError,
 	ConfigurationError,
 	DiscordAuthError,
 	ExpiredStateError,
-	GuildJoinError,
 	getErrorCode,
+	GuildJoinError,
+	GuildSyncError,
 	InvalidCodeError,
 	InvalidScopeError,
 	InvalidStateError,
 	InvalidTokenError,
 	isDiscordAuthError,
+	MfaRequiredError,
 	NetworkError,
 	PKCEError,
 	RateLimitError,
+	StateBindingError,
+	StateReusedError,
 	StorageError,
 	TokenExpiredError,
 	TokenRevokedError,
@@ -27,11 +32,18 @@ export {
 	generateState,
 	type ValidatedState,
 	validateState,
+	consumeState,
+	type StateStore,
+	MemoryStateStore,
 } from "./core/state";
 export type {
 	AddMemberParams,
+	AutoRefreshConfig,
+	BruteForceConfig,
+	BruteForceStorage,
 	Callbacks,
 	CreateUserData,
+	CsrfConfig,
 	DiscordAuthConfig,
 	DiscordConnection,
 	DiscordGuild,
@@ -40,6 +52,8 @@ export type {
 	DiscordTokenResponse,
 	DiscordUser,
 	GetGuildMemberParams,
+	GuildRoleSyncConfig,
+	MfaConfig,
 	PKCEParams,
 	PromptType,
 	RoutesConfig,
@@ -50,16 +64,6 @@ export type {
 	StoredUser,
 	UserStorage,
 } from "./core/types";
-export type {
-	EdgePresetOpts,
-	InferSession,
-	InferStoredUser,
-	InferUser,
-	NextjsPresetOpts,
-	ServerPresetOpts,
-	SpaPresetOpts,
-} from "./elysia/plugin";
-export { discordAuth, from, presets } from "./elysia/plugin";
 export type {
 	AuthHandler,
 	EdgeAuthConfig,
@@ -92,4 +96,5 @@ export {
 	syncUserRoles,
 	validateConfig,
 } from "./utils";
+export { createTypedRouteHandlers } from "./core/route-helpers";
 export { Discord } from "./wrapper";

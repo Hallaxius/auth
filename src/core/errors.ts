@@ -132,6 +132,46 @@ export class ConfigurationError extends DiscordAuthError {
 	}
 }
 
+/** MFA errors */
+export class MfaRequiredError extends DiscordAuthError {
+	constructor(message = "Multi-factor authentication is required") {
+		super("MFA_REQUIRED", message, { statusCode: 403 });
+	}
+}
+
+/** Brute force errors */
+export class BruteForceBlockedError extends DiscordAuthError {
+	readonly retryAfter?: number;
+
+	constructor(message = "Too many attempts, please try again later", retryAfter?: number) {
+		super("BRUTE_FORCE_BLOCKED", message, {
+			statusCode: 429,
+			cause: retryAfter ? new Error(`Retry after ${retryAfter} seconds`) : undefined,
+		});
+		this.retryAfter = retryAfter;
+	}
+}
+
+/** Guild sync errors */
+export class GuildSyncError extends DiscordAuthError {
+	constructor(message = "Failed to synchronize guild roles") {
+		super("GUILD_SYNC_ERROR", message, { statusCode: 500 });
+	}
+}
+
+/** CSRF/State errors */
+export class StateReusedError extends DiscordAuthError {
+	constructor(message = "State parameter has already been used") {
+		super("STATE_REUSED", message, { statusCode: 403 });
+	}
+}
+
+export class StateBindingError extends DiscordAuthError {
+	constructor(message = "State parameter binding validation failed") {
+		super("STATE_BINDING_FAILED", message, { statusCode: 403 });
+	}
+}
+
 /**
  * Checks if an error is from DiscordAuthError hierarchy
  */

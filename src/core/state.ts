@@ -1,9 +1,13 @@
-const STATE_TTL = 5 * 60 * 1000;
+import type { CsrfConfig } from "./types";
+
+const DEFAULT_STATE_TTL = 5 * 60 * 1000;
 
 interface StatePayload {
 	id: string;
 	iat: number;
 	codeVerifier?: string;
+	sessionId?: string;
+	userAgentHash?: string;
 }
 
 function toBase64URL(data: ArrayBuffer): string {
@@ -27,10 +31,58 @@ function fromBase64URL(str: string): Uint8Array {
 	return bytes;
 }
 
+function hashUserAgent(userAgent: string): string {
+	const encoder = new TextEncoder();
+	const data = encoder.encode(userAgent);
+	const hashBuffer = crypto.subtle.digest("SHA-256", data);
+	return Array.from(new Uint8Array(hashBuffer))
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("")
+		.slice(0, 16);
+}
+
+export interface StateStore {
+	has(id: string): Promise<boolean>;
+	set(id: string, ttlMs: number): Promise<void>;
+	delete(id: string): Promise<void>;
+}
+
+export class MemoryStateStore implements StateStore {
+	private store = new Map<string, number>();
+
+	async has(id: string): Promise<boolean> {
+		const expiresAt = this.store.get(id);
+		if (!expiresAt) return false;
+		if (Date.now() > expiresAt) {
+			this.store.delete(id);
+			return false;
+		}
+		return true;
+	}
+
+	async set(id: string, ttlMs: number): Promise<void> {
+		this.store.set(id, Date.now() + ttlMs);
+	}
+
+	async delete(id: string): Promise<void> {
+		this.store.delete(id);
+	}
+}
+
+export interface ValidatedState {
+	valid: boolean;
+	codeVerifier?: string;
+	stateId?: string;
+}
+
 export async function generateState(
 	secret: string,
 	codeVerifier?: string,
+	sessionId?: string,
+	userAgent?: string,
+	config?: CsrfConfig,
 ): Promise<string> {
+	const ttlMs = config?.ttlMs ?? DEFAULT_STATE_TTL;
 	const payload: StatePayload = {
 		id: crypto.randomUUID(),
 		iat: Date.now(),
@@ -38,6 +90,12 @@ export async function generateState(
 
 	if (codeVerifier) {
 		payload.codeVerifier = codeVerifier;
+	}
+	if (config?.bindToSession && sessionId) {
+		payload.sessionId = sessionId;
+	}
+	if (config?.bindToUserAgent && userAgent) {
+		payload.userAgentHash = hashUserAgent(userAgent);
 	}
 
 	const payloadString = JSON.stringify(payload);
@@ -63,15 +121,15 @@ export async function generateState(
 	return `${encoded}.${sigEncoded}`;
 }
 
-export interface ValidatedState {
-	valid: boolean;
-	codeVerifier?: string;
-}
-
 export async function validateState(
 	state: string,
 	secret: string,
+	sessionId?: string,
+	userAgent?: string,
+	config?: CsrfConfig,
+	store?: StateStore,
 ): Promise<ValidatedState> {
+	const ttlMs = config?.ttlMs ?? DEFAULT_STATE_TTL;
 	const parts = state.split(".");
 	if (parts.length !== 2) return { valid: false };
 
@@ -101,12 +159,43 @@ export async function validateState(
 		const decoded = fromBase64URL(encoded);
 		const payload: StatePayload = JSON.parse(new TextDecoder().decode(decoded));
 
-		if (Date.now() - payload.iat > STATE_TTL) return { valid: false };
+		if (Date.now() - payload.iat > ttlMs) return { valid: false };
 
-		return { valid: true, codeVerifier: payload.codeVerifier };
+		if (config?.bindToSession && sessionId && payload.sessionId !== sessionId) {
+			return { valid: false };
+		}
+
+		if (config?.bindToUserAgent && userAgent && payload.userAgentHash !== hashUserAgent(userAgent)) {
+			return { valid: false };
+		}
+
+		if (config?.singleUse && store) {
+			const stateId = payload.id;
+			if (await store.has(stateId)) {
+				return { valid: false };
+			}
+			await store.set(stateId, ttlMs);
+		}
+
+		return { valid: true, codeVerifier: payload.codeVerifier, stateId: payload.id };
 	} catch {
 		return { valid: false };
 	}
+}
+
+export async function consumeState(
+	state: string,
+	secret: string,
+	sessionId?: string,
+	userAgent?: string,
+	config?: CsrfConfig,
+	store?: StateStore,
+): Promise<ValidatedState> {
+	const result = await validateState(state, secret, sessionId, userAgent, config, store);
+	if (result.valid && result.stateId && config?.singleUse && store) {
+		await store.delete(result.stateId);
+	}
+	return result;
 }
 
 /**

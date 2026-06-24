@@ -69,12 +69,13 @@ export function requiredRole(
 	return null;
 }
 
-/** Creates a redirect Response (302). Only relative URLs are allowed. */
 export function redirect(url: string): Response {
-	const safeUrl = url.startsWith("/") ? url : "/";
+	if (!url.startsWith("/")) {
+		throw new Error("Only relative URLs allowed for redirect");
+	}
 	return new Response(null, {
 		status: 302,
-		headers: { Location: safeUrl },
+		headers: { Location: url },
 	});
 }
 

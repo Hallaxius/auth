@@ -26,11 +26,7 @@
 	},
 	"overrides": [
 		{
-			"includes": [
-				"src/wrapper.ts",
-				"src/elysia/plugin.ts",
-				"src/elysia/routes.ts"
-			],
+			"includes": ["src/wrapper.ts"],
 			"linter": {
 				"rules": {
 					"suspicious": {
