@@ -16,14 +16,25 @@ export interface RefreshDeps {
 export async function refreshTokenIfNeeded(
 	storedUser: StoredUser,
 	deps: RefreshDeps,
-): Promise<{ storedUser: StoredUser; refreshed: boolean } | { storedUser: null; refreshed: false }> {
+): Promise<
+	| { storedUser: StoredUser; refreshed: boolean }
+	| { storedUser: null; refreshed: false }
+> {
 	const autoRefresh = deps.autoRefresh;
-	if (!deps.client || !deps.clientId || !deps.clientSecret || !autoRefresh?.enabled) {
+	if (
+		!deps.client ||
+		!deps.clientId ||
+		!deps.clientSecret ||
+		!autoRefresh?.enabled
+	) {
 		return { storedUser, refreshed: false };
 	}
 
 	const thresholdSeconds = autoRefresh.thresholdSeconds ?? 300;
-	if (storedUser.tokenExpiresAt >= Math.floor(Date.now() / 1000) + thresholdSeconds) {
+	if (
+		storedUser.tokenExpiresAt >=
+		Math.floor(Date.now() / 1000) + thresholdSeconds
+	) {
 		return { storedUser, refreshed: false };
 	}
 

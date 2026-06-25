@@ -1,13 +1,12 @@
+import type { DiscordClient } from "../core/client";
+import { refreshTokenIfNeeded } from "../core/token";
 import type {
 	AutoRefreshConfig,
 	SafeStoredUser,
 	SessionData,
 	SessionType,
-	StoredUser,
 	UserStorage,
 } from "../core/types";
-import { DiscordClient } from "../core/client";
-import { refreshTokenIfNeeded } from "../core/token";
 import { parseCookies } from "./cookies";
 import { verifyToken } from "./jwt";
 
@@ -38,7 +37,11 @@ function jsonResponse(data: unknown, status = 200): Response {
 }
 
 export function createMiddlewares(deps: MiddlewareDeps) {
-	const autoRefresh = deps.autoRefresh ?? { enabled: true, thresholdSeconds: 300, maxRetries: 1 };
+	const autoRefresh = deps.autoRefresh ?? {
+		enabled: true,
+		thresholdSeconds: 300,
+		maxRetries: 1,
+	};
 
 	function withAuth(handler: AuthHandler) {
 		return async (request: Request): Promise<Response> => {
@@ -67,7 +70,13 @@ export function createMiddlewares(deps: MiddlewareDeps) {
 			};
 
 			let storedUser: SafeStoredUser | null = null;
-			if (deps.storage && deps.client && deps.clientId && deps.clientSecret && autoRefresh?.enabled) {
+			if (
+				deps.storage &&
+				deps.client &&
+				deps.clientId &&
+				deps.clientSecret &&
+				autoRefresh?.enabled
+			) {
 				const stored = await deps.storage.findByDiscordId(user.discordId);
 				if (stored) {
 					const result = await refreshTokenIfNeeded(stored, {
@@ -143,7 +152,13 @@ export function createMiddlewares(deps: MiddlewareDeps) {
 			};
 
 			let storedUser: SafeStoredUser | null = null;
-			if (deps.storage && deps.client && deps.clientId && deps.clientSecret && autoRefresh?.enabled) {
+			if (
+				deps.storage &&
+				deps.client &&
+				deps.clientId &&
+				deps.clientSecret &&
+				autoRefresh?.enabled
+			) {
 				const stored = await deps.storage.findByDiscordId(user.discordId);
 				if (stored) {
 					const result = await refreshTokenIfNeeded(stored, {

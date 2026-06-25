@@ -31,10 +31,10 @@ function fromBase64URL(str: string): Uint8Array {
 	return bytes;
 }
 
-function hashUserAgent(userAgent: string): string {
+async function hashUserAgent(userAgent: string): Promise<string> {
 	const encoder = new TextEncoder();
 	const data = encoder.encode(userAgent);
-	const hashBuffer = crypto.subtle.digest("SHA-256", data);
+	const hashBuffer = await crypto.subtle.digest("SHA-256", data);
 	return Array.from(new Uint8Array(hashBuffer))
 		.map((b) => b.toString(16).padStart(2, "0"))
 		.join("")
@@ -82,7 +82,7 @@ export async function generateState(
 	userAgent?: string,
 	config?: CsrfConfig,
 ): Promise<string> {
-	const ttlMs = config?.ttlMs ?? DEFAULT_STATE_TTL;
+	const _ttlMs = config?.ttlMs ?? DEFAULT_STATE_TTL;
 	const payload: StatePayload = {
 		id: crypto.randomUUID(),
 		iat: Date.now(),
@@ -95,7 +95,7 @@ export async function generateState(
 		payload.sessionId = sessionId;
 	}
 	if (config?.bindToUserAgent && userAgent) {
-		payload.userAgentHash = hashUserAgent(userAgent);
+		payload.userAgentHash = await hashUserAgent(userAgent);
 	}
 
 	const payloadString = JSON.stringify(payload);
@@ -165,7 +165,11 @@ export async function validateState(
 			return { valid: false };
 		}
 
-		if (config?.bindToUserAgent && userAgent && payload.userAgentHash !== hashUserAgent(userAgent)) {
+		if (
+			config?.bindToUserAgent &&
+			userAgent &&
+			payload.userAgentHash !== (await hashUserAgent(userAgent))
+		) {
 			return { valid: false };
 		}
 
@@ -177,7 +181,11 @@ export async function validateState(
 			await store.set(stateId, ttlMs);
 		}
 
-		return { valid: true, codeVerifier: payload.codeVerifier, stateId: payload.id };
+		return {
+			valid: true,
+			codeVerifier: payload.codeVerifier,
+			stateId: payload.id,
+		};
 	} catch {
 		return { valid: false };
 	}
@@ -191,7 +199,14 @@ export async function consumeState(
 	config?: CsrfConfig,
 	store?: StateStore,
 ): Promise<ValidatedState> {
-	const result = await validateState(state, secret, sessionId, userAgent, config, store);
+	const result = await validateState(
+		state,
+		secret,
+		sessionId,
+		userAgent,
+		config,
+		store,
+	);
 	if (result.valid && result.stateId && config?.singleUse && store) {
 		await store.delete(result.stateId);
 	}

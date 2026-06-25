@@ -1,17 +1,23 @@
 import { Elysia } from "elysia";
-import type { DiscordClient } from "../core/client";
-import { GuildRoleSync } from "../core/guild-sync";
+import { MemoryBruteForceStorage } from "../adapters/brute-force";
 import { MemoryCacheAdapter } from "../adapters/cache";
+import { BruteForceProtection } from "../core/brute-force";
+import type { DiscordClient } from "../core/client";
 import { generatePKCE } from "../core/config";
 import {
-	generateState,
-	validateState,
+	BruteForceBlockedError,
+	DiscordAuthError,
+	MfaRequiredError,
+	StateBindingError,
+	StateReusedError,
+} from "../core/errors";
+import { GuildRoleSync } from "../core/guild-sync";
+import {
 	consumeState,
+	generateState,
 	MemoryStateStore,
+	validateState,
 } from "../core/state";
-import { StateReusedError, StateBindingError } from "../core/errors";
-import { BruteForceProtection } from "../core/brute-force";
-import { MemoryBruteForceStorage } from "../adapters/brute-force";
 import type {
 	DiscordTokenResponse,
 	DiscordUser,
@@ -21,7 +27,6 @@ import type {
 	UserStorage,
 } from "../core/types";
 import { parseExpiresIn } from "../core/utils";
-import { MfaRequiredError, BruteForceBlockedError } from "../core/errors";
 
 const stateStore = new MemoryStateStore();
 
@@ -36,13 +41,17 @@ export function createAuthRoutes(context: RouteContext) {
 	const { config, client, sessionAdapter, storage } = context;
 	const { routes } = config;
 
-	const bruteForceStorage = config.bruteForce.storage ?? new MemoryBruteForceStorage();
-	const bruteForce = new BruteForceProtection(config.bruteForce, bruteForceStorage);
+	const bruteForceStorage =
+		config.bruteForce.storage ?? new MemoryBruteForceStorage();
+	const bruteForce = new BruteForceProtection(
+		config.bruteForce,
+		bruteForceStorage,
+	);
 
 	return new Elysia({ name: "discord-auth-routes" })
 		.get(routes.callback, async (ctx: any) => {
 			const { query, cookie, jwt, request } = ctx;
-			const cookieName = config.session.cookieName;
+			const cookieName = config.session.cookieName ?? "discord-auth-session";
 			const code = query.code as string | undefined;
 			const state = query.state as string | undefined;
 
@@ -69,9 +78,14 @@ export function createAuthRoutes(context: RouteContext) {
 			if (config.bruteForce.enabled) {
 				const blocked = await bruteForce.isBlocked(bruteForceKey);
 				if (blocked) {
-					const retryAfter = Math.ceil(config.bruteForce.blockDurationMs / 1000);
+					const retryAfter = Math.ceil(
+						config.bruteForce.blockDurationMs / 1000,
+					);
 					await config.callbacks.onError(
-						new BruteForceBlockedError("Too many attempts, please try again later", retryAfter),
+						new BruteForceBlockedError(
+							"Too many attempts, please try again later",
+							{ retryAfter },
+						),
 						"callback",
 					);
 					ctx.status = 429;
@@ -107,9 +121,15 @@ export function createAuthRoutes(context: RouteContext) {
 					if (parts.length === 2) {
 						try {
 							const [encoded] = parts;
-							const decoded = new TextDecoder().decode(new Uint8Array(atob(encoded.replace(/-/g, "+").replace(/_/g, "/")).split("").map(c => c.charCodeAt(0))));
+							const decoded = new TextDecoder().decode(
+								new Uint8Array(
+									atob(encoded.replace(/-/g, "+").replace(/_/g, "/"))
+										.split("")
+										.map((c) => c.charCodeAt(0)),
+								),
+							);
 							const payload = JSON.parse(decoded);
-							if (payload.id && await stateStore.has(payload.id)) {
+							if (payload.id && (await stateStore.has(payload.id))) {
 								csrfError = new StateReusedError();
 							} else {
 								csrfError = new StateBindingError();
@@ -125,7 +145,9 @@ export function createAuthRoutes(context: RouteContext) {
 				// Fallback to old validateState behavior when CSRF is disabled
 				stateValidation = await validateState(state, config.session.secret);
 				if (!stateValidation.valid) {
-					csrfError = new Error("Invalid state parameter - possible CSRF attack");
+					csrfError = new Error(
+						"Invalid state parameter - possible CSRF attack",
+					);
 				}
 			}
 
@@ -134,7 +156,10 @@ export function createAuthRoutes(context: RouteContext) {
 					await bruteForce.recordAttempt(bruteForceKey, false);
 				}
 				await config.callbacks.onError(csrfError, "callback");
-				ctx.status = csrfError instanceof DiscordAuthError ? (csrfError.statusCode ?? 403) : 403;
+				ctx.status =
+					csrfError instanceof DiscordAuthError
+						? (csrfError.statusCode ?? 403)
+						: 403;
 				return csrfError.message;
 			}
 
@@ -182,111 +207,116 @@ export function createAuthRoutes(context: RouteContext) {
 				return "Failed to exchange authorization code";
 			}
 
-		let user: DiscordUser;
-		try {
-			user = await client.getUser(tokens.access_token);
-		} catch (err) {
-			if (config.bruteForce.enabled) {
-				await bruteForce.recordAttempt(bruteForceKey, false);
+			let user: DiscordUser;
+			try {
+				user = await client.getUser(tokens.access_token);
+			} catch (err) {
+				if (config.bruteForce.enabled) {
+					await bruteForce.recordAttempt(bruteForceKey, false);
+				}
+				await config.callbacks.onError(err as Error, "callback");
+				ctx.status = 500;
+				return "Failed to fetch user data";
 			}
-			await config.callbacks.onError(err as Error, "callback");
-			ctx.status = 500;
-			return "Failed to fetch user data";
-		}
 
-		if (config.mfa.enabled && config.mfa.requireMfa && !user.mfa_enabled) {
-			await config.callbacks.onError(new MfaRequiredError(), "callback");
-			ctx.status = 403;
-			return "Multi-factor authentication is required";
-		}
+			if (config.mfa.enabled && config.mfa.requireMfa && !user.mfa_enabled) {
+				await config.callbacks.onError(new MfaRequiredError(), "callback");
+				ctx.status = 403;
+				return "Multi-factor authentication is required";
+			}
 
-		if (storage) {
-			const expiresAt = Math.floor(Date.now() / 1000) + tokens.expires_in;
-			const existing = await storage.findByDiscordId(user.id);
+			if (storage) {
+				const expiresAt = Math.floor(Date.now() / 1000) + tokens.expires_in;
+				const existing = await storage.findByDiscordId(user.id);
 
-			if (!existing) {
-				await storage.create({
+				if (!existing) {
+					await storage.create({
+						discordId: user.id,
+						username: user.username,
+						globalName: user.global_name,
+						avatar: user.avatar,
+						email: user.email,
+						locale: user.locale,
+						roles: ["user"],
+						mfaEnabled: user.mfa_enabled,
+						accessToken: tokens.access_token,
+						refreshToken: tokens.refresh_token,
+						tokenExpiresAt: expiresAt,
+					});
+				} else {
+					await storage.update(user.id, {
+						username: user.username,
+						globalName: user.global_name,
+						avatar: user.avatar,
+						email: user.email,
+						mfaEnabled: user.mfa_enabled,
+						accessToken: tokens.access_token,
+						refreshToken: tokens.refresh_token,
+						tokenExpiresAt: expiresAt,
+					});
+				}
+			}
+
+			let syncedPermissions: string[] = [];
+			if (
+				config.guildRoleSync.enabled &&
+				config.guildRoleSync.syncOnLogin &&
+				config.scopes.includes("guilds.members.read")
+			) {
+				const guildSync = new GuildRoleSync(
+					config.guildRoleSync,
+					client,
+					new MemoryCacheAdapter(),
+				);
+				syncedPermissions = await guildSync.syncUserRoles(
+					user.id,
+					tokens.access_token,
+				);
+
+				if (storage && syncedPermissions.length > 0) {
+					const storedUser = await storage.findByDiscordId(user.id);
+					if (storedUser) {
+						const mergedRoles = Array.from(
+							new Set([...storedUser.roles, ...syncedPermissions]),
+						);
+						await storage.update(user.id, { roles: mergedRoles });
+					}
+				}
+			}
+
+			let sessionToken: string;
+
+			if (config.session.type === "server") {
+				let roles: string[] | undefined;
+				if (storage) {
+					const storedUser = await storage.findByDiscordId(user.id);
+					roles = storedUser?.roles;
+				}
+				sessionToken = await sessionAdapter.create(user, tokens, roles);
+			} else {
+				const payload: Record<string, unknown> = {
 					discordId: user.id,
 					username: user.username,
 					globalName: user.global_name,
 					avatar: user.avatar,
 					email: user.email,
 					locale: user.locale,
-					roles: ["user"],
 					mfaEnabled: user.mfa_enabled,
-					accessToken: tokens.access_token,
-					refreshToken: tokens.refresh_token,
-					tokenExpiresAt: expiresAt,
-				});
-			} else {
-				await storage.update(user.id, {
-					username: user.username,
-					globalName: user.global_name,
-					avatar: user.avatar,
-					email: user.email,
-					mfaEnabled: user.mfa_enabled,
-					accessToken: tokens.access_token,
-					refreshToken: tokens.refresh_token,
-					tokenExpiresAt: expiresAt,
-				});
-			}
-		}
+				};
 
-		let syncedPermissions: string[] = [];
-		if (
-			config.guildRoleSync.enabled &&
-			config.guildRoleSync.syncOnLogin &&
-			config.scopes.includes("guilds.members.read")
-		) {
-			const guildSync = new GuildRoleSync(
-				config.guildRoleSync,
-				client,
-				new MemoryCacheAdapter(),
-			);
-			syncedPermissions = await guildSync.syncUserRoles(user.id, tokens.access_token);
-
-			if (storage && syncedPermissions.length > 0) {
-				const storedUser = await storage.findByDiscordId(user.id);
-				if (storedUser) {
-					const mergedRoles = Array.from(new Set([...storedUser.roles, ...syncedPermissions]));
-					await storage.update(user.id, { roles: mergedRoles });
+				if (storage) {
+					const storedUser = await storage.findByDiscordId(user.id);
+					if (storedUser?.roles) {
+						payload.roles = storedUser.roles;
+					}
 				}
+
+				if (syncedPermissions.length > 0) {
+					payload.permissions = syncedPermissions;
+				}
+
+				sessionToken = await jwt.sign(payload);
 			}
-		}
-
-		let sessionToken: string;
-
-	if (config.session.type === "server") {
-		let roles: string[] | undefined;
-		if (storage) {
-			const storedUser = await storage.findByDiscordId(user.id);
-			roles = storedUser?.roles;
-		}
-		sessionToken = await sessionAdapter.create(user, tokens, roles);
-	} else {
-		const payload: Record<string, unknown> = {
-			discordId: user.id,
-			username: user.username,
-			globalName: user.global_name,
-			avatar: user.avatar,
-			email: user.email,
-			locale: user.locale,
-			mfaEnabled: user.mfa_enabled,
-		};
-
-		if (storage) {
-			const storedUser = await storage.findByDiscordId(user.id);
-			if (storedUser?.roles) {
-				payload.roles = storedUser.roles;
-			}
-		}
-
-		if (syncedPermissions.length > 0) {
-			payload.permissions = syncedPermissions;
-		}
-
-		sessionToken = await jwt.sign(payload);
-	}
 
 			cookie[cookieName].set({
 				value: sessionToken,
@@ -311,7 +341,7 @@ export function createAuthRoutes(context: RouteContext) {
 			return ctx.redirect("/");
 		})
 		.get(routes.logout, async (ctx: any) => {
-			const cookieName = config.session.cookieName;
+			const cookieName = config.session.cookieName ?? "discord-auth-session";
 			const sessionCookie = ctx.cookie[cookieName];
 
 			// Clear server-side session
@@ -409,7 +439,8 @@ export function createLoginRedirectRoute(context: RouteContext) {
 		}
 
 		// Extract sessionId from session cookie if exists
-		const sessionCookie = ctx.cookie[config.session.cookieName];
+		const cookieName = config.session.cookieName ?? "discord-auth-session";
+		const sessionCookie = ctx.cookie[cookieName];
 		const sessionId = sessionCookie?.value;
 
 		// Extract userAgent from request headers

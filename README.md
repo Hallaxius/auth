@@ -40,7 +40,6 @@ bun add @hallaxius/auth
 ## Table of Contents
 
 - [Quick Start](#quick-start)
-- [Quick Start (v1.1+) — Presets](#quick-start-v11--presets)
 - [Configuration](#configuration)
 - [Elysia Plugin](#elysia-plugin)
   - [Factory Pattern / Presets](#factory-pattern--presets)
@@ -157,11 +156,9 @@ export default combine(
 
 ---
 
-## Quick Start (v1.1+) — Presets
+## Quick Start — Presets
 
 ### Simplified with Presets
-
-The v2.0.0 introduced **Security Features** (CSRF, brute-force, MFA, auto-refresh, guild role sync, type-safe routes) and moved the Elysia plugin to a sub-path. The v1.1.0 introduced **presets** for common configurations.
 
 #### SPA (React, Vue, Svelte, etc.)
 
@@ -1448,6 +1445,49 @@ discordAuth({
 
 ---
 
+### CSRF State Store
+
+The library uses HMAC-SHA256 signed state tokens with configurable TTL (default 5 minutes).
+
+```ts
+import { generateState, validateState, consumeState, MemoryStateStore } from "@hallaxius/auth"
+
+// Default in-memory store (dev/single-instance)
+const store = new MemoryStateStore()
+
+// Custom state store (Redis for production)
+const redisStore: StateStore = {
+  async set(key, value, ttlMs) { await redis.setex(key, ttlMs / 1000, value) },
+  async get(key) { return redis.get(key) },
+  async delete(key) { await redis.del(key) },
+  async has(key) { return (await redis.exists(key)) === 1 }
+}
+
+// Generate state with optional PKCE binding
+const state = await generateState(secret, codeVerifier)
+
+// Validate (checks signature, expiry, single-use)
+const result = await validateState(state, secret)
+if (!result.valid) throw new InvalidStateError()
+
+// Or consume (validates + marks as used)
+const result = await consumeState(state, secret)
+```
+
+**Configuration** (`csrf` option in config):
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `true` | Enable CSRF protection |
+| `ttlMs` | `300000` (5 min) | State token TTL |
+| `singleUse` | `true` | Prevent replay attacks |
+| `bindToSession` | `true` | Bind to session ID |
+| `bindToUserAgent` | `true` | Bind to User-Agent hash |
+
+State payload includes: random UUID, timestamp, optional `codeVerifier` (PKCE), `sessionId`, `userAgentHash`.
+
+---
+
 ### ✅ Brute Force Protection
 
 ```ts
@@ -1592,6 +1632,202 @@ const handlers = createTypedRouteHandlers<MyConfig>()({
 
 ---
 
+## Error Handling
+
+> **New in v2.0.0** — structured error hierarchy with typed error codes for precise error handling.
+
+### Error Hierarchy
+
+All errors extend `AuthError` (extends `Error`) and expose a **machine-readable `code`** for programmatic handling.
+
+```
+AuthError (base)
+├── ConfigurationError
+│   ├── InvalidConfigError          // Invalid config value
+│   └── MissingConfigError          // Required config missing
+├── AuthFlowError
+│   ├── CsrfValidationError         // CSRF state validation failed
+│   ├── PkceValidationError         // PKCE code_verifier mismatch
+│   ├── StateMismatchError          // State token mismatch/replay
+│   └── MfaRequiredError            // MFA required but not enabled
+├── TokenError
+│   ├── TokenExchangeError          // Token exchange failed
+│   ├── TokenRefreshError           // Token refresh failed
+│   ├── TokenExpiredError           // Access/refresh token expired
+│   └── TokenRevokedError           // Token revoked by user/Discord
+├── HttpError
+│   ├── RateLimitedError            // Rate limited (429) with retry-after
+│   ├── UpstreamError               // Discord API error (5xx)
+│   └── InvalidGrantError           // Invalid grant (invalid_grant)
+├── StorageError
+│   ├── StorageReadError            // Storage read failure
+│   ├── StorageWriteError           // Storage write failure
+│   └── StorageUnavailableError     // Storage backend unavailable
+└── ValidationError
+    └── InvalidStateError           // Invalid OAuth2 state parameter
+```
+
+### Error Codes
+
+Every error exposes a stable `code: ErrorCode` for programmatic handling:
+
+| Error Class | Code | HTTP Status | Retryable |
+|-------------|------|-------------|-----------|
+| `CsrfValidationError` | `CSRF_VALIDATION_FAILED` | 400 | No |
+| `StateMismatchError` | `STATE_MISMATCH` | 400 | No |
+| `PkceValidationError` | `PKCE_VALIDATION_FAILED` | 400 | No |
+| `MfaRequiredError` | `MFA_REQUIRED` | 403 | No |
+| `TokenExchangeError` | `TOKEN_EXCHANGE_FAILED` | 400 | No |
+| `TokenRefreshError` | `TOKEN_REFRESH_FAILED` | 400 | Yes (with backoff) |
+| `TokenExpiredError` | `TOKEN_EXPIRED` | 401 | Yes (auto-refresh) |
+| `TokenRevokedError` | `TOKEN_REVOKED` | 401 | No (re-auth required) |
+| `RateLimitedError` | `RATE_LIMITED` | 429 | Yes (respect `retryAfter`) |
+| `UpstreamError` | `UPSTREAM_ERROR` | 502/503 | Yes (with backoff) |
+| `InvalidGrantError` | `INVALID_GRANT` | 400 | No |
+| `StorageReadError` | `STORAGE_READ_ERROR` | 500 | Yes (retry) |
+| `StorageWriteError` | `STORAGE_WRITE_ERROR` | 500 | Yes (retry) |
+| `StorageUnavailableError` | `STORAGE_UNAVAILABLE` | 503 | Yes (retry) |
+| `InvalidStateError` | `INVALID_STATE` | 400 | No |
+
+### Handling Errors in Callbacks
+
+```ts
+import {
+  discordAuth,
+  CsrfValidationError,
+  StateMismatchError,
+  TokenExchangeError,
+  RateLimitedError,
+  MfaRequiredError,
+  TokenExpiredError,
+  TokenRevokedError,
+  AuthError,
+  ErrorCode,
+} from "@hallaxius/auth"
+
+const auth = discordAuth({
+  // ...config
+})
+
+app.get("/auth/discord/callback", async (ctx) => {
+  try {
+    const result = await auth.handleCallback(ctx)
+    // Success — user authenticated
+    return ctx.redirect("/dashboard")
+  } catch (err) {
+    if (err instanceof AuthError) {
+      // Handle by error code for precise control
+      switch (err.code) {
+        case "CSRF_VALIDATION_FAILED":
+        case "STATE_MISMATCH":
+        case "INVALID_STATE":
+          return ctx.redirect("/login?error=invalid_session")
+        case "PKCE_VALIDATION_FAILED":
+          return ctx.redirect("/login?error=pkce_failed")
+        case "MFA_REQUIRED":
+          return ctx.redirect("/mfa-required")
+        case "TOKEN_EXCHANGE_FAILED":
+        case "INVALID_GRANT":
+          return ctx.redirect("/login?error=auth_failed")
+        case "RATE_LIMITED":
+          // Respect Discord's retry-after
+          const retryAfter = (err as RateLimitedError).retryAfter ?? 60
+          return ctx.redirect(`/login?retry_after=${retryAfter}`)
+        case "TOKEN_EXPIRED":
+        case "TOKEN_REFRESH_FAILED":
+          // Auto-refresh handles this; if it bubbles up, force re-auth
+          return ctx.redirect("/login?error=session_expired")
+        case "TOKEN_REVOKED":
+          return ctx.redirect("/login?error=revoked")
+        case "UPSTREAM_ERROR":
+          return ctx.redirect("/login?error=service_unavailable")
+        default:
+          console.error("Auth error:", err.code, err.message)
+          return ctx.redirect("/login?error=unknown")
+      }
+    }
+    throw err // Re-throw non-auth errors
+  }
+})
+```
+
+### Global Error Handler (Elysia)
+
+```ts
+import { Elysia } from "elysia"
+import { AuthError, ErrorCode, RateLimitedError } from "@hallaxius/auth"
+
+const app = new Elysia()
+  .error({
+    AUTH_ERROR: AuthError,
+    RATE_LIMITED: RateLimitedError,
+  })
+  .onError(({ code, error, set }) => {
+    if (code === "AUTH_ERROR") {
+      const authError = error as AuthError
+      const status = authError.statusCode ?? 400
+
+      set.status = status
+      return {
+        error: authError.code,
+        message: authError.message,
+        retryable: authError.retryable ?? false,
+        retryAfter: authError instanceof RateLimitedError ? authError.retryAfter : undefined,
+      }
+    }
+    if (code === "RATE_LIMITED") {
+      set.status = 429
+      set.headers["Retry-After"] = String((error as RateLimitedError).retryAfter ?? 60)
+      return { error: "RATE_LIMITED", message: "Too many requests" }
+    }
+    console.error("Unhandled error:", error)
+    set.status = 500
+    return { error: "INTERNAL_ERROR", message: "Internal server error" }
+  })
+```
+
+### Retryable Errors
+
+Errors with `retryable: true` support automatic retry with exponential backoff:
+
+```ts
+import { isRetryableError, calculateBackoff } from "@hallaxius/auth"
+
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  let lastError: Error
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastError = err as Error
+      if (!isRetryableError(err) || attempt === maxRetries) throw err
+      const delay = calculateBackoff(attempt)
+      await new Promise((r) => setTimeout(r, delay))
+    }
+  }
+  throw lastError!
+}
+```
+
+### Custom Error Handling
+
+```ts
+import { AuthError, ErrorCode } from "@hallaxius/auth"
+
+class CustomAuthError extends AuthError {
+  constructor(message: string, public readonly userId: string) {
+    super(message, "CUSTOM_AUTH_ERROR", 400, false)
+  }
+}
+
+// Throw in custom logic
+if (!user.hasPermission("admin")) {
+  throw new CustomAuthError("Admin access required", user.id)
+}
+```
+
+---
+
 ## Utility Helpers
 
 ### `generateSecureSecret(length?)`
@@ -1625,6 +1861,37 @@ try {
   }
 }
 ```
+
+---
+
+### `signTestJwt(payload, secret, exp?)`
+
+Creates a valid JWT for testing protected routes. Uses the same signing mechanism as `@elysiajs/jwt` (HS256 via `jose`).
+
+```ts
+import { signTestJwt } from "@hallaxius/auth/elysia"
+
+const token = await signTestJwt(
+  { discordId: "123", username: "test", roles: ["admin"] },
+  process.env.JWT_SECRET!,
+  "1h"
+)
+
+// Use in tests
+const res = await app.handle(
+  new Request("http://localhost/dashboard", {
+    headers: { Cookie: "discord-auth-session=" + token }
+  })
+)
+```
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `payload` | `Record<string, unknown>` | — | JWT payload (must include `discordId`) |
+| `secret` | `string` | — | JWT secret (same as session.secret) |
+| `exp` | `string \| number` | `"1h"` | Expiration (e.g., `"1h"`, `"7d"`, `3600`) |
+
+**Note:** Only exported from `@hallaxius/auth/elysia` (test utility).
 
 ---
 
@@ -1763,8 +2030,52 @@ await autoJoinGuild({
 | `revokeUserSession(discordId, storage, clientId, clientSecret)` | `Promise<void>` | Deletes user session and revokes token |
 | `syncUserRoles(discordId, guildId, botToken, storage, clientId, clientSecret)` | `Promise<string[]>` | Syncs guild roles to storage |
 | `validateConfig(config)` | `void` | Validates DiscordAuthConfig, throws `ConfigurationError` |
+| `validateState(state, secret)` | `Promise<ValidatedState>` | Validates CSRF state token |
+| `consumeState(state, secret)` | `Promise<ValidatedState>` | Validates and marks state as consumed (single-use) |
+| `generateState(secret, codeVerifier?)` | `Promise<string>` | Generates HMAC-SHA256 signed CSRF state token |
+| `generateCodeChallenge(verifier)` | `Promise<string>` | Generates S256 code_challenge from code_verifier |
+| `generateCodeVerifier()` | `string` | Generates random code_verifier (43-char base64url) |
+| `generatePKCE()` | `Promise<PKCEParams>` | Generates code_verifier + code_challenge pair |
+| `processConfig(config)` | `InternalConfig` | Processes and validates DiscordAuthConfig |
+| `createTypedRouteHandlers()` | `TypedRouteHandlers<Config>` | Factory for type-safe custom route handlers |
+
+### Error Classes
+
+All error classes extend `DiscordAuthError` with properties: `code`, `message`, `cause?`, `statusCode?`.
+
+| Class | Code | HTTP Status | Description |
+|-------|------|-------------|-------------|
+| `ConfigurationError` | `CONFIGURATION_ERROR` | 500 | Invalid configuration |
+| `InvalidStateError` | `INVALID_STATE` | 403 | Invalid CSRF state parameter |
+| `ExpiredStateError` | `EXPIRED_STATE` | 403 | State token expired (5 min TTL) |
+| `StateReusedError` | `STATE_REUSED` | 403 | State token already consumed |
+| `StateBindingError` | `STATE_BINDING_FAILED` | 403 | Session/User-Agent binding validation failed |
+| `InvalidCodeError` | `INVALID_CODE` | 400 | Invalid OAuth2 authorization code |
+| `InvalidTokenError` | `INVALID_TOKEN` | 401 | Invalid session/JWT token |
+| `TokenExpiredError` | `TOKEN_EXPIRED` | 401 | Token has expired |
+| `TokenRevokedError` | `TOKEN_REVOKED` | 401 | Token has been revoked |
+| `RateLimitError` | `RATE_LIMITED` | 429 | Discord API rate limit exceeded |
+| `NetworkError` | `NETWORK_ERROR` | — | Network request failed |
+| `StorageError` | `STORAGE_ERROR` | 500 | Storage operation failed |
+| `GuildJoinError` | `GUILD_JOIN_ERROR` | 400 | Failed to add member to guild |
+| `GuildSyncError` | `GUILD_SYNC_ERROR` | 500 | Failed to sync guild roles |
+| `PKCEError` | `PKCE_ERROR` | 400 | PKCE operation failed |
+| `MfaRequiredError` | `MFA_REQUIRED` | 403 | Multi-factor authentication required |
+| `BruteForceBlockedError` | `BRUTE_FORCE_BLOCKED` | 429 | Too many failed attempts, IP blocked |
+
+#### Helper Functions
+
+| Function | Returns | Description |
+|--------|---------|-------------|
+| `isDiscordAuthError(error)` | `boolean` | Type guard for `DiscordAuthError` hierarchy |
+| `getErrorCode(error)` | `string \| undefined` | Extracts error code string |
 
 ### Classes
+
+| Class | Description |
+|-------|-------------|
+| `Discord` | Elysia wrapper class with fluent API. See [Elysia Plugin — Class Wrapper](#new-discordconfig--class-wrapper). |
+| `DiscordClient` | Discord API client with methods for OAuth2, user info, and guild management. |
 
 #### Discord
 
@@ -2001,9 +2312,18 @@ try {
 
 ## Migration Guide
 
+### Version History
+
+| Version | Description |
+|---------|-------------|
+| **v2.0.0** | Current — Elysia plugin moved to sub-path, peer deps removed, 6 new security features |
+| **v1.1.0** | Added presets (spa, server, nextjs, edge), factory pattern |
+| **v1.0.0** | Initial release with PKCE, JWT/Server sessions, auto-refresh, token revocation |
+| **v0.x** | Pre-1.0 versions |
+
 ### v1.x → v2.0.0 (Breaking Changes)
 
-This major version introduces important architecture and security improvements.
+See [Version History](#version-history) for full timeline. This major version introduces important architecture and security improvements.
 
 #### 🔴 Breaking Changes
 

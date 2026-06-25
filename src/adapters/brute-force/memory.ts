@@ -25,7 +25,10 @@ export class MemoryBruteForceStorage implements BruteForceStorage {
 		for (const [key, entry] of this.store.entries()) {
 			if (entry.blockedUntil && entry.blockedUntil < now) {
 				this.store.delete(key);
-			} else if (!entry.blockedUntil && entry.windowStart + 24 * 60 * 60 * 1000 < now) {
+			} else if (
+				!entry.blockedUntil &&
+				entry.windowStart + 24 * 60 * 60 * 1000 < now
+			) {
 				this.store.delete(key);
 			}
 		}
@@ -35,7 +38,7 @@ export class MemoryBruteForceStorage implements BruteForceStorage {
 		const now = Date.now();
 		const entry = this.store.get(key);
 
-		if (entry && entry.blockedUntil && entry.blockedUntil > now) {
+		if (entry?.blockedUntil && entry.blockedUntil > now) {
 			return entry.count;
 		}
 
@@ -51,7 +54,7 @@ export class MemoryBruteForceStorage implements BruteForceStorage {
 
 	async isBlocked(key: string): Promise<boolean> {
 		const entry = this.store.get(key);
-		if (!entry || !entry.blockedUntil) return false;
+		if (!entry?.blockedUntil) return false;
 
 		const now = Date.now();
 		if (entry.blockedUntil < now) {
@@ -73,7 +76,11 @@ export class MemoryBruteForceStorage implements BruteForceStorage {
 			entry.blockedUntil = now + durationMs;
 			this.store.set(key, entry);
 		} else {
-			this.store.set(key, { count: 1, windowStart: now, blockedUntil: now + durationMs });
+			this.store.set(key, {
+				count: 1,
+				windowStart: now,
+				blockedUntil: now + durationMs,
+			});
 		}
 	}
 

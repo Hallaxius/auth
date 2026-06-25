@@ -1,21 +1,21 @@
-import { expectTypeOf, describe, it } from "bun:test";
+import { describe, expectTypeOf, it } from "bun:test";
 import type {
-	DiscordAuthConfig,
-	DiscordScope,
-	InternalConfig,
-	SessionConfig,
-	CallbackQuery,
-	LoginQuery,
-	ErrorQuery,
-} from "../types";
-import type {
-	InferScopes,
 	CallbackContext,
+	InferScopes,
 	LoginContext,
 	TypedCallbackQuery,
 	TypedErrorQuery,
 	TypedRouteHandlers,
 } from "../route-helpers";
+import type {
+	CallbackQuery,
+	DiscordAuthConfig,
+	DiscordScope,
+	ErrorQuery,
+	InternalConfig,
+	LoginQuery,
+	SessionConfig,
+} from "../types";
 
 describe("route-helpers type tests", () => {
 	it("should infer scopes from config", () => {
@@ -55,7 +55,9 @@ describe("route-helpers type tests", () => {
 		};
 
 		type Ctx = LoginContext<Config>;
-		expectTypeOf<Ctx["scopes"]>().toEqualTypeOf<["identify", "guilds", "connections"]>();
+		expectTypeOf<Ctx["scopes"]>().toEqualTypeOf<
+			["identify", "guilds", "connections"]
+		>();
 		expectTypeOf<Ctx["config"]>().toEqualTypeOf<InternalConfig>();
 		expectTypeOf<Ctx["client"]>().not.toBeNever();
 	});
@@ -77,7 +79,9 @@ describe("route-helpers type tests", () => {
 			| (string & {})
 			| undefined
 		>();
-		expectTypeOf<Query["error_description"]>().toEqualTypeOf<string | undefined>();
+		expectTypeOf<Query["error_description"]>().toEqualTypeOf<
+			string | undefined
+		>();
 	});
 
 	it("should type error query with required OAuth2 error code", () => {
@@ -94,7 +98,9 @@ describe("route-helpers type tests", () => {
 			| "invalid_token"
 			| (string & {})
 		>();
-		expectTypeOf<Query["error_description"]>().toEqualTypeOf<string | undefined>();
+		expectTypeOf<Query["error_description"]>().toEqualTypeOf<
+			string | undefined
+		>();
 	});
 
 	it("should type callback route handler signature", () => {
@@ -102,8 +108,14 @@ describe("route-helpers type tests", () => {
 			scopes: ["identify", "email"];
 		};
 
-		type Handler = (query: TypedCallbackQuery, ctx: CallbackContext<Config>) => Promise<Response>;
-		type Expected = (query: CallbackQuery, ctx: CallbackContext<Config>) => Promise<Response>;
+		type Handler = (
+			query: TypedCallbackQuery,
+			ctx: CallbackContext<Config>,
+		) => Promise<Response>;
+		type Expected = (
+			query: CallbackQuery,
+			ctx: CallbackContext<Config>,
+		) => Promise<Response>;
 		expectTypeOf<Handler>().toEqualTypeOf<Expected>();
 	});
 
@@ -112,8 +124,14 @@ describe("route-helpers type tests", () => {
 			scopes: ["identify", "guilds"];
 		};
 
-		type Handler = (query: LoginQuery, ctx: LoginContext<Config>) => Promise<Response>;
-		type Expected = (query: LoginQuery, ctx: LoginContext<Config>) => Promise<Response>;
+		type Handler = (
+			query: LoginQuery,
+			ctx: LoginContext<Config>,
+		) => Promise<Response>;
+		type Expected = (
+			query: LoginQuery,
+			ctx: LoginContext<Config>,
+		) => Promise<Response>;
 		expectTypeOf<Handler>().toEqualTypeOf<Expected>();
 	});
 
@@ -122,8 +140,14 @@ describe("route-helpers type tests", () => {
 			scopes: ["identify"];
 		};
 
-		type Handler = (query: TypedErrorQuery, ctx: { config: InternalConfig }) => Promise<Response>;
-		type Expected = (query: ErrorQuery, ctx: { config: InternalConfig }) => Promise<Response>;
+		type Handler = (
+			query: TypedErrorQuery,
+			ctx: { config: InternalConfig },
+		) => Promise<Response>;
+		type Expected = (
+			query: ErrorQuery,
+			ctx: { config: InternalConfig },
+		) => Promise<Response>;
 		expectTypeOf<Handler>().toEqualTypeOf<Expected>();
 	});
 
@@ -185,7 +209,9 @@ describe("route-helpers type tests", () => {
 		};
 
 		type Scopes = InferScopes<CustomConfig>;
-		expectTypeOf<Scopes>().toEqualTypeOf<["identify", "email", "guilds", "connections"]>();
+		expectTypeOf<Scopes>().toEqualTypeOf<
+			["identify", "email", "guilds", "connections"]
+		>();
 	});
 
 	it("should export all query types", () => {

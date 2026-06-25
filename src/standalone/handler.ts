@@ -1,17 +1,22 @@
-import type { DiscordClient } from "../core/client";
-import { GuildRoleSync } from "../core/guild-sync";
+import { MemoryBruteForceStorage } from "../adapters/brute-force";
 import { MemoryCacheAdapter } from "../adapters/cache";
+import { BruteForceProtection } from "../core/brute-force";
+import type { DiscordClient } from "../core/client";
 import { generatePKCE } from "../core/config";
 import {
+	DiscordAuthError,
+	MfaRequiredError,
+	StateBindingError,
+	StateReusedError,
+} from "../core/errors";
+import { GuildRoleSync } from "../core/guild-sync";
+import {
+	consumeState,
 	generateState,
+	MemoryStateStore,
 	type ValidatedState,
 	validateState,
-	consumeState,
-	MemoryStateStore,
 } from "../core/state";
-import { StateReusedError, StateBindingError, DiscordAuthError, BruteForceBlockedError } from "../core/errors";
-import { BruteForceProtection } from "../core/brute-force";
-import { MemoryBruteForceStorage } from "../adapters/brute-force";
 import type {
 	DiscordTokenResponse,
 	DiscordUser,
@@ -22,7 +27,6 @@ import type {
 } from "../core/types";
 import { clearSessionCookie, parseCookies, setSessionCookie } from "./cookies";
 import { signToken, verifyToken } from "./jwt";
-import { MfaRequiredError } from "../core/errors";
 
 const stateStore = new MemoryStateStore();
 
@@ -80,10 +84,32 @@ function jsonResponse(data: unknown, status = 200): Response {
 
 export function createHandlers(ctx: HandlerContext) {
 	const { config, client, storage } = ctx;
-	const sessionCookieName = config.session.cookieName;
 
-	const bruteForceStorage = config.bruteForce.storage ?? new MemoryBruteForceStorage();
-	const bruteForce = new BruteForceProtection(config.bruteForce, bruteForceStorage);
+	const cookieName = config.session.cookieName ?? "discord-auth-session";
+	const cookiePath = config.session.cookiePath ?? "/";
+	const sameSite = config.session.sameSite ?? "lax";
+	const secure = config.session.secure ?? false;
+	const httpOnly = config.session.httpOnly ?? true;
+
+	const sessionCookieName = cookieName;
+
+	const sessionConfig = {
+		cookieName,
+		cookiePath,
+		sameSite,
+		secure,
+		httpOnly,
+		secret: config.session.secret,
+		type: config.session.type,
+		expiresIn: config.session.expiresIn,
+	};
+
+	const bruteForceStorage =
+		config.bruteForce.storage ?? new MemoryBruteForceStorage();
+	const _bruteForce = new BruteForceProtection(
+		config.bruteForce,
+		bruteForceStorage,
+	);
 
 	async function handleLogin(request: Request): Promise<Response> {
 		const pkceEnabled = !config.disablePKCE;
@@ -120,7 +146,7 @@ export function createHandlers(ctx: HandlerContext) {
 			const pkceCookie = setSessionCookie(
 				"discord-auth-pkce-verifier",
 				codeVerifier,
-				{ ...config.session, expiresIn: 600 }, // 10 minutes
+				{ ...sessionConfig, expiresIn: 600 }, // 10 minutes
 			);
 			responseCookies.push(pkceCookie);
 		}
@@ -135,7 +161,10 @@ export function createHandlers(ctx: HandlerContext) {
 			codeChallengeMethod: pkceEnabled ? "S256" : undefined,
 		});
 
-		return redirectResponse(url, responseCookies.length > 0 ? responseCookies : undefined);
+		return redirectResponse(
+			url,
+			responseCookies.length > 0 ? responseCookies : undefined,
+		);
 	}
 
 	async function handleCallback(request: Request): Promise<Response> {
@@ -178,9 +207,15 @@ export function createHandlers(ctx: HandlerContext) {
 				if (parts.length === 2) {
 					try {
 						const [encoded] = parts;
-						const decoded = new TextDecoder().decode(new Uint8Array(atob(encoded.replace(/-/g, "+").replace(/_/g, "/")).split("").map(c => c.charCodeAt(0))));
+						const decoded = new TextDecoder().decode(
+							new Uint8Array(
+								atob(encoded.replace(/-/g, "+").replace(/_/g, "/"))
+									.split("")
+									.map((c) => c.charCodeAt(0)),
+							),
+						);
 						const payload = JSON.parse(decoded);
-						if (payload.id && await stateStore.has(payload.id)) {
+						if (payload.id && (await stateStore.has(payload.id))) {
 							csrfError = new StateReusedError();
 						} else {
 							csrfError = new StateBindingError();
@@ -202,7 +237,10 @@ export function createHandlers(ctx: HandlerContext) {
 
 		if (csrfError) {
 			await config.callbacks.onError(csrfError, "callback");
-			const statusCode = csrfError instanceof DiscordAuthError ? (csrfError.statusCode ?? 403) : 403;
+			const statusCode =
+				csrfError instanceof DiscordAuthError
+					? (csrfError.statusCode ?? 403)
+					: 403;
 			return htmlResponse(csrfError.message, statusCode);
 		}
 
@@ -282,12 +320,17 @@ export function createHandlers(ctx: HandlerContext) {
 				client,
 				new MemoryCacheAdapter(),
 			);
-			syncedPermissions = await guildSync.syncUserRoles(user.id, tokens.access_token);
+			syncedPermissions = await guildSync.syncUserRoles(
+				user.id,
+				tokens.access_token,
+			);
 
 			if (storage && syncedPermissions.length > 0) {
 				const storedUser = await storage.findByDiscordId(user.id);
 				if (storedUser) {
-					const mergedRoles = Array.from(new Set([...storedUser.roles, ...syncedPermissions]));
+					const mergedRoles = Array.from(
+						new Set([...storedUser.roles, ...syncedPermissions]),
+					);
 					await storage.update(user.id, { roles: mergedRoles });
 				}
 			}
@@ -319,7 +362,11 @@ export function createHandlers(ctx: HandlerContext) {
 			config.session.expiresIn ?? "7d",
 		);
 
-		const cookie = setSessionCookie(sessionCookieName, sessionToken, config.session);
+		const cookie = setSessionCookie(
+			sessionCookieName,
+			sessionToken,
+			sessionConfig,
+		);
 
 		if (config.callbacks.onSuccess) {
 			const result = await config.callbacks.onSuccess(user, tokens);
@@ -363,8 +410,8 @@ export function createHandlers(ctx: HandlerContext) {
 
 		// Clear cookies
 		const clearCookies: string[] = [
-			clearSessionCookie(sessionCookieName, config.session),
-			clearSessionCookie("discord-auth-pkce-verifier", config.session),
+			clearSessionCookie(sessionCookieName, sessionConfig),
+			clearSessionCookie("discord-auth-pkce-verifier", sessionConfig),
 		];
 
 		return redirectResponse("/", clearCookies);
