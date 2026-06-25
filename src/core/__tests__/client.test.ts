@@ -32,9 +32,15 @@ function mockFetch(
 	}) as unknown as typeof globalThis.fetch;
 }
 
-function createSequentialMockFetch(responses: Array<{ response: unknown; status: number; headers?: Record<string, string> }>) {
+function createSequentialMockFetch(
+	responses: Array<{
+		response: unknown;
+		status: number;
+		headers?: Record<string, string>;
+	}>,
+) {
 	let callIndex = 0;
-	globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+	globalThis.fetch = mock(async (_input: RequestInfo | URL) => {
 		const response = responses[callIndex] ?? responses[responses.length - 1];
 		callIndex++;
 		return {
@@ -48,7 +54,10 @@ function createSequentialMockFetch(responses: Array<{ response: unknown; status:
 }
 
 function getFetchCallCount() {
-	return (globalThis.fetch as unknown as { mock: { calls: unknown[] } }).mock?.calls?.length ?? 0;
+	return (
+		(globalThis.fetch as unknown as { mock: { calls: unknown[] } }).mock?.calls
+			?.length ?? 0
+	);
 }
 
 describe("DiscordClient", () => {
@@ -356,7 +365,9 @@ describe("DiscordClient", () => {
 	describe("fetchWithAutoRefresh", () => {
 		it("executes requestFn with access token on success", async () => {
 			const client = new DiscordClient(CLIENT_ID, CLIENT_SECRET);
-			createSequentialMockFetch([{ response: { data: "success" }, status: 200 }]);
+			createSequentialMockFetch([
+				{ response: { data: "success" }, status: 200 },
+			]);
 
 			const result = await client.fetchWithAutoRefresh(
 				"access-token",
@@ -376,7 +387,16 @@ describe("DiscordClient", () => {
 			const client = new DiscordClient(CLIENT_ID, CLIENT_SECRET);
 			createSequentialMockFetch([
 				{ response: { message: "Token expired", code: 50001 }, status: 401 },
-				{ response: { access_token: "new-access-token", token_type: "Bearer", expires_in: 604800, refresh_token: "new-refresh-token", scope: "identify" }, status: 200 },
+				{
+					response: {
+						access_token: "new-access-token",
+						token_type: "Bearer",
+						expires_in: 604800,
+						refresh_token: "new-refresh-token",
+						scope: "identify",
+					},
+					status: 200,
+				},
 				{ response: { data: "success after refresh" }, status: 200 },
 			]);
 
@@ -389,7 +409,12 @@ describe("DiscordClient", () => {
 					});
 					if (!res.ok) {
 						const err = await res.json();
-						const error = new Error("Failed") as Error & { status: number; response: { json: () => Promise<{ message: string; code: number }> } };
+						const error = new Error("Failed") as Error & {
+							status: number;
+							response: {
+								json: () => Promise<{ message: string; code: number }>;
+							};
+						};
 						error.status = res.status;
 						error.response = { json: async () => err };
 						throw error;
@@ -420,7 +445,12 @@ describe("DiscordClient", () => {
 						});
 						if (!res.ok) {
 							const err = await res.json();
-							const error = new Error("Failed") as Error & { status: number; response: { json: () => Promise<{ message: string; code: number }> } };
+							const error = new Error("Failed") as Error & {
+								status: number;
+								response: {
+									json: () => Promise<{ message: string; code: number }>;
+								};
+							};
 							error.status = res.status;
 							error.response = { json: async () => err };
 							throw error;
@@ -452,7 +482,12 @@ describe("DiscordClient", () => {
 						});
 						if (!res.ok) {
 							const err = await res.json();
-							const error = new Error("Failed") as Error & { status: number; response: { json: () => Promise<{ message: string; code: number }> } };
+							const error = new Error("Failed") as Error & {
+								status: number;
+								response: {
+									json: () => Promise<{ message: string; code: number }>;
+								};
+							};
 							error.status = res.status;
 							error.response = { json: async () => err };
 							throw error;
@@ -469,7 +504,9 @@ describe("DiscordClient", () => {
 
 		it("does not retry on non-expired 401 error", async () => {
 			const client = new DiscordClient(CLIENT_ID, CLIENT_SECRET);
-			createSequentialMockFetch([{ response: { message: "Invalid token", code: 50014 }, status: 401 }]);
+			createSequentialMockFetch([
+				{ response: { message: "Invalid token", code: 50014 }, status: 401 },
+			]);
 
 			await expect(
 				client.fetchWithAutoRefresh(
@@ -481,7 +518,12 @@ describe("DiscordClient", () => {
 						});
 						if (!res.ok) {
 							const err = await res.json();
-							const error = new Error("Failed") as Error & { status: number; response: { json: () => Promise<{ message: string; code: number }> } };
+							const error = new Error("Failed") as Error & {
+								status: number;
+								response: {
+									json: () => Promise<{ message: string; code: number }>;
+								};
+							};
 							error.status = res.status;
 							error.response = { json: async () => err };
 							throw error;
@@ -497,7 +539,12 @@ describe("DiscordClient", () => {
 
 		it("does not retry on 403 without expired error", async () => {
 			const client = new DiscordClient(CLIENT_ID, CLIENT_SECRET);
-			createSequentialMockFetch([{ response: { message: "Missing permissions", code: 50013 }, status: 403 }]);
+			createSequentialMockFetch([
+				{
+					response: { message: "Missing permissions", code: 50013 },
+					status: 403,
+				},
+			]);
 
 			await expect(
 				client.fetchWithAutoRefresh(
@@ -509,7 +556,12 @@ describe("DiscordClient", () => {
 						});
 						if (!res.ok) {
 							const err = await res.json();
-							const error = new Error("Failed") as Error & { status: number; response: { json: () => Promise<{ message: string; code: number }> } };
+							const error = new Error("Failed") as Error & {
+								status: number;
+								response: {
+									json: () => Promise<{ message: string; code: number }>;
+								};
+							};
 							error.status = res.status;
 							error.response = { json: async () => err };
 							throw error;
@@ -527,7 +579,16 @@ describe("DiscordClient", () => {
 			const client = new DiscordClient(CLIENT_ID, CLIENT_SECRET);
 			createSequentialMockFetch([
 				{ response: { message: "Token expired", code: 50001 }, status: 403 },
-				{ response: { access_token: "new-access-token", token_type: "Bearer", expires_in: 604800, refresh_token: "new-refresh-token", scope: "identify" }, status: 200 },
+				{
+					response: {
+						access_token: "new-access-token",
+						token_type: "Bearer",
+						expires_in: 604800,
+						refresh_token: "new-refresh-token",
+						scope: "identify",
+					},
+					status: 200,
+				},
 				{ response: { data: "success after refresh" }, status: 200 },
 			]);
 
@@ -540,7 +601,12 @@ describe("DiscordClient", () => {
 					});
 					if (!res.ok) {
 						const err = await res.json();
-						const error = new Error("Failed") as Error & { status: number; response: { json: () => Promise<{ message: string; code: number }> } };
+						const error = new Error("Failed") as Error & {
+							status: number;
+							response: {
+								json: () => Promise<{ message: string; code: number }>;
+							};
+						};
 						error.status = res.status;
 						error.response = { json: async () => err };
 						throw error;

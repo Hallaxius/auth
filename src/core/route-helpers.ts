@@ -10,22 +10,27 @@ import type {
 	UserStorage,
 } from "./types";
 
-export type InferScopes<Config extends DiscordAuthConfig> = Config["scopes"] extends readonly DiscordScope[]
-	? Config["scopes"]
-	: DiscordScope[];
+export type InferScopes<Config extends DiscordAuthConfig> =
+	Config["scopes"] extends readonly DiscordScope[]
+		? Config["scopes"]
+		: DiscordScope[];
 
 export type CallbackContext<Config extends DiscordAuthConfig> = {
 	config: InternalConfig;
 	client: DiscordClient;
 	sessionAdapter: SessionAdapter;
 	storage?: UserStorage;
-	scopes: Config["scopes"] extends readonly DiscordScope[] ? Config["scopes"] : DiscordScope[];
+	scopes: Config["scopes"] extends readonly DiscordScope[]
+		? Config["scopes"]
+		: DiscordScope[];
 };
 
 export type LoginContext<Config extends DiscordAuthConfig> = {
 	config: InternalConfig;
 	client: DiscordClient;
-	scopes: Config["scopes"] extends readonly DiscordScope[] ? Config["scopes"] : DiscordScope[];
+	scopes: Config["scopes"] extends readonly DiscordScope[]
+		? Config["scopes"]
+		: DiscordScope[];
 };
 
 export type OAuth2ErrorCode =
@@ -49,15 +54,27 @@ export type TypedErrorQuery = ErrorQuery & {
 };
 
 export interface TypedRouteHandlers<Config extends DiscordAuthConfig> {
-	callback: (query: TypedCallbackQuery, ctx: CallbackContext<Config>) => Promise<Response>;
+	callback: (
+		query: TypedCallbackQuery,
+		ctx: CallbackContext<Config>,
+	) => Promise<Response>;
 	login: (query: LoginQuery, ctx: LoginContext<Config>) => Promise<Response>;
-	error: (query: TypedErrorQuery, ctx: { config: InternalConfig }) => Promise<Response>;
+	error: (
+		query: TypedErrorQuery,
+		ctx: { config: InternalConfig },
+	) => Promise<Response>;
 }
 
 export function createTypedCallbackRoute<Config extends DiscordAuthConfig>(
-	handler: (query: TypedCallbackQuery, ctx: CallbackContext<Config>) => Promise<Response>,
+	handler: (
+		query: TypedCallbackQuery,
+		ctx: CallbackContext<Config>,
+	) => Promise<Response>,
 ) {
-	return async (query: CallbackQuery, ctx: CallbackContext<Config>): Promise<Response> => {
+	return async (
+		query: CallbackQuery,
+		ctx: CallbackContext<Config>,
+	): Promise<Response> => {
 		const typedQuery: TypedCallbackQuery = {
 			code: query.code,
 			state: query.state,
@@ -71,15 +88,24 @@ export function createTypedCallbackRoute<Config extends DiscordAuthConfig>(
 export function createTypedLoginRoute<Config extends DiscordAuthConfig>(
 	handler: (query: LoginQuery, ctx: LoginContext<Config>) => Promise<Response>,
 ) {
-	return async (query: LoginQuery, ctx: LoginContext<Config>): Promise<Response> => {
+	return async (
+		query: LoginQuery,
+		ctx: LoginContext<Config>,
+	): Promise<Response> => {
 		return handler(query, ctx);
 	};
 }
 
-export function createTypedErrorRoute<Config extends DiscordAuthConfig>(
-	handler: (query: TypedErrorQuery, ctx: { config: InternalConfig }) => Promise<Response>,
+export function createTypedErrorRoute<_Config extends DiscordAuthConfig>(
+	handler: (
+		query: TypedErrorQuery,
+		ctx: { config: InternalConfig },
+	) => Promise<Response>,
 ) {
-	return async (query: ErrorQuery, ctx: { config: InternalConfig }): Promise<Response> => {
+	return async (
+		query: ErrorQuery,
+		ctx: { config: InternalConfig },
+	): Promise<Response> => {
 		const typedQuery: TypedErrorQuery = {
 			error: query.error as OAuth2ErrorCode,
 			error_description: query.error_description,
@@ -89,9 +115,18 @@ export function createTypedErrorRoute<Config extends DiscordAuthConfig>(
 }
 
 export function createTypedRouteHandlers<Config extends DiscordAuthConfig>(
-	callbackHandler: (query: TypedCallbackQuery, ctx: CallbackContext<Config>) => Promise<Response>,
-	loginHandler: (query: LoginQuery, ctx: LoginContext<Config>) => Promise<Response>,
-	errorHandler: (query: TypedErrorQuery, ctx: { config: InternalConfig }) => Promise<Response>,
+	callbackHandler: (
+		query: TypedCallbackQuery,
+		ctx: CallbackContext<Config>,
+	) => Promise<Response>,
+	loginHandler: (
+		query: LoginQuery,
+		ctx: LoginContext<Config>,
+	) => Promise<Response>,
+	errorHandler: (
+		query: TypedErrorQuery,
+		ctx: { config: InternalConfig },
+	) => Promise<Response>,
 ): TypedRouteHandlers<Config> {
 	return {
 		callback: createTypedCallbackRoute(callbackHandler),
@@ -100,4 +135,4 @@ export function createTypedRouteHandlers<Config extends DiscordAuthConfig>(
 	};
 }
 
-export type { CallbackQuery, LoginQuery, ErrorQuery } from "./types";
+export type { CallbackQuery, ErrorQuery, LoginQuery } from "./types";

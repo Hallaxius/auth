@@ -1,8 +1,8 @@
+import { MemoryBruteForceStorage } from "../adapters/brute-force";
 import type { BruteForceConfig, BruteForceStorage } from "./types";
-import { BruteForceBlockedError } from "./errors";
 
 export class BruteForceProtection {
-	private config: Required<BruteForceConfig>;
+	private config: Required<Omit<BruteForceConfig, "storage">>;
 	private storage: BruteForceStorage;
 
 	constructor(config: BruteForceConfig, storage?: BruteForceStorage) {
@@ -11,9 +11,8 @@ export class BruteForceProtection {
 			maxAttempts: config.maxAttempts ?? 5,
 			windowMs: config.windowMs ?? 15 * 60 * 1000,
 			blockDurationMs: config.blockDurationMs ?? 30 * 60 * 1000,
-			storage: config.storage,
 		};
-		this.storage = storage ?? this.config.storage!;
+		this.storage = storage ?? config.storage ?? new MemoryBruteForceStorage();
 	}
 
 	async recordAttempt(key: string, success: boolean): Promise<void> {
@@ -53,7 +52,8 @@ export class BruteForceProtection {
 			request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
 			request.headers.get("x-real-ip") ??
 			"unknown";
-		const userAgent = request.headers.get("user-agent")?.slice(0, 50) ?? "unknown";
+		const userAgent =
+			request.headers.get("user-agent")?.slice(0, 50) ?? "unknown";
 		return `${ip}:${userAgent}`;
 	}
 }

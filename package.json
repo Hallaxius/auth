@@ -1,7 +1,7 @@
 {
   "name": "@hallaxius/auth",
   "version": "2.0.0",
-	"description": "Plug-and-play Discord OAuth2 authentication for Bun. Session management, route guards, and Discord API integration.",
+  "description": "Plug-and-play Discord OAuth2 authentication for Bun. Session management, route guards, and Discord API integration.",
   "author": {
     "name": "hallaxius",
     "url": "https://github.com/hallaxius"
@@ -9,16 +9,16 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-	"exports": {
-		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js"
-		},
-		"./elysia": {
-			"types": "./dist/elysia/plugin.d.ts",
-			"import": "./dist/elysia/plugin.js"
-		}
-	},
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./elysia": {
+      "types": "./dist/elysia/plugin.d.ts",
+      "import": "./dist/elysia/plugin.js"
+    }
+  },
   "files": [
     "dist"
   ],
@@ -32,19 +32,16 @@
     "test:watch": "bun test --watch",
     "prepublish": "bun run lint && bun run build && bun test"
   },
-	"peerDependencies": {},
-	"dependencies": {
-		"jose": "^6.2.3"
-	},
+  "peerDependencies": {},
+  "dependencies": {
+    "@elysiajs/jwt": "^1.4.2",
+    "elysia": "^1.4.29",
+    "jose": "^6.2.3"
+  },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",
-    "@semantic-release/commit-analyzer": "^13.0.1",
-    "@semantic-release/github": "^12.0.8",
-    "@semantic-release/npm": "^13.1.5",
-    "@semantic-release/release-notes-generator": "^14.1.1",
     "@types/bun": "^1.3.14",
     "bun-types": "latest",
-    "semantic-release": "^25.0.5",
     "typescript": "^5.9.0"
   },
   "keywords": [
@@ -78,11 +75,5 @@
     "type": "git",
     "url": "https://github.com/hallaxius/auth.git"
   },
-  "homepage": "https://github.com/hallaxius/auth",
-  "release": {
-    "branches": [
-      "main"
-    ],
-    "initialVersion": "2.0.0"
-  }
+  "homepage": "https://github.com/hallaxius/auth"
 }

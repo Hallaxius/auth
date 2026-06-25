@@ -1,5 +1,5 @@
+import type { CacheAdapter } from "../adapters/cache";
 import type { DiscordClient } from "./client";
-import type { CacheAdapter, CacheEntry } from "../adapters/cache";
 import type { GuildRoleSyncConfig } from "./types";
 
 export interface CachedGuildData {
@@ -13,7 +13,11 @@ export class GuildRoleSync {
 	private client: DiscordClient;
 	private cache: CacheAdapter;
 
-	constructor(config: GuildRoleSyncConfig, client: DiscordClient, cache: CacheAdapter) {
+	constructor(
+		config: GuildRoleSyncConfig,
+		client: DiscordClient,
+		cache: CacheAdapter,
+	) {
 		this.config = config;
 		this.client = client;
 		this.cache = cache;
@@ -23,7 +27,7 @@ export class GuildRoleSync {
 		return `guild:${this.config.guildId}:user:${userId}`;
 	}
 
-	async syncUserRoles(userId: string, accessToken: string): Promise<string[]> {
+	async syncUserRoles(userId: string, _accessToken: string): Promise<string[]> {
 		const cacheKey = this.getCacheKey(userId);
 
 		const cached = await this.cache.get(cacheKey);

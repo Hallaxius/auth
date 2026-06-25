@@ -3,13 +3,13 @@ import type { DiscordClient } from "../core/client";
 import { TokenExpiredError } from "../core/errors";
 import type {
 	AutoRefreshConfig,
+	GuildRoleSyncConfig,
 	SessionAdapter,
 	SessionData,
 	SessionType,
 	StoredUser,
 	UserStorage,
 } from "../core/types";
-import type { GuildRoleSyncConfig } from "../core/types";
 
 export interface GuardDeps {
 	sessionType: SessionType;
@@ -55,7 +55,11 @@ type GuardResolveContext = {
 };
 
 export function createAuthGuard(deps: GuardDeps) {
-	const autoRefresh = deps.autoRefresh ?? { enabled: true, thresholdSeconds: 300, maxRetries: 1 };
+	const autoRefresh = deps.autoRefresh ?? {
+		enabled: true,
+		thresholdSeconds: 300,
+		maxRetries: 1,
+	};
 	return {
 		async resolve({ jwt, cookie, status }: GuardResolveContext) {
 			const sessionCookie = cookie[deps.cookieName];
@@ -106,13 +110,20 @@ export function createAuthGuard(deps: GuardDeps) {
 			}
 
 			let storedUser: StoredUser | null = null;
-			if (deps.storage && deps.client && deps.clientId && deps.clientSecret && autoRefresh.enabled) {
+			if (
+				deps.storage &&
+				deps.client &&
+				deps.clientId &&
+				deps.clientSecret &&
+				autoRefresh.enabled
+			) {
 				storedUser = await deps.storage.findByDiscordId(userData.discordId);
 
 				// Auto-refresh: thresholdSeconds before token expires
 				if (
 					storedUser &&
-					storedUser.tokenExpiresAt < Math.floor(Date.now() / 1000) + autoRefresh.thresholdSeconds
+					storedUser.tokenExpiresAt <
+						Math.floor(Date.now() / 1000) + autoRefresh.thresholdSeconds
 				) {
 					try {
 						const newTokens = await deps.client.refreshToken({
@@ -167,7 +178,11 @@ export function createAuthGuard(deps: GuardDeps) {
 }
 
 export function createOptionalAuthGuard(deps: GuardDeps) {
-	const autoRefresh = deps.autoRefresh ?? { enabled: true, thresholdSeconds: 300, maxRetries: 1 };
+	const autoRefresh = deps.autoRefresh ?? {
+		enabled: true,
+		thresholdSeconds: 300,
+		maxRetries: 1,
+	};
 	return {
 		async resolve({ jwt, cookie }: GuardResolveContext) {
 			const sessionCookie = cookie[deps.cookieName];
@@ -218,13 +233,20 @@ export function createOptionalAuthGuard(deps: GuardDeps) {
 			}
 
 			let storedUser: StoredUser | null = null;
-			if (deps.storage && deps.client && deps.clientId && deps.clientSecret && autoRefresh.enabled) {
+			if (
+				deps.storage &&
+				deps.client &&
+				deps.clientId &&
+				deps.clientSecret &&
+				autoRefresh.enabled
+			) {
 				storedUser = await deps.storage.findByDiscordId(userData.discordId);
 
 				// Auto-refresh: thresholdSeconds before token expires
 				if (
 					storedUser &&
-					storedUser.tokenExpiresAt < Math.floor(Date.now() / 1000) + autoRefresh.thresholdSeconds
+					storedUser.tokenExpiresAt <
+						Math.floor(Date.now() / 1000) + autoRefresh.thresholdSeconds
 				) {
 					try {
 						const newTokens = await deps.client.refreshToken({

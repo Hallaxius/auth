@@ -1,8 +1,3 @@
-import {
-	generateCodeChallenge,
-	generateCodeVerifier,
-	isValidCodeVerifier,
-} from "./config";
 import { RateLimitError, TokenExpiredError } from "./errors";
 import type {
 	AddMemberParams,
@@ -12,7 +7,6 @@ import type {
 	DiscordTokenResponse,
 	DiscordUser,
 	OAuth2UrlParams,
-	PKCEParams,
 	RefreshTokenParams,
 	RevokeTokenParams,
 	TokenRequestParams,
@@ -133,7 +127,7 @@ export class DiscordClient {
 
 			throw new RateLimitError(
 				`Discord API rate limit exceeded${retryAfter ? `, retry after ${retryAfter}ms` : ""}`,
-				retryAfter ? Math.ceil(retryAfter / 1000) : undefined,
+				{ retryAfter: retryAfter ? Math.ceil(retryAfter / 1000) : undefined },
 			);
 		}
 
@@ -238,7 +232,10 @@ export class DiscordClient {
 			}
 		}
 
-		throw lastError ?? new TokenExpiredError("Token has expired and max retries exceeded");
+		throw (
+			lastError ??
+			new TokenExpiredError("Token has expired and max retries exceeded")
+		);
 	}
 
 	private async isExpiredError(error: unknown): Promise<boolean> {
@@ -246,8 +243,16 @@ export class DiscordClient {
 
 		const obj = error as Record<string, unknown>;
 
-		if (typeof obj.code === "string" && obj.code.toLowerCase().includes("expired")) return true;
-		if (typeof obj.message === "string" && obj.message.toLowerCase().includes("expired")) return true;
+		if (
+			typeof obj.code === "string" &&
+			obj.code.toLowerCase().includes("expired")
+		)
+			return true;
+		if (
+			typeof obj.message === "string" &&
+			obj.message.toLowerCase().includes("expired")
+		)
+			return true;
 
 		if (obj.response && typeof obj.response === "object") {
 			const resp = obj.response as Record<string, unknown>;
@@ -256,19 +261,38 @@ export class DiscordClient {
 					const body = await resp.json();
 					if (body && typeof body === "object") {
 						const data = body as Record<string, unknown>;
-						if (typeof data.code === "number" && data.code === 50001) return true;
-						if (typeof data.message === "string" && data.message.toLowerCase().includes("expired")) return true;
+						if (typeof data.code === "number" && data.code === 50001)
+							return true;
+						if (
+							typeof data.message === "string" &&
+							data.message.toLowerCase().includes("expired")
+						)
+							return true;
 					}
-				} catch { /* ignore */ }
+				} catch {
+					/* ignore */
+				}
 			}
-			if (typeof resp.code === "string" && resp.code.toLowerCase().includes("expired")) return true;
-			if (typeof resp.message === "string" && resp.message.toLowerCase().includes("expired")) return true;
+			if (
+				typeof resp.code === "string" &&
+				resp.code.toLowerCase().includes("expired")
+			)
+				return true;
+			if (
+				typeof resp.message === "string" &&
+				resp.message.toLowerCase().includes("expired")
+			)
+				return true;
 		}
 
 		if (obj.error && typeof obj.error === "object") {
 			const data = obj.error as Record<string, unknown>;
 			if (typeof data.code === "number" && data.code === 50001) return true;
-			if (typeof data.message === "string" && data.message.toLowerCase().includes("expired")) return true;
+			if (
+				typeof data.message === "string" &&
+				data.message.toLowerCase().includes("expired")
+			)
+				return true;
 		}
 
 		return false;

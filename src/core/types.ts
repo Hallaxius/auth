@@ -357,7 +357,7 @@ export interface ErrorQuery {
 	error_description?: string;
 }
 
-export interface RouteHelpers<Config extends DiscordAuthConfig> {
+export interface RouteHelpers<_Config extends DiscordAuthConfig> {
 	callback: (query: CallbackQuery) => Promise<Response>;
 	login: (query?: LoginQuery) => Promise<Response>;
 	error: (query: ErrorQuery) => Promise<Response>;

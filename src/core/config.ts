@@ -11,6 +11,8 @@ import type {
 	RoutesConfig,
 } from "./types";
 
+declare const process: { env: Record<string, string | undefined> };
+
 const DEFAULT_SCOPES = ["identify"] as const;
 const DEFAULT_ROUTES: Required<RoutesConfig> = {
 	prefix: "/auth/discord",
@@ -88,10 +90,14 @@ export function processConfig(config: DiscordAuthConfig): InternalConfig {
 	const csrf = config.csrf ?? {};
 
 	if (guildRoleSync.enabled && !guildRoleSync.guildId) {
-		throw new Error("guildRoleSync.guildId is required when guildRoleSync.enabled is true");
+		throw new Error(
+			"guildRoleSync.guildId is required when guildRoleSync.enabled is true",
+		);
 	}
 	if (guildRoleSync.enabled && !guildRoleSync.botToken) {
-		throw new Error("guildRoleSync.botToken is required when guildRoleSync.enabled is true");
+		throw new Error(
+			"guildRoleSync.botToken is required when guildRoleSync.enabled is true",
+		);
 	}
 
 	return {
