@@ -1,17 +1,17 @@
 import { Elysia } from "elysia";
 import { MemoryBruteForceStorage } from "../adapters/brute-force";
-import { MemoryCacheAdapter } from "../adapters/cache";
 import { BruteForceProtection } from "../core/brute-force";
+import { revokeAndCleanup } from "../core/logout-handler";
 import type { DiscordClient } from "../core/client";
 import { generatePKCE } from "../core/config";
+import { handleOAuthCallback } from "../core/callback-handler";
 import {
 	BruteForceBlockedError,
+	ConfigurationError,
 	DiscordAuthError,
-	MfaRequiredError,
 	StateBindingError,
 	StateReusedError,
 } from "../core/errors";
-import { GuildRoleSync } from "../core/guild-sync";
 import {
 	consumeState,
 	generateState,
@@ -19,16 +19,12 @@ import {
 	validateState,
 } from "../core/state";
 import type {
-	DiscordTokenResponse,
-	DiscordUser,
 	InternalConfig,
 	SessionAdapter,
 	SessionData,
 	UserStorage,
 } from "../core/types";
 import { parseExpiresIn } from "../core/utils";
-
-const stateStore = new MemoryStateStore();
 
 export interface RouteContext {
 	config: InternalConfig;
@@ -40,6 +36,9 @@ export interface RouteContext {
 export function createAuthRoutes(context: RouteContext) {
 	const { config, client, sessionAdapter, storage } = context;
 	const { routes } = config;
+
+	// Per-instance state store â€” each auth config gets its own isolated store
+	const stateStore = new MemoryStateStore();
 
 	const bruteForceStorage =
 		config.bruteForce.storage ?? new MemoryBruteForceStorage();
@@ -175,148 +174,58 @@ export function createAuthRoutes(context: RouteContext) {
 				}
 			}
 
-			// Use the same redirectUri as login (auto-detect if necessary)
-			let redirectUri = config.redirectUri;
-			if (!redirectUri) {
-				const proto =
-					ctx.request.headers.get("x-forwarded-proto") ??
-					ctx.request.headers.get("X-Forwarded-Proto") ??
-					"https";
-				const host =
-					ctx.request.headers.get("host") ?? ctx.request.headers.get("Host");
-				if (host) {
-					redirectUri = `${proto}://${host}${routes.prefix}/callback`;
-				}
+		let callbackResult;
+		try {
+			callbackResult = await handleOAuthCallback({
+				config,
+				client,
+				storage,
+				code,
+				codeVerifier,
+				sessionId,
+				userAgent,
+			});
+		} catch (err) {
+			if (config.bruteForce.enabled) {
+				await bruteForce.recordAttempt(bruteForceKey, false);
+			}
+			await config.callbacks.onError(err as Error, "callback");
+			ctx.status = err instanceof DiscordAuthError
+				? (err.statusCode ?? 500)
+				: 500;
+			return err instanceof DiscordAuthError
+				? err.message
+				: "Authentication failed";
+		}
+
+		const { user, tokens, syncedPermissions, storedUser } = callbackResult;
+
+		let sessionToken: string;
+
+		if (config.session.type === "server") {
+			const roles = storedUser?.roles;
+			sessionToken = await sessionAdapter.create(user, tokens, roles);
+		} else {
+			const payload: Record<string, unknown> = {
+				discordId: user.id,
+				username: user.username,
+				globalName: user.global_name,
+				avatar: user.avatar,
+				email: user.email,
+				locale: user.locale,
+				mfaEnabled: user.mfa_enabled,
+			};
+
+			if (storedUser?.roles) {
+				payload.roles = storedUser.roles;
 			}
 
-			let tokens: DiscordTokenResponse;
-			try {
-				tokens = await client.exchangeCode({
-					clientId: config.clientId,
-					clientSecret: config.clientSecret,
-					code,
-					redirectUri: redirectUri,
-					codeVerifier: !config.disablePKCE ? codeVerifier : undefined,
-				});
-			} catch (err) {
-				if (config.bruteForce.enabled) {
-					await bruteForce.recordAttempt(bruteForceKey, false);
-				}
-				await config.callbacks.onError(err as Error, "callback");
-				ctx.status = 500;
-				return "Failed to exchange authorization code";
+			if (syncedPermissions.length > 0) {
+				payload.permissions = syncedPermissions;
 			}
 
-			let user: DiscordUser;
-			try {
-				user = await client.getUser(tokens.access_token);
-			} catch (err) {
-				if (config.bruteForce.enabled) {
-					await bruteForce.recordAttempt(bruteForceKey, false);
-				}
-				await config.callbacks.onError(err as Error, "callback");
-				ctx.status = 500;
-				return "Failed to fetch user data";
-			}
-
-			if (config.mfa.enabled && config.mfa.requireMfa && !user.mfa_enabled) {
-				await config.callbacks.onError(new MfaRequiredError(), "callback");
-				ctx.status = 403;
-				return "Multi-factor authentication is required";
-			}
-
-			if (storage) {
-				const expiresAt = Math.floor(Date.now() / 1000) + tokens.expires_in;
-				const existing = await storage.findByDiscordId(user.id);
-
-				if (!existing) {
-					await storage.create({
-						discordId: user.id,
-						username: user.username,
-						globalName: user.global_name,
-						avatar: user.avatar,
-						email: user.email,
-						locale: user.locale,
-						roles: ["user"],
-						mfaEnabled: user.mfa_enabled,
-						accessToken: tokens.access_token,
-						refreshToken: tokens.refresh_token,
-						tokenExpiresAt: expiresAt,
-					});
-				} else {
-					await storage.update(user.id, {
-						username: user.username,
-						globalName: user.global_name,
-						avatar: user.avatar,
-						email: user.email,
-						mfaEnabled: user.mfa_enabled,
-						accessToken: tokens.access_token,
-						refreshToken: tokens.refresh_token,
-						tokenExpiresAt: expiresAt,
-					});
-				}
-			}
-
-			let syncedPermissions: string[] = [];
-			if (
-				config.guildRoleSync.enabled &&
-				config.guildRoleSync.syncOnLogin &&
-				config.scopes.includes("guilds.members.read")
-			) {
-				const guildSync = new GuildRoleSync(
-					config.guildRoleSync,
-					client,
-					new MemoryCacheAdapter(),
-				);
-				syncedPermissions = await guildSync.syncUserRoles(
-					user.id,
-					tokens.access_token,
-				);
-
-				if (storage && syncedPermissions.length > 0) {
-					const storedUser = await storage.findByDiscordId(user.id);
-					if (storedUser) {
-						const mergedRoles = Array.from(
-							new Set([...storedUser.roles, ...syncedPermissions]),
-						);
-						await storage.update(user.id, { roles: mergedRoles });
-					}
-				}
-			}
-
-			let sessionToken: string;
-
-			if (config.session.type === "server") {
-				let roles: string[] | undefined;
-				if (storage) {
-					const storedUser = await storage.findByDiscordId(user.id);
-					roles = storedUser?.roles;
-				}
-				sessionToken = await sessionAdapter.create(user, tokens, roles);
-			} else {
-				const payload: Record<string, unknown> = {
-					discordId: user.id,
-					username: user.username,
-					globalName: user.global_name,
-					avatar: user.avatar,
-					email: user.email,
-					locale: user.locale,
-					mfaEnabled: user.mfa_enabled,
-				};
-
-				if (storage) {
-					const storedUser = await storage.findByDiscordId(user.id);
-					if (storedUser?.roles) {
-						payload.roles = storedUser.roles;
-					}
-				}
-
-				if (syncedPermissions.length > 0) {
-					payload.permissions = syncedPermissions;
-				}
-
-				sessionToken = await jwt.sign(payload);
-			}
+			sessionToken = await jwt.sign(payload);
+		}
 
 			cookie[cookieName].set({
 				value: sessionToken,
@@ -349,52 +258,43 @@ export function createAuthRoutes(context: RouteContext) {
 				await sessionAdapter.destroy(sessionCookie.value);
 			}
 
-			// Revoke Discord token if storage is configured
+			// Revoke Discord token and clean up storage if configured
 			if (storage && sessionCookie?.value) {
-				try {
-					let userData: SessionData | null =
-						config.session.type === "server"
-							? await sessionAdapter.verify(sessionCookie.value)
-							: null;
+				let userData: SessionData | null =
+					config.session.type === "server"
+						? await sessionAdapter.verify(sessionCookie.value)
+						: null;
 
-					// For JWT, try to extract from cookie or request
-					if (!userData && config.session.type !== "server") {
-						// Attempt to verify JWT token
-						try {
-							const jwtPayload = await (ctx as any).jwt.verify(
-								sessionCookie.value,
-							);
-							if (jwtPayload) {
-								userData = {
-									discordId: jwtPayload.discordId as string,
-									username: jwtPayload.username as string,
-									globalName: jwtPayload.globalName as string | null,
-									avatar: jwtPayload.avatar as string | null,
-									email: jwtPayload.email as string | null,
-									locale: jwtPayload.locale as string,
-									roles: jwtPayload.roles as string[] | undefined,
-								};
-							}
-						} catch {
-							// Ignore JWT verification error
+				// For JWT, try to extract from cookie or request
+				if (!userData && config.session.type !== "server") {
+					try {
+						const jwtPayload = await (ctx as any).jwt.verify(
+							sessionCookie.value,
+						);
+						if (jwtPayload) {
+							userData = {
+								discordId: jwtPayload.discordId as string,
+								username: jwtPayload.username as string,
+								globalName: jwtPayload.globalName as string | null,
+								avatar: jwtPayload.avatar as string | null,
+								email: jwtPayload.email as string | null,
+								locale: jwtPayload.locale as string,
+								roles: jwtPayload.roles as string[] | undefined,
+							};
 						}
+					} catch {
+						// Ignore JWT verification error
 					}
+				}
 
-					if (userData) {
-						const stored = await storage.findByDiscordId(userData.discordId);
-						if (stored?.accessToken) {
-							await client.revokeToken({
-								clientId: config.clientId,
-								clientSecret: config.clientSecret,
-								accessToken: stored.accessToken,
-							});
-
-							// Also remove from storage
-							await storage.delete(stored.discordId);
-						}
-					}
-				} catch {
-					// revocation failed, proceed with logout
+				if (userData) {
+					await revokeAndCleanup({
+						storage,
+						client,
+						clientId: config.clientId,
+						clientSecret: config.clientSecret,
+						sessionData: userData,
+					});
 				}
 			}
 
@@ -413,19 +313,11 @@ export function createLoginRedirectRoute(context: RouteContext) {
 	const pkceEnabled = !config.disablePKCE;
 
 	const loginRedirect = async (ctx: any) => {
-		// Generate redirectUri - auto-detect if not provided
-		let redirectUri = config.redirectUri;
+		const redirectUri = config.redirectUri;
 		if (!redirectUri) {
-			// Auto-detect via request headers (for Next.js, Cloudflare, etc.)
-			const proto =
-				ctx.request.headers.get("x-forwarded-proto") ??
-				ctx.request.headers.get("X-Forwarded-Proto") ??
-				"https";
-			const host =
-				ctx.request.headers.get("host") ?? ctx.request.headers.get("Host");
-			if (host) {
-				redirectUri = `${proto}://${host}${routes.prefix}/callback`;
-			}
+			throw new ConfigurationError(
+				"redirectUri is required — set DISCORD_REDIRECT_URI env var or provide redirectUri in config",
+			);
 		}
 
 		// Generate code_verifier and code_challenge for PKCE

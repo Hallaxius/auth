@@ -1,15 +1,13 @@
-import { MemoryBruteForceStorage } from "../adapters/brute-force";
-import { MemoryCacheAdapter } from "../adapters/cache";
-import { BruteForceProtection } from "../core/brute-force";
+import { MemoryBruteForceStorage } from "../adapters/brute-force/memory";
+import { revokeAndCleanup } from "../core/logout-handler";
 import type { DiscordClient } from "../core/client";
 import { generatePKCE } from "../core/config";
+import { handleOAuthCallback } from "../core/callback-handler";
 import {
 	DiscordAuthError,
-	MfaRequiredError,
 	StateBindingError,
 	StateReusedError,
 } from "../core/errors";
-import { GuildRoleSync } from "../core/guild-sync";
 import {
 	consumeState,
 	generateState,
@@ -18,8 +16,6 @@ import {
 	validateState,
 } from "../core/state";
 import type {
-	DiscordTokenResponse,
-	DiscordUser,
 	InternalConfig,
 	SessionData,
 	SessionType,
@@ -27,8 +23,6 @@ import type {
 } from "../core/types";
 import { clearSessionCookie, parseCookies, setSessionCookie } from "./cookies";
 import { signToken, verifyToken } from "./jwt";
-
-const stateStore = new MemoryStateStore();
 
 interface HandlerContext {
 	config: InternalConfig;
@@ -85,6 +79,9 @@ function jsonResponse(data: unknown, status = 200): Response {
 export function createHandlers(ctx: HandlerContext) {
 	const { config, client, storage } = ctx;
 
+	// Per-instance state store â€” each auth config gets its own isolated store
+	const stateStore = new MemoryStateStore();
+
 	const cookieName = config.session.cookieName ?? "discord-auth-session";
 	const cookiePath = config.session.cookiePath ?? "/";
 	const sameSite = config.session.sameSite ?? "lax";
@@ -106,10 +103,7 @@ export function createHandlers(ctx: HandlerContext) {
 
 	const bruteForceStorage =
 		config.bruteForce.storage ?? new MemoryBruteForceStorage();
-	const _bruteForce = new BruteForceProtection(
-		config.bruteForce,
-		bruteForceStorage,
-	);
+	
 
 	async function handleLogin(request: Request): Promise<Response> {
 		const pkceEnabled = !config.disablePKCE;
@@ -250,93 +244,32 @@ export function createHandlers(ctx: HandlerContext) {
 			codeVerifier = cookies["discord-auth-pkce-verifier"];
 		}
 
-		let tokens: DiscordTokenResponse;
+		let callbackResult;
 		try {
-			tokens = await client.exchangeCode({
-				clientId: config.clientId,
-				clientSecret: config.clientSecret,
+			callbackResult = await handleOAuthCallback({
+				config,
+				client,
+				storage,
 				code,
-				redirectUri: config.redirectUri,
-				codeVerifier: !config.disablePKCE ? codeVerifier : undefined,
+				codeVerifier,
+				sessionId,
+				userAgent,
 			});
 		} catch (err) {
 			await config.callbacks.onError(err as Error, "callback");
-			return htmlResponse("Failed to exchange authorization code", 500);
-		}
-
-		let user: DiscordUser;
-		try {
-			user = await client.getUser(tokens.access_token);
-		} catch (err) {
-			await config.callbacks.onError(err as Error, "callback");
-			return htmlResponse("Failed to fetch user data", 500);
-		}
-
-		if (config.mfa.enabled && config.mfa.requireMfa && !user.mfa_enabled) {
-			await config.callbacks.onError(new MfaRequiredError(), "callback");
-			return htmlResponse("Multi-factor authentication is required", 403);
-		}
-
-		if (storage) {
-			const expiresAt = Math.floor(Date.now() / 1000) + tokens.expires_in;
-			const existing = await storage.findByDiscordId(user.id);
-
-			if (!existing) {
-				await storage.create({
-					discordId: user.id,
-					username: user.username,
-					globalName: user.global_name,
-					avatar: user.avatar,
-					email: user.email,
-					locale: user.locale,
-					roles: ["user"],
-					mfaEnabled: user.mfa_enabled,
-					accessToken: tokens.access_token,
-					refreshToken: tokens.refresh_token,
-					tokenExpiresAt: expiresAt,
-				});
-			} else {
-				await storage.update(user.id, {
-					username: user.username,
-					globalName: user.global_name,
-					avatar: user.avatar,
-					email: user.email,
-					mfaEnabled: user.mfa_enabled,
-					accessToken: tokens.access_token,
-					refreshToken: tokens.refresh_token,
-					tokenExpiresAt: expiresAt,
-				});
-			}
-		}
-
-		let syncedPermissions: string[] = [];
-		if (
-			config.guildRoleSync.enabled &&
-			config.guildRoleSync.syncOnLogin &&
-			config.scopes.includes("guilds.members.read")
-		) {
-			const guildSync = new GuildRoleSync(
-				config.guildRoleSync,
-				client,
-				new MemoryCacheAdapter(),
+			const statusCode =
+				err instanceof DiscordAuthError
+					? (err.statusCode ?? 500)
+					: 500;
+			return htmlResponse(
+				err instanceof DiscordAuthError
+					? err.message
+					: "Authentication failed",
+				statusCode,
 			);
-			syncedPermissions = await guildSync.syncUserRoles(
-				user.id,
-				tokens.access_token,
-			);
-
-			if (storage && syncedPermissions.length > 0) {
-				const storedUser = await storage.findByDiscordId(user.id);
-				if (storedUser) {
-					const mergedRoles = Array.from(
-						new Set([...storedUser.roles, ...syncedPermissions]),
-					);
-					await storage.update(user.id, { roles: mergedRoles });
-				}
-			}
 		}
 
-		const storedUser = storage ? await storage.findByDiscordId(user.id) : null;
+		const { user, tokens, syncedPermissions, storedUser } = callbackResult;
 
 		const sessionPayload: Record<string, unknown> = {
 			discordId: user.id,
@@ -368,43 +301,41 @@ export function createHandlers(ctx: HandlerContext) {
 			sessionConfig,
 		);
 
+		// Clear one-time PKCE code_verifier cookie after successful callback
+		const pkceClearCookie = clearSessionCookie(
+			"discord-auth-pkce-verifier",
+			sessionConfig,
+		);
+
 		if (config.callbacks.onSuccess) {
 			const result = await config.callbacks.onSuccess(user, tokens);
 			if (result?.redirect) {
-				return redirectResponse(result.redirect, [cookie]);
+				return redirectResponse(result.redirect, [cookie, pkceClearCookie]);
 			}
 		}
 
-		return redirectResponse("/", [cookie]);
+		return redirectResponse("/", [cookie, pkceClearCookie]);
 	}
 
 	async function handleLogout(request: Request): Promise<Response> {
 		const cookies = parseCookies(request);
 		const sessionToken = cookies[sessionCookieName];
 
-		// Revoke Discord token if storage is configured
+		// Revoke Discord token and clean up storage if configured
 		if (storage && sessionToken) {
-			try {
-				const userData = await verifySession(
-					sessionToken,
-					config.session.secret,
-					config.session.type,
-				);
-				if (userData) {
-					const stored = await storage.findByDiscordId(userData.discordId);
-					if (stored?.accessToken) {
-						await client.revokeToken({
-							clientId: config.clientId,
-							clientSecret: config.clientSecret,
-							accessToken: stored.accessToken,
-						});
-
-						// Also remove from storage
-						await storage.delete(stored.discordId);
-					}
-				}
-			} catch {
-				// revocation failed, proceed with logout
+			const userData = await verifySession(
+				sessionToken,
+				config.session.secret,
+				config.session.type,
+			);
+			if (userData) {
+				await revokeAndCleanup({
+					storage,
+					client,
+					clientId: config.clientId,
+					clientSecret: config.clientSecret,
+					sessionData: userData,
+				});
 			}
 		}
 
