@@ -3,6 +3,7 @@ import { signToken } from "../jwt";
 import { middlewareAuth, middlewareRole } from "../middleware-factory";
 
 const SECRET = "test-secret-mw";
+const CREDENTIALS_SECRET = "test-secret-credentials";
 
 async function makeRequest(
 	path: string,
@@ -14,6 +15,17 @@ async function makeRequest(
 	if (token) {
 		headers.set("cookie", `${cookieName ?? "discord-auth-session"}=${token}`);
 	}
+	return new Request(url, { headers });
+}
+
+async function makeMultiCookieRequest(
+	path: string,
+	cookies: Array<{ name: string; value: string }>,
+): Promise<Request> {
+	const url = `http://localhost${path}`;
+	const headers = new Headers();
+	const cookieStr = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+	headers.set("cookie", cookieStr);
 	return new Request(url, { headers });
 }
 
@@ -47,6 +59,81 @@ describe("middlewareAuth", () => {
 		const result = await mw(
 			await makeRequest("/dashboard", "discord-auth-session", token),
 		);
+		expect(result).toBeUndefined();
+	});
+});
+
+describe("middlewareAuth - MultiProviderAuthConfig", () => {
+	test("allows request with first cookie (discord)", async () => {
+		const token = await signToken(
+			{ discordId: "1", username: "discord-user" },
+			SECRET,
+		);
+		const mw = middlewareAuth({
+			cookies: [
+				{ name: "discord-auth-session", secret: SECRET },
+				{ name: "credentials-session", secret: CREDENTIALS_SECRET },
+			],
+		});
+		const result = await mw(
+			await makeRequest("/dashboard", "discord-auth-session", token),
+		);
+		expect(result).toBeUndefined();
+	});
+
+	test("allows request with second cookie (credentials)", async () => {
+		const token = await signToken(
+			{ userId: "2", username: "local-user" },
+			CREDENTIALS_SECRET,
+		);
+		const mw = middlewareAuth({
+			cookies: [
+				{ name: "discord-auth-session", secret: SECRET },
+				{ name: "credentials-session", secret: CREDENTIALS_SECRET },
+			],
+		});
+		const result = await mw(
+			await makeRequest("/dashboard", "credentials-session", token),
+		);
+		expect(result).toBeUndefined();
+	});
+
+	test("redirects when no cookies match", async () => {
+		const mw = middlewareAuth({
+			cookies: [
+				{ name: "discord-auth-session", secret: SECRET },
+				{ name: "credentials-session", secret: CREDENTIALS_SECRET },
+			],
+			loginUrl: "/login",
+		});
+		const result = await mw(await makeRequest("/dashboard"));
+		expect(result?.status).toBe(302);
+		expect(result?.headers.get("Location")).toContain("/login");
+	});
+
+	test("redirects when cookie token is invalid", async () => {
+		const mw = middlewareAuth({
+			cookies: [
+				{ name: "discord-auth-session", secret: SECRET },
+				{ name: "credentials-session", secret: CREDENTIALS_SECRET },
+			],
+			loginUrl: "/login",
+		});
+		const result = await mw(
+			await makeRequest("/dashboard", "discord-auth-session", "invalid-token"),
+		);
+		expect(result?.status).toBe(302);
+	});
+
+	test("passes public paths with multi-cookie config", async () => {
+		const mw = middlewareAuth({
+			cookies: [
+				{ name: "discord-auth-session", secret: SECRET },
+				{ name: "credentials-session", secret: CREDENTIALS_SECRET },
+			],
+			publicPaths: ["/", "/public/*"],
+		});
+		const result = await mw(await makeRequest("/public/page"));
 		expect(result).toBeUndefined();
 	});
 });

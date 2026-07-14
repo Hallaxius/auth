@@ -31,9 +31,11 @@ bun add @hallaxius/auth
 # yarn add @hallaxius/auth
 ```
 
-> **Peer dependency:** `next` (optional, required for `nextAuth`/`nextRole`)
+> **Peer dependency:** `next >= 14.0.0` (optional, required for `nextAuth`/`nextRole` middleware)
 > 
 > **Elysia plugin** available at `@hallaxius/auth/elysia` — requires `elysia >= 1.4.29` and `@elysiajs/jwt` installed separately
+>
+> **Engine requirement:** `bun >= 1.0.0`
 
 ---
 
@@ -79,25 +81,6 @@ const app = new Elysia()
   })
   .listen(3000)
 ```
-
-### Elysia (Wrapper)
-
-```ts
-import { Discord } from "@hallaxius/auth"
-
-const app = new Discord({
-  clientId: process.env.DISCORD_CLIENT_ID!,
-  clientSecret: process.env.DISCORD_CLIENT_SECRET!,
-  session: { type: "jwt", secret: process.env.JWT_SECRET! },
-})
-
-app.get("/dashboard", ({ user }) => `Welcome, ${user.username}!`, {
-  auth: true,
-})
-app.listen(3000)
-```
-
-> **Note:** `Discord` class wrapper is deprecated. Use `discordAuth` from `@hallaxius/auth/elysia` instead.
 
 ### Next.js (Standalone Route Handlers)
 
@@ -153,6 +136,109 @@ export default combine(
   }),
 )
 ```
+
+---
+
+## Quick Start: Credentials Auth (Username/Password)
+
+> **New in v2.2.0** — Native credentials authentication with JWT sessions, role-based access control, and flexible strategies.
+
+### Next.js App Router (Minimal)
+
+```ts
+// lib/auth.ts
+import { auth } from "@hallaxius/auth"
+
+export const credentials = auth({
+  provider: "credentials",
+  credentials: {
+    strategy: "jwt",
+    secret: process.env.JWT_SECRET!,
+    expiresIn: "7d",
+    cookieName: "credentials-session",
+  },
+})
+
+export const { handleRegister, handleLogin, handleLogout, handleMe } = credentials
+```
+
+```ts
+// app/api/auth/register/route.ts
+import { handleRegister } from "@/lib/auth"
+export const POST = handleRegister
+
+// app/api/auth/login/route.ts
+import { handleLogin } from "@/lib/auth"
+export const POST = handleLogin
+
+// app/api/auth/logout/route.ts
+import { handleLogout } from "@/lib/auth"
+export const GET = handleLogout
+
+// app/api/auth/me/route.ts
+import { handleMe } from "@/lib/auth"
+export const GET = handleMe
+```
+
+### Elysia (Bun)
+
+```ts
+import { Elysia } from "elysia"
+import { auth } from "@hallaxius/auth"
+
+const credentials = auth({
+  provider: "credentials",
+  credentials: {
+    strategy: "jwt",
+    secret: process.env.JWT_SECRET!,
+    cookieName: "credentials-session",
+  },
+})
+
+const app = new Elysia()
+  .use(credentials)
+  .post("/auth/register", ({ request }) => credentials.handleRegister!(request))
+  .post("/auth/login", ({ request }) => credentials.handleLogin!(request))
+  .get("/auth/logout", ({ request }) => credentials.handleLogout!(request))
+  .get("/auth/me", ({ request }) => credentials.handleMe!(request))
+  .get("/protected", ({ user }) => ({ message: `Hello ${user.username}!` }), { auth: true })
+  .listen(3000)
+```
+
+### Combined: Discord + Credentials
+
+```ts
+import { auth } from "@hallaxius/auth"
+
+const unified = auth({
+  provider: "both",
+  
+  // Discord OAuth2
+  clientId: process.env.DISCORD_CLIENT_ID!,
+  clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+  session: { type: "jwt", secret: process.env.JWT_SECRET! },
+  
+  // Credentials
+  credentials: {
+    strategy: "jwt",
+    secret: process.env.JWT_SECRET!,
+    cookieName: "credentials-session",
+  },
+})
+
+// Both Discord and credentials handlers available
+export const { handleLogin, handleCallback, handleRegister, handleMe } = unified
+```
+
+### More Examples
+
+See **[examples/credentials-auth-examples.md](examples/credentials-auth-examples.md)** for:
+- Complete Next.js forms (Register, Login, Reset Password)
+- Prisma + PostgreSQL storage
+- bcrypt password hashing
+- Password reset flow
+- Rate limiting
+- Combined Discord + Credentials auth
 
 ---
 
@@ -573,54 +659,6 @@ When `storage` is provided:
 - `requireRole` macro becomes available
 - `ctx.storedUser` contains `SafeStoredUser` (no tokens)
 
-### new Discord(config) — Class Wrapper
-
-Wraps the Elysia plugin with a fluent API.
-
-```ts
-import { Discord } from "@hallaxius/auth"
-
-const app = new Discord({
-  clientId: process.env.DISCORD_CLIENT_ID!,
-  clientSecret: process.env.DISCORD_CLIENT_SECRET!,
-  session: { type: "jwt", secret: process.env.JWT_SECRET! },
-  storage: myStorage,
-})
-
-// Route guards work the same way
-app
-  .get("/dashboard", ({ user }) => `Hello ${user.username}`, { auth: true })
-  .get("/admin", ({ user }) => `Admin: ${user.username}`, { requireRole: ["admin"] })
-  .use(somePlugin)
-  .listen(3000, () => console.log("Server running"))
-
-// Access the underlying Elysia instance
-const rawElysia = app.raw
-```
-
-#### Available Methods
-
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `.get(path, handler, opts?)` | `this` | Register GET route |
-| `.post(path, handler, opts?)` | `this` | Register POST route |
-| `.put(path, handler, opts?)` | `this` | Register PUT route |
-| `.delete(path, handler, opts?)` | `this` | Register DELETE route |
-| `.patch(path, handler, opts?)` | `this` | Register PATCH route |
-| `.all(path, handler, opts?)` | `this` | Register route for all methods |
-| `.use(plugin)` | `this` | Mount Elysia plugin |
-| `.onError(handler)` | `this` | Register error handler |
-| `.listen(port, cb?)` | Elysia app | Start server |
-| `.raw` | Elysia app | Access raw Elysia instance |
-
-#### Properties
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `.config` | `DiscordAuthConfig` | Config passed to constructor |
-| `.storage` | `UserStorage \| null` | Configured storage adapter |
-| `.raw` | Elysia app | Raw Elysia instance for advanced use |
-
 ---
 
 ## Standalone Mode
@@ -651,6 +689,75 @@ Returns:
 | `withAuth` | `(handler) => handler` | Protects a route handler |
 | `withOptionalAuth` | `(handler) => handler` | Optional auth wrapper |
 | `withRole` | `(...roles: string[]) => (handler: AuthHandler) => (Request) => Promise<Response>` | Role-based guard |
+
+### Credentials Auth
+
+`auth()` supports credentials authentication (register/login/logout) via the `provider` option.
+
+```ts
+import { auth } from "@hallaxius/auth"
+
+const credentials = auth({
+  provider: "credentials",
+  credentials: {
+    strategy: "jwt",
+    secret: process.env.JWT_SECRET!,
+    expiresIn: "7d",
+    cookieName: "credentials-session",
+  },
+})
+```
+
+**Provider options:**
+
+| Value | Behavior |
+|-------|----------|
+| `"discord"` | Discord OAuth2 only (default if omitted) |
+| `"credentials"` | Credentials register/login/logout only |
+| `"both"` | Both Discord and credentials in the same instance |
+
+Returns the same handler shape — unused handlers are stubs that return 501:
+
+```ts
+const { handleLogin, handleCallback, handleLogout, handleMe } = credentials
+
+// handleLogin / handleCallback → 501 (Discord not configured)
+// handleLogout / handleMe       → work normally
+```
+
+#### Combined Discord + Credentials
+
+```ts
+import { auth } from "@hallaxius/auth"
+
+const authInstance = auth({
+  provider: "both",
+  clientId: process.env.DISCORD_CLIENT_ID!,
+  clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+  session: { type: "jwt", secret: process.env.JWT_SECRET! },
+  credentials: {
+    strategy: "jwt",
+    secret: process.env.JWT_SECRET!,
+    expiresIn: "7d",
+    cookieName: "credentials-session",
+  },
+})
+```
+
+#### `authCredentials()` (Standalone)
+
+`authCredentials()` is a standalone convenience for credentials-only auth. Prefer `auth({ provider: "credentials" })` for new code.
+
+```ts
+import { authCredentials } from "@hallaxius/auth"
+
+const { handleRegister, handleLogin, handleLogout, handleMe } = authCredentials({
+  strategy: "jwt",
+  secret: process.env.JWT_SECRET!,
+  expiresIn: "7d",
+  cookieName: "credentials-session",
+})
+```
 
 ### Route Handlers
 
@@ -1455,14 +1562,12 @@ import { generateState, validateState, consumeState, MemoryStateStore } from "@h
 // Default in-memory store (dev/single-instance)
 const store = new MemoryStateStore()
 
-// Custom state store (Redis for production)
-const redisStore: StateStore = {
-  async set(key, value, ttlMs) { await redis.setex(key, ttlMs / 1000, value) },
-  async get(key) { return redis.get(key) },
-  async delete(key) { await redis.del(key) },
-  async has(key) { return (await redis.exists(key)) === 1 }
-}
+// Redis-backed state store (production)
+import { RedisStateStore } from "@hallaxius/auth/adapters/redis"
+import Redis from "ioredis"
 
+const redis = new Redis(process.env.REDIS_URL!)
+const store = new RedisStateStore({ client: redis })
 // Generate state with optional PKCE binding
 const state = await generateState(secret, codeVerifier)
 
@@ -1485,6 +1590,8 @@ const result = await consumeState(state, secret)
 | `bindToUserAgent` | `true` | Bind to User-Agent hash |
 
 State payload includes: random UUID, timestamp, optional `codeVerifier` (PKCE), `sessionId`, `userAgentHash`.
+
+> **Logout CSRF Protection:** Logout endpoints are protected by `SameSite=Lax` cookies by default, blocking cross-site form submissions. If you set `sameSite: "none"`, consider adding application-level CSRF tokens.
 
 ---
 
@@ -2316,10 +2423,137 @@ try {
 
 | Version | Description |
 |---------|-------------|
+| **v2.2.0** | Renamed "local" auth to "credentials" for clarity |
 | **v2.0.0** | Current — Elysia plugin moved to sub-path, peer deps removed, 6 new security features |
 | **v1.1.0** | Added presets (spa, server, nextjs, edge), factory pattern |
 | **v1.0.0** | Initial release with PKCE, JWT/Server sessions, auto-refresh, token revocation |
 | **v0.x** | Pre-1.0 versions |
+
+### v2.1.x → v2.2.0 (Breaking Changes)
+
+The "local" auth feature has been renamed to "credentials" to better reflect its purpose (username/password style authentication).
+
+#### 🔴 Breaking Changes
+
+##### 1. Provider Value Renamed
+
+**Before (v2.1.x):**
+```ts
+const auth = auth({
+  provider: "local",
+  local: { /* ... */ },
+})
+```
+
+**After (v2.2.0):**
+```ts
+const auth = auth({
+  provider: "credentials",
+  credentials: { /* ... */ },
+})
+```
+
+##### 2. Config Property Renamed
+
+The `local` config property is now `credentials`:
+
+**Before (v2.1.x):**
+```ts
+auth({
+  provider: "local",
+  local: {
+    strategy: "jwt",
+    secret: process.env.JWT_SECRET!,
+    cookieName: "local-session",
+  },
+})
+```
+
+**After (v2.2.0):**
+```ts
+auth({
+  provider: "credentials",
+  credentials: {
+    strategy: "jwt",
+    secret: process.env.JWT_SECRET!,
+    cookieName: "credentials-session",
+  },
+})
+```
+
+##### 3. Standalone Factory Renamed
+
+`authLocal()` is now `authCredentials()`:
+
+**Before (v2.1.x):**
+```ts
+import { authLocal } from "@hallaxius/auth"
+
+const { handleLocalRegister, handleLocalLogin, handleLocalLogout, handleLocalMe } = authLocal({
+  strategy: "jwt",
+  secret: process.env.JWT_SECRET!,
+})
+```
+
+**After (v2.2.0):**
+```ts
+import { authCredentials } from "@hallaxius/auth"
+
+const { handleRegister, handleLogin, handleLogout, handleMe } = authCredentials({
+  strategy: "jwt",
+  secret: process.env.JWT_SECRET!,
+})
+```
+
+##### 4. Handler Names Simplified
+
+The `handleLocal*` prefix has been dropped. Handlers are now `handleRegister`, `handleLogin`, `handleLogout`, and `handleMe`.
+
+##### 5. Default Cookie Name Changed
+
+The default cookie name changed from `"local-session"` to `"credentials-session"`. If you relied on the default, update your middleware/cookie readers accordingly.
+
+#### 📝 Full Migration Example
+
+**Before (v2.1.x):**
+```ts
+import { auth, authLocal } from "@hallaxius/auth"
+
+const local = auth({
+  provider: "local",
+  local: {
+    strategy: "jwt",
+    secret: process.env.JWT_SECRET!,
+    cookieName: "local-session",
+  },
+})
+
+const standalone = authLocal({
+  strategy: "jwt",
+  secret: process.env.JWT_SECRET!,
+})
+```
+
+**After (v2.2.0):**
+```ts
+import { auth, authCredentials } from "@hallaxius/auth"
+
+const credentials = auth({
+  provider: "credentials",
+  credentials: {
+    strategy: "jwt",
+    secret: process.env.JWT_SECRET!,
+    cookieName: "credentials-session",
+  },
+})
+
+const standalone = authCredentials({
+  strategy: "jwt",
+  secret: process.env.JWT_SECRET!,
+})
+```
+
+---
 
 ### v1.x → v2.0.0 (Breaking Changes)
 
@@ -2746,3 +2980,19 @@ export default combine(
 ## License
 
 MIT
+
+
+
+> **Production:** Use `RedisBruteForceStore` for multi-instance or serverless deployments:
+> 
+> ``````ts
+> import { RedisBruteForceStore } from "@hallaxius/auth/adapters/redis"
+> import Redis from "ioredis"
+> 
+> const redis = new Redis(process.env.REDIS_URL!)
+> const store = new RedisBruteForceStore({ client: redis })
+> 
+> discordAuth({ bruteForce: { storage: store } })
+> ``````
+
+---

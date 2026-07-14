@@ -34,12 +34,21 @@ HMAC-signed state tokens (`crypto.subtle`) with:
 - User-agent binding (`bindToUserAgent`)
 - Configurable TTL (default: 5 minutes)
 
+### Logout CSRF Protection
+
+Logout endpoints are protected against cross-site request forgery:
+- Session cookies use `SameSite=Lax` by default, which blocks cross-origin form submissions from triggering logout
+- Logout requires a valid session cookie — unauthenticated requests are rejected
+- No additional CSRF token is needed when `sameSite: "lax"` or `"strict"` is configured
+
+> ⚠️ If you set `sameSite: "none"` (e.g., cross-origin SPAs), logout is **not** protected against CSRF. Consider using `sameSite: "lax"` or adding application-level CSRF tokens.
+
 ### Brute Force Rate Limiting
 
 IP-based rate limiting without external dependencies:
 - Configurable attempt limit & window
 - Automatic IP blocking with configurable duration
-- Pluggable storage (Redis for production)
+- Pluggable storage (Redis for production — see [Redis Adapters](#redis-adapters))
 
 ### MFA Enforcement
 
@@ -64,6 +73,90 @@ Automatic role mapping from Discord guilds to application permissions:
 Generic route helpers with compile-time scope inference:
 - Strongly typed OAuth2 error codes
 - Config-scoped type checking
+
+### Redirect URI Validation
+
+The `redirectUri` is validated against explicit configuration — no header-based auto-detection:
+- Prevents spoofing via `X-Forwarded-Proto` / `X-Forwarded-Host` headers
+- Must be set explicitly via `config.redirectUri` or `DISCORD_REDIRECT_URI` env var
+
+---
+
+## Redis Adapters
+
+For production deployments, use Redis-backed adapters instead of the default in-memory stores.
+
+> **Peer dependency:** `ioredis >= 5.0.0` (optional)
+
+### Installation
+
+```bash
+bun add ioredis
+```
+
+### RedisStateStore
+
+Replaces `MemoryStateStore` for CSRF state tokens with Redis TTL-based expiration.
+
+```ts
+import Redis from "ioredis"
+import { RedisStateStore } from "@hallaxius/auth/adapters/redis"
+
+const redis = new Redis(process.env.REDIS_URL!)
+
+const stateStore = new RedisStateStore({
+  client: redis,
+  prefix: "auth:state", // optional, default: "auth:state"
+})
+
+// Pass to discordAuth or auth config
+discordAuth({
+  // ...
+  csrf: {
+    storage: stateStore,
+  },
+})
+```
+
+**Key pattern:** `{prefix}:{id}` — e.g. `auth:state:uuid-here`
+**Expiration:** Automatic via Redis TTL (matches `ttlMs` from config)
+
+### RedisBruteForceStore
+
+Replaces `MemoryBruteForceStorage` for rate limiting with Redis-backed persistence.
+
+```ts
+import Redis from "ioredis"
+import { RedisBruteForceStore } from "@hallaxius/auth/adapters/redis"
+
+const redis = new Redis(process.env.REDIS_URL!)
+
+const bruteForceStore = new RedisBruteForceStore({
+  client: redis,
+  prefix: "auth:bf", // optional, default: "auth:bf"
+})
+
+// Pass to discordAuth or auth config
+discordAuth({
+  // ...
+  bruteForce: {
+    storage: bruteForceStore,
+  },
+})
+```
+
+**Key patterns:**
+- `{prefix}:count:{key}` — attempt count with TTL
+- `{prefix}:block:{key}` — block flag with TTL
+
+### Why Redis?
+
+| Feature | In-Memory | Redis |
+|---------|-----------|-------|
+| Persistence | ❌ Lost on restart | ✅ Survives restarts |
+| Multi-instance | ❌ Per-process state | ✅ Shared across instances |
+| TTL | ⚠️ Manual cleanup | ✅ Native Redis TTL |
+| Serverless | ❌ Cold start issues | ✅ Persistent connection |
 
 ---
 
