@@ -1,4 +1,4 @@
-import { RateLimitError, TokenExpiredError } from "./errors";
+﻿import { RateLimitError, TokenExpiredError } from "./errors";
 import type {
 	AddMemberParams,
 	DiscordConnection,
@@ -132,12 +132,6 @@ export class DiscordClient {
 		}
 
 		if (!res.ok && !isGlobalRateLimit) {
-			const _url =
-				typeof input === "string"
-					? input
-					: input instanceof URL
-						? input.toString()
-						: "unknown";
 			const errorText = await res.text().catch(() => "Unknown error");
 			throw new Error(`Discord API request failed: ${res.status} ${errorText}`);
 		}

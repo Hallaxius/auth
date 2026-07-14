@@ -1,4 +1,4 @@
-export { DiscordClient } from "./core/client";
+﻿export { DiscordClient } from "./core/client";
 export {
 	generateCodeChallenge,
 	generateCodeVerifier,
@@ -65,6 +65,25 @@ export type {
 	StoredUser,
 	UserStorage,
 } from "./core/types";
+export { CredentialsClient } from "./core/credentials/client";
+export { AuthStrategy } from "./core/credentials/strategy";
+export {
+	EmailTakenError,
+	InvalidCredentialsError,
+	CredentialsAuthError,
+	CredentialsValidationError,
+	UsernameTakenError,
+	UserNotFoundError,
+} from "./core/credentials/errors";
+export type {
+	CreateCredentialsUserData,
+	CredentialsAuthResult,
+	CredentialsClientConfig,
+	AuthUser,
+	AuthUserIdentifier,
+} from "./core/credentials/types";
+export type { PasswordHasher } from "./core/credentials/hasher";
+export type { AuthUserStorage } from "./core/credentials/storage";
 export type {
 	AuthHandler,
 	EdgeAuthConfig,
@@ -74,6 +93,7 @@ export type {
 export {
 	auth,
 	combine,
+	createCredentialsHandlers,
 	denied,
 	getSession,
 	isPublicPath,
@@ -83,9 +103,15 @@ export {
 	redirect,
 	requiredRole,
 } from "./standalone";
+export type {
+	AuthConfig,
+	AuthResult,
+	CredentialsAuthConfig,
+	CredentialsMiddlewareConfig,
+	CredentialsRoleMiddlewareConfig,
+} from "./standalone";
 export { nextAuth, nextRole } from "./standalone/next";
 export type { GuildMember } from "./utils";
-// Utility helpers
 export {
 	autoJoinGuild,
 	generateSecureSecret,
@@ -96,4 +122,3 @@ export {
 	syncUserRoles,
 	validateConfig,
 } from "./utils";
-export { Discord } from "./wrapper";

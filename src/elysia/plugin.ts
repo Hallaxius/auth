@@ -1,15 +1,9 @@
-import { jwt } from "@elysiajs/jwt";
+﻿import { jwt } from "@elysiajs/jwt";
 import { Elysia } from "elysia";
 import { DiscordClient } from "../core/client";
 import { generatePKCE, processConfig } from "../core/config";
 import {
-	type CallbackContext,
-	createTypedCallbackRoute,
-	createTypedErrorRoute,
-	createTypedLoginRoute,
-	createTypedRouteHandlers,
 	type InferScopes,
-	type LoginContext,
 	type TypedRouteHandlers,
 } from "../core/route-helpers";
 import { createSessionAdapter } from "../core/session";
@@ -21,9 +15,6 @@ import type {
 	DiscordUser,
 	InternalConfig,
 } from "../core/types";
-import { signToken } from "../standalone/jwt";
-
-const DEFAULT_SCOPES: DiscordScope[] = ["identify"];
 
 import {
 	createMiddlewares,
@@ -88,17 +79,6 @@ export function discordAuth<Config extends DiscordAuthConfig>(config: Config) {
 		autoRefresh: internalConfig.autoRefresh,
 	};
 
-	const _middlewareDeps: MiddlewareDeps = {
-		secret: config.session.secret,
-		sessionType: config.session.type,
-		cookieName,
-		storage,
-		client,
-		clientId: config.clientId,
-		clientSecret: config.clientSecret,
-		autoRefresh: internalConfig.autoRefresh,
-	};
-
 	const expiresIn =
 		typeof config.session.expiresIn === "number"
 			? config.session.expiresIn
@@ -148,203 +128,6 @@ export function discordAuth<Config extends DiscordAuthConfig>(config: Config) {
 	appWithMiddlewares.middlewares = createMiddlewares;
 
 	return appWithMiddlewares;
-}
-
-export function createAuthRoutesTyped<Config extends DiscordAuthConfig>(
-	context: RouteContext & { config: InternalConfig },
-): TypedRouteHandlers<Config> {
-	const { config, client, sessionAdapter, storage } = context;
-	const { routes } = config;
-
-	const _callbackContext: CallbackContext<Config> = {
-		config,
-		client,
-		sessionAdapter,
-		storage,
-		scopes: (config.scopes ?? DEFAULT_SCOPES) as DiscordScope[],
-	};
-
-	const _loginContext: LoginContext<Config> = {
-		config,
-		client,
-		scopes: (config.scopes ?? DEFAULT_SCOPES) as DiscordScope[],
-	};
-
-	const callbackHandler = createTypedCallbackRoute<Config>(
-		async (query, _ctx) => {
-			const code = query.code;
-			const state = query.state;
-
-			if (!code) {
-				await config.callbacks.onError(
-					new Error("Missing authorization code"),
-					"callback",
-				);
-				return new Response("Missing authorization code", { status: 400 });
-			}
-
-			if (!state) {
-				await config.callbacks.onError(
-					new Error("Missing state parameter"),
-					"callback",
-				);
-				return new Response("Missing state parameter", { status: 400 });
-			}
-
-			const stateValidation = await validateState(state, config.session.secret);
-			if (!stateValidation.valid) {
-				await config.callbacks.onError(
-					new Error("Invalid state parameter - possible CSRF attack"),
-					"callback",
-				);
-				return new Response("Invalid state parameter", { status: 403 });
-			}
-
-			const redirectUri = config.redirectUri;
-
-			let tokens: DiscordTokenResponse;
-			try {
-				tokens = await client.exchangeCode({
-					clientId: config.clientId,
-					clientSecret: config.clientSecret,
-					code,
-					redirectUri: redirectUri,
-					codeVerifier: !config.disablePKCE
-						? stateValidation.codeVerifier
-						: undefined,
-				});
-			} catch (err) {
-				await config.callbacks.onError(err as Error, "callback");
-				return new Response("Failed to exchange authorization code", {
-					status: 500,
-				});
-			}
-
-			let user: DiscordUser;
-			try {
-				user = await client.getUser(tokens.access_token);
-			} catch (err) {
-				await config.callbacks.onError(err as Error, "callback");
-				return new Response("Failed to fetch user data", { status: 500 });
-			}
-
-			if (storage) {
-				const expiresAt = Math.floor(Date.now() / 1000) + tokens.expires_in;
-				const existing = await storage.findByDiscordId(user.id);
-
-				if (!existing) {
-					await storage.create({
-						discordId: user.id,
-						username: user.username,
-						globalName: user.global_name,
-						avatar: user.avatar,
-						email: user.email,
-						locale: user.locale,
-						roles: ["user"],
-						accessToken: tokens.access_token,
-						refreshToken: tokens.refresh_token,
-						tokenExpiresAt: expiresAt,
-					});
-				} else {
-					await storage.update(user.id, {
-						username: user.username,
-						globalName: user.global_name,
-						avatar: user.avatar,
-						email: user.email,
-						accessToken: tokens.access_token,
-						refreshToken: tokens.refresh_token,
-						tokenExpiresAt: expiresAt,
-					});
-				}
-			}
-
-			let _sessionToken: string;
-
-			if (config.session.type === "server") {
-				let roles: string[] | undefined;
-				if (storage) {
-					const storedUser = await storage.findByDiscordId(user.id);
-					roles = storedUser?.roles;
-				}
-				_sessionToken = await sessionAdapter.create(user, tokens, roles);
-			} else {
-				const payload: Record<string, unknown> = {
-					discordId: user.id,
-					username: user.username,
-					globalName: user.global_name,
-					avatar: user.avatar,
-					email: user.email,
-					locale: user.locale,
-				};
-
-				if (storage) {
-					const storedUser = await storage.findByDiscordId(user.id);
-					if (storedUser?.roles) {
-						payload.roles = storedUser.roles;
-					}
-				}
-
-				_sessionToken = await signToken(
-					payload,
-					config.session.secret,
-					typeof config.session.expiresIn === "string"
-						? config.session.expiresIn
-						: config.session.expiresIn
-							? `${config.session.expiresIn}s`
-							: "7d",
-				);
-			}
-
-			if (config.callbacks.onSuccess) {
-				const result = await config.callbacks.onSuccess(user, tokens);
-				if (result?.redirect) {
-					return Response.redirect(result.redirect);
-				}
-			}
-
-			return Response.redirect("/");
-		},
-	);
-
-	const loginHandler = createTypedLoginRoute<Config>(async (_query, _ctx) => {
-		const redirectUri = config.redirectUri;
-
-		const pkceEnabled = !config.disablePKCE;
-		let codeChallenge: string | undefined;
-		let codeVerifier: string | undefined;
-
-		if (pkceEnabled) {
-			const pkce = await generatePKCE();
-			codeChallenge = pkce.codeChallenge;
-			codeVerifier = pkce.codeVerifier;
-		}
-
-		const state = await generateState(config.session.secret, codeVerifier);
-
-		const url = client.generateAuthUrl({
-			clientId: config.clientId,
-			redirectUri: redirectUri,
-			scopes: config.scopes,
-			state,
-			prompt: config.prompt,
-			codeChallenge,
-			codeChallengeMethod: pkceEnabled ? "S256" : undefined,
-		});
-
-		return Response.redirect(url);
-	});
-
-	const errorHandler = createTypedErrorRoute<Config>(async (query, _ctx) => {
-		await config.callbacks.onError(
-			new Error(query.error_description ?? query.error),
-			"auth",
-		);
-		return new Response(`Authentication error: ${query.error}`, {
-			status: 400,
-		});
-	});
-
-	return createTypedRouteHandlers(callbackHandler, loginHandler, errorHandler);
 }
 
 // =============================================================================
@@ -450,7 +233,7 @@ export const presets = {
 	/**
 	 * Next.js App Router / Middleware
 	 * - secure: true (HTTPS)
-	 * - redirectUri: auto-detect via headers or NEXT_PUBLIC_APP_URL
+	 * - redirectUri: required (set via config or DISCORD_REDIRECT_URI env var)
 	 */
 	nextjs: (opts: NextjsPresetOpts): Elysia => {
 		const app = discordAuth({

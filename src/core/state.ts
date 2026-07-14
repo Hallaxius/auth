@@ -1,4 +1,4 @@
-import type { CsrfConfig } from "./types";
+﻿import type { CsrfConfig } from "./types";
 
 const DEFAULT_STATE_TTL = 5 * 60 * 1000;
 
@@ -82,7 +82,6 @@ export async function generateState(
 	userAgent?: string,
 	config?: CsrfConfig,
 ): Promise<string> {
-	const _ttlMs = config?.ttlMs ?? DEFAULT_STATE_TTL;
 	const payload: StatePayload = {
 		id: crypto.randomUUID(),
 		iat: Date.now(),
