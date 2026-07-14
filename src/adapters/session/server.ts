@@ -22,7 +22,7 @@ export class ServerSessionAdapter implements SessionAdapter {
 
 	async create(
 		user: DiscordUser,
-		_tokens: DiscordTokenResponse,
+		tokens: DiscordTokenResponse,
 		roles?: string[],
 	): Promise<string> {
 		const sessionId = crypto.randomUUID();

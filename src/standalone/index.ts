@@ -1,4 +1,6 @@
-export { auth } from "./auth";
+export { auth, authCredentials } from "./auth";
+export type { AuthConfig, AuthResult, CredentialsAuthConfig } from "./auth";
+export { createCredentialsHandlers } from "./credentials";
 export type { EdgeAuthConfig, EdgeRoleConfig, EdgeSessionConfig } from "./edge";
 export {
 	denied,
@@ -10,4 +12,10 @@ export {
 export type { AuthHandler } from "./middleware";
 export { middlewares } from "./middleware";
 export { combine } from "./middleware-combine";
-export { middlewareAuth, middlewareRole } from "./middleware-factory";
+export {
+	middlewareAuth,
+	middlewareRole,
+	middlewareCredentialsAuth,
+	middlewareCredentialsRole,
+} from "./middleware-factory";
+export type { CredentialsMiddlewareConfig, CredentialsRoleMiddlewareConfig } from "./middleware-factory";

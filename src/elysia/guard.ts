@@ -138,7 +138,7 @@ export function createAuthGuard(deps: GuardDeps) {
 								Math.floor(Date.now() / 1000) + newTokens.expires_in,
 						});
 						storedUser = await deps.storage.findByDiscordId(userData.discordId);
-					} catch (_err) {
+					} catch {
 						// refresh failed, proceed with current data
 						// If token already expired, throw error
 						if (
@@ -261,7 +261,7 @@ export function createOptionalAuthGuard(deps: GuardDeps) {
 								Math.floor(Date.now() / 1000) + newTokens.expires_in,
 						});
 						storedUser = await deps.storage.findByDiscordId(userData.discordId);
-					} catch (_err) {
+					} catch {
 						// refresh failed, proceed with current data
 						// If token already expired, do not throw error (optional auth)
 					}

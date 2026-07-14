@@ -81,7 +81,7 @@ export function processConfig(config: DiscordAuthConfig): InternalConfig {
 	const redirectUri =
 		config.redirectUri ??
 		process.env.DISCORD_REDIRECT_URI ??
-		`${routerPrefix}/callback`.replace(/^\/\//, "");
+		`${routerPrefix}/callback`;
 
 	const autoRefresh = config.autoRefresh ?? {};
 	const bruteForce = config.bruteForce ?? {};

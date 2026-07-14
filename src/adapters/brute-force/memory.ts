@@ -6,20 +6,27 @@ interface BruteForceEntry {
 	blockedUntil?: number;
 }
 
+/**
+ * In-memory brute force storage with lazy cleanup.
+ *
+ * Edge-runtime compatible: no `setInterval` / `setTimeout` timers.
+ * Expired entries are purged on every access (increment, isBlocked, getCount)
+ * via {@link MemoryBruteForceStorage#cleanup}, so the Map never grows unbounded
+ * as long as the store is being queried.
+ */
 export class MemoryBruteForceStorage implements BruteForceStorage {
 	private store = new Map<string, BruteForceEntry>();
-	private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
-	constructor() {
-		this.startCleanup();
-	}
-
-	private startCleanup(): void {
-		this.cleanupInterval = setInterval(() => {
-			this.cleanup();
-		}, 60 * 1000);
-	}
-
+	/**
+	 * Remove expired entries from the store.
+	 *
+	 * An entry is expired when:
+	 *  - it was blocked and the block window has elapsed (`blockedUntil < now`), or
+	 *  - it was never blocked and the 24h tracking window has elapsed.
+	 *
+	 * Called lazily on every public read/write method so no background timer is
+	 * required — safe for Cloudflare Workers, Deno, Vercel Edge, etc.
+	 */
 	private cleanup(): void {
 		const now = Date.now();
 		for (const [key, entry] of this.store.entries()) {
@@ -35,6 +42,7 @@ export class MemoryBruteForceStorage implements BruteForceStorage {
 	}
 
 	async increment(key: string, windowMs: number): Promise<number> {
+		this.cleanup();
 		const now = Date.now();
 		const entry = this.store.get(key);
 
@@ -53,6 +61,7 @@ export class MemoryBruteForceStorage implements BruteForceStorage {
 	}
 
 	async isBlocked(key: string): Promise<boolean> {
+		this.cleanup();
 		const entry = this.store.get(key);
 		if (!entry?.blockedUntil) return false;
 
@@ -85,6 +94,7 @@ export class MemoryBruteForceStorage implements BruteForceStorage {
 	}
 
 	async getCount(key: string): Promise<number> {
+		this.cleanup();
 		const entry = this.store.get(key);
 		if (!entry) return 0;
 		const now = Date.now();
@@ -97,10 +107,12 @@ export class MemoryBruteForceStorage implements BruteForceStorage {
 		return entry.count;
 	}
 
+	/**
+	 * No-op kept for API compatibility with previous versions that used a
+	 * `setInterval` timer. There is no timer to clear anymore — cleanup is
+	 * lazy and triggered by access — so this method intentionally does nothing.
+	 */
 	stopCleanup(): void {
-		if (this.cleanupInterval) {
-			clearInterval(this.cleanupInterval);
-			this.cleanupInterval = null;
-		}
+		// intentionally empty — no background timer to clear
 	}
 }

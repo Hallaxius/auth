@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { generateState, validateState } from "../state";
+import { generateState, MemoryStateStore, validateState } from "../state";
 
 const SECRET = "super-secret-key-12345";
 
@@ -104,5 +104,50 @@ describe("validateState", () => {
 		const expiredState = `${encoded}.${sigStr}`;
 		const result = await validateState(expiredState, SECRET);
 		expect(result.valid).toBe(false);
+	});
+});
+
+describe("MemoryStateStore instance isolation", () => {
+	it("does not share state between separate instances", async () => {
+		const storeA = new MemoryStateStore();
+		const storeB = new MemoryStateStore();
+		const id = "state-id-123";
+		const ttlMs = 60_000;
+
+		await storeA.set(id, ttlMs);
+
+		expect(await storeA.has(id)).toBe(true);
+		expect(await storeB.has(id)).toBe(false);
+	});
+
+	it("deleting in one instance does not affect another", async () => {
+		const storeA = new MemoryStateStore();
+		const storeB = new MemoryStateStore();
+		const id = "state-id-456";
+		const ttlMs = 60_000;
+
+		await storeA.set(id, ttlMs);
+		await storeB.set(id, ttlMs);
+
+		await storeA.delete(id);
+
+		expect(await storeA.has(id)).toBe(false);
+		expect(await storeB.has(id)).toBe(true);
+	});
+
+	it("each instance tracks its own set of ids", async () => {
+		const storeA = new MemoryStateStore();
+		const storeB = new MemoryStateStore();
+		const idA = "id-a";
+		const idB = "id-b";
+		const ttlMs = 60_000;
+
+		await storeA.set(idA, ttlMs);
+		await storeB.set(idB, ttlMs);
+
+		expect(await storeA.has(idA)).toBe(true);
+		expect(await storeA.has(idB)).toBe(false);
+		expect(await storeB.has(idB)).toBe(true);
+		expect(await storeB.has(idA)).toBe(false);
 	});
 });
