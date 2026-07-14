@@ -1,10 +1,11 @@
-import type {
+﻿import type {
 	DiscordTokenResponse,
 	DiscordUser,
 	SessionAdapter,
 	SessionConfig,
 	SessionData,
 } from "../../core/types";
+import { DiscordAuthError } from "../../core/errors";
 
 interface JwtPayload {
 	discordId: string;
@@ -33,18 +34,26 @@ export class JwtSessionAdapter implements SessionAdapter {
 	}
 
 	async create(
-		_user: DiscordUser,
-		_tokens: DiscordTokenResponse,
-		_roles?: string[],
+		user: DiscordUser,
+		tokens: DiscordTokenResponse,
+		roles?: string[],
 	): Promise<string> {
-		return ""; // JWT signing is handled by @elysiajs/jwt plugin
+		throw new DiscordAuthError(
+			"JWT_ADAPTER_CREATE_NOT_SUPPORTED",
+			"JwtSessionAdapter.create() is not supported — JWT signing is handled by @elysiajs/jwt. Use signToken() from the Elysia plugin instead.",
+			{ statusCode: 500 },
+		);
 	}
 
-	async verify(_token: string): Promise<SessionData | null> {
-		return null; // JWT verification is handled by @elysiajs/jwt plugin
+	async verify(session: string): Promise<SessionData | null> {
+		throw new DiscordAuthError(
+			"JWT_ADAPTER_VERIFY_NOT_SUPPORTED",
+			"JwtSessionAdapter.verify() is not supported — JWT verification is handled by @elysiajs/jwt. Use verifyToken() from the Elysia plugin instead.",
+			{ statusCode: 500 },
+		);
 	}
 
-	async destroy(_token: string): Promise<void> {
+	async destroy(token: string): Promise<void> {
 		// JWT is stateless - no server-side state to destroy
 		// Cookie clearing is handled by the plugin
 	}
