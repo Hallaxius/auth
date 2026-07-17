@@ -1,6 +1,6 @@
 {
   "name": "@hallaxius/auth",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Plug-and-play authentication for Bun and Next.js. Supports Discord OAuth2 and credentials (username/password) auth with JWT sessions, role-based access control, and edge-compatible middleware.",
   "author": {
     "name": "hallaxius",

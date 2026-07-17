@@ -775,16 +775,23 @@ export class CredentialsClient {
  */
 interface CredentialsHandlerContext {
 	client: CredentialsClient;
+	cookieName: string;
+	cookiePath: string;
+	sameSite: "lax" | "strict" | "none";
+	secure: boolean;
+	httpOnly: boolean;
+	expiresIn: string | number;
 }
 
 /**
  * Build a JSON Response with the given status.
  */
-function jsonResponse(data: unknown, status = 200): Response {
-	return new Response(JSON.stringify(data), {
-		status,
-		headers: { "Content-Type": "application/json; charset=utf-8" },
-	});
+function jsonResponse(data: unknown, status = 200, cookies?: string[]): Response {
+	const headers = new Headers({ "Content-Type": "application/json; charset=utf-8" });
+	if (cookies) {
+		for (const c of cookies) headers.append("Set-Cookie", c);
+	}
+	return new Response(JSON.stringify(data), { status, headers });
 }
 
 /**
@@ -809,7 +816,9 @@ function errorResponse(error: unknown): Response {
 			error.statusCode ?? 500,
 		);
 	}
-	return jsonResponse({ error: "Internal server error" }, 500);
+	console.error("[auth:credentials] Unhandled error:", error);
+	const message = error instanceof Error ? error.message : "Internal server error";
+	return jsonResponse({ error: message }, 500);
 }
 
 /**
@@ -825,25 +834,11 @@ function getSafeUser(user: AuthUser): Record<string, unknown> {
  * Inlined from standalone/credentials.ts.
  */
 function createCredentialsHandlers(ctx: CredentialsHandlerContext) {
-	const { client } = ctx;
+	const { client, cookieName, cookiePath, sameSite, secure, httpOnly } = ctx;
 
-	const cookieName = "credentials-session";
-	const cookiePath = "/";
-	const sameSite: "lax" = "lax";
-	const secure = false;
-	const httpOnly = true;
-	const expiresIn = "7d";
-
-	const sessionConfig = {
-		type: "jwt" as const,
-		secret: "",
-		cookieName,
-		cookiePath,
-		sameSite,
-		secure,
-		httpOnly,
-		expiresIn,
-	};
+	function cookieOptions(): SessionCookieOptions {
+		return { path: cookiePath, httpOnly, secure, sameSite };
+	}
 
 	async function handleRegister(request: Request): Promise<Response> {
 		if (request.method !== "POST") {
@@ -858,22 +853,19 @@ function createCredentialsHandlers(ctx: CredentialsHandlerContext) {
 		}
 
 		try {
+			const password = typeof body.password === "string" ? body.password : String(body.password ?? "");
 			const result = await client.register(
 				{
-					username: body.username as string | undefined,
-					email: body.email as string | undefined,
-					password: body.password as string,
+					username: typeof body.username === "string" ? body.username : undefined,
+					email: typeof body.email === "string" ? body.email : undefined,
+					password,
 				},
 				request,
 			);
 
-			const cookie = createSessionCookie(
-				cookieName,
-				result.token,
-				sessionConfig,
-			);
+			const cookie = createSessionCookie(cookieName, result.token, cookieOptions());
 
-			return redirectResponse("/auth/credentials/me", [cookie]);
+			return jsonResponse({ user: getSafeUser(result.user), token: result.token }, 201, [cookie]);
 		} catch (error) {
 			return errorResponse(error);
 		}
@@ -892,30 +884,27 @@ function createCredentialsHandlers(ctx: CredentialsHandlerContext) {
 		}
 
 		try {
+			const password = typeof body.password === "string" ? body.password : String(body.password ?? "");
 			const result = await client.login(
 				{
-					username: body.username as string | undefined,
-					email: body.email as string | undefined,
+					username: typeof body.username === "string" ? body.username : undefined,
+					email: typeof body.email === "string" ? body.email : undefined,
 				},
-				body.password as string,
+				password,
 				request,
 			);
 
-			const cookie = createSessionCookie(
-				cookieName,
-				result.token,
-				sessionConfig,
-			);
+			const cookie = createSessionCookie(cookieName, result.token, cookieOptions());
 
-			return redirectResponse("/", [cookie]);
+			return jsonResponse({ user: getSafeUser(result.user), token: result.token }, 200, [cookie]);
 		} catch (error) {
 			return errorResponse(error);
 		}
 	}
 
 	async function handleLogout(_request: Request): Promise<Response> {
-		const clearCookie = clearSessionCookie(cookieName, sessionConfig);
-		return redirectResponse("/", [clearCookie]);
+		const clearCookie = clearSessionCookie(cookieName, cookieOptions());
+		return jsonResponse({ ok: true }, 200, [clearCookie]);
 	}
 
 	async function handleMe(request: Request): Promise<Response> {
@@ -1044,7 +1033,15 @@ export function credentials(config: CredentialsConfig): CredentialsResult {
 	);
 
 	// Create HTTP handlers (register, login, logout, me)
-	const handlers = createCredentialsHandlers({ client });
+	const handlers = createCredentialsHandlers({
+		client,
+		cookieName,
+		cookiePath: config.cookiePath ?? "/",
+		sameSite: config.sameSite ?? "lax",
+		secure: config.secure ?? false,
+		httpOnly: config.httpOnly ?? true,
+		expiresIn: config.session.expiresIn ?? "7d",
+	});
 
 	/**
 	 * Extract and verify a credentials session from a Request.
