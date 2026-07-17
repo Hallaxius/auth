@@ -1,4 +1,4 @@
-export type { GuildMember } from "./helpers";
+export type { GuildMember } from "./utils";
 export {
 	autoJoinGuild,
 	generateSecureSecret,
@@ -8,4 +8,4 @@ export {
 	revokeUserSession,
 	syncUserRoles,
 	validateConfig,
-} from "./helpers";
+} from "./utils";

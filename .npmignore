@@ -1,5 +1,13 @@
 src/
 node_modules/
+dist/
+*.log
+.env
+.env.*
+*.tsbuildinfo
+coverage/
+.git/
+.github/
 .gitignore
 biome.json
 tsconfig.json
@@ -7,3 +15,6 @@ tsconfig.build.json
 bun.lock
 *.test.ts
 __tests__/
+.omo/
+.opencode/
+omo/
