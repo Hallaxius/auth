@@ -4,7 +4,6 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/@hallaxius/auth)](https://www.npmjs.com/package/@hallaxius/auth)
-[![Bundle Size](https://img.shields.io/bundlephobia/minzip/@hallaxius/auth)](https://bundlephobia.com/package/@hallaxius/auth@latest)
 [![npm downloads](https://img.shields.io/npm/dm/@hallaxius/auth)](https://www.npmjs.com/package/@hallaxius/auth)
 [![Last Commit](https://img.shields.io/github/last-commit/hallaxius/auth)](https://github.com/hallaxius/auth)
 
