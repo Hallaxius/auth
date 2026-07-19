@@ -24,18 +24,6 @@
 			}
 		}
 	},
-	"overrides": [
-		{
-			"includes": ["src/wrapper.ts"],
-			"linter": {
-				"rules": {
-					"suspicious": {
-						"noExplicitAny": "off"
-					}
-				}
-			}
-		}
-	],
 	"javascript": {
 		"formatter": {
 			"quoteStyle": "double"

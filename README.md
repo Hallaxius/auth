@@ -65,7 +65,7 @@ import { discord, credentials, middleware, config, utils, errors, types } from '
 // lib/auth.ts
 import { discord } from '@hallaxius/auth'
 
-export const { handleLogin, handleCallback, handleLogout, handleMe } = discord({
+export const { handleLogin, handleCallback, handleLogout, handleMe } = await discord({
   clientId: process.env.DISCORD_CLIENT_ID!,
   clientSecret: process.env.DISCORD_CLIENT_SECRET!,
   secret: process.env.JWT_SECRET!,
@@ -146,15 +146,18 @@ Creates a Discord OAuth2 handler with login, callback, logout, and `/me` endpoin
 ```ts
 import { discord } from '@hallaxius/auth'
 
-const { handleLogin, handleCallback, handleLogout, handleMe } = discord({
+const { handleLogin, handleCallback, handleLogout, handleMe } = await discord({
   clientId: process.env.DISCORD_CLIENT_ID!,
   clientSecret: process.env.DISCORD_CLIENT_SECRET!,
   secret: process.env.JWT_SECRET!,
   callbackUrl: process.env.DISCORD_REDIRECT_URI!,
   scopes: ['identify', 'email', 'guilds', 'guilds.join'],
   storage: myStorage,           // optional: enables /me, roles, token refresh
-  routes: { prefix: '/auth/discord' },
-  cookies: { secure: true, sameSite: 'lax' },
+  meRoute: '/auth/me',
+  redirectUri: process.env.DISCORD_REDIRECT_URI,
+  disablePKCE: false,
+  publicPaths: ['/', '/auth/*', '/api/auth/*'],
+  loginUrl: '/auth/discord',
 })
 ```
 
@@ -167,19 +170,14 @@ const { handleLogin, handleCallback, handleLogout, handleMe } = discord({
 | `secret` | `string` | ✅ | — | JWT signing secret (min 32 chars) |
 | `callbackUrl` | `string` | ✅ | — | Full callback URL registered in Discord Portal |
 | `scopes` | `DiscordScope[]` | ❌ | `['identify']` | OAuth2 scopes |
+| `prompt` | `'consent' \| 'none'` | ❌ | — | Discord OAuth2 prompt parameter |
 | `storage` | `UserStorage` | ❌ | — | User persistence (enables roles, refresh) |
-| `routes` | `RoutesConfig` | ❌ | `{ prefix: '/auth/discord' }` | Custom route paths |
-| `cookies` | `CookieOptions` | ❌ | `{ secure: true, sameSite: 'lax' }` | Cookie settings |
-| `pkce` | `boolean` | ❌ | `true` | Enable PKCE (S256) |
-| `prompt` | `'consent' \| 'none'` | ❌ | `'consent'` | OAuth2 prompt parameter |
-| `redirectUri` | `string` | ❌ | — | Override callback URL |
-| `disablePKCE` | `boolean` | ❌ | `false` | Disable PKCE |
-| `autoRefresh` | `Partial<AutoRefreshConfig>` | ❌ | `{ enabled: true, thresholdSeconds: 300, maxRetries: 1 }` | Auto-refresh token config |
-| `bruteForce` | `Partial<BruteForceConfig>` | ❌ | `{ enabled: true, maxAttempts: 5, windowMs: 15min, blockDurationMs: 30min }` | Brute force protection |
-| `mfa` | `Partial<MfaConfig>` | ❌ | `{ enabled: false, requireMfa: false }` | MFA configuration |
-| `guildRoleSync` | `Partial<GuildRoleSyncConfig>` | ❌ | `{ enabled: false }` | Discord guild role sync |
-| `csrf` | `Partial<CsrfConfig>` | ❌ | `{ enabled: true, ttlMs: 5min, singleUse: true, bindToSession: true, bindToUserAgent: true }` | CSRF/state config |
-| `callbacks` | `Callbacks` | ❌ | — | Success/error callbacks |
+| `meRoute` | `string` | ❌ | `/auth/me` | Me endpoint path |
+| `redirectUri` | `string` | ❌ | `DISCORD_REDIRECT_URI` env → `{prefix}/callback` | Override callback URL |
+| `disablePKCE` | `boolean` | ❌ | `false` | Disable PKCE (S256) |
+| `publicPaths` | `string[]` | ❌ | `['/', '/auth/*', '/api/auth/*']` | Paths bypassing middleware auth |
+| `loginUrl` | `string` | ❌ | `/auth/discord` | Login redirect URL for middleware |
+| `stateSecret` | `string` | ❌ | derived from `secret` via HKDF | Separate secret for state HMAC (default: derived from `secret`) |
 
 ### Returns
 
@@ -189,8 +187,11 @@ const { handleLogin, handleCallback, handleLogout, handleMe } = discord({
 | `handleCallback` | `(Request) => Promise<Response>` | Exchanges code, sets session cookie |
 | `handleLogout` | `(Request) => Promise<Response>` | Clears cookie, revokes token if storage |
 | `handleMe` | `(Request) => Promise<Response>` | Returns current user (requires storage) |
+| `middleware` | `(Request) => Promise<Response \| undefined>` | Edge/Next.js middleware |
 | `getSession` | `(Request) => Promise<SessionData \| null>` | Extract session from request |
-| `withAuth` | Higher-order function | Protect route handlers |
+| `withAuth` | Higher-order function | Protect route handlers (requires auth) |
+| `withOptionalAuth` | Higher-order function | Protect route handlers (optional auth) |
+| `withRole` | Higher-order function | Protect route handlers (requires specific roles) |
 
 ### Route Handlers (Next.js)
 
@@ -205,7 +206,7 @@ export const GET = handleCallback
 
 // app/auth/discord/logout/route.ts
 import { handleLogout } from '@/lib/auth'
-export const GET = handleLogout
+export const POST = handleLogout
 
 // app/api/me/route.ts
 import { handleMe } from '@/lib/auth'
@@ -218,7 +219,7 @@ export const GET = handleMe
 import { discord } from '@hallaxius/auth'
 import { drizzleStorage } from './storage'
 
-export const { handleLogin, handleCallback, handleLogout, handleMe } = discord({
+export const { handleLogin, handleCallback, handleLogout, handleMe } = await discord({
   clientId: process.env.DISCORD_CLIENT_ID!,
   clientSecret: process.env.DISCORD_CLIENT_SECRET!,
   secret: process.env.JWT_SECRET!,
@@ -253,7 +254,10 @@ const { handleRegister, handleLogin, handleLogout, handleMe, getSession, withAut
   storage: drizzleStorage,
   hasher: bcryptHasher,
   bruteForce: { maxAttempts: 5, windowMs: 15 * 60 * 1000 },
-  cookies: { name: 'credentials-session', secure: true, sameSite: 'lax' },
+  cookiePath: '/',
+  httpOnly: true,
+  secure: false,
+  sameSite: 'lax',
 })
 ```
 
@@ -280,7 +284,7 @@ enum AuthStrategy {
 | `bruteForce` | `Partial<BruteForceConfig>` | ❌ | `{ enabled: true, maxAttempts: 5, windowMs: 15min, blockDurationMs: 30min }` | Brute force protection |
 | `cookiePath` | `string` | ❌ | `'/'` | Cookie path |
 | `httpOnly` | `boolean` | ❌ | `true` | HttpOnly cookie flag |
-| `secure` | `boolean` | ❌ | `false` | Secure cookie flag |
+| `secure` | `boolean` | ❌ | `NODE_ENV === 'production'` | Secure cookie flag |
 | `sameSite` | `'lax' \| 'strict' \| 'none'` | ❌ | `'lax'` | SameSite cookie policy |
 
 ### Returns
@@ -521,12 +525,12 @@ Configuration normalization and PKCE/route helpers.
 import { config } from '@hallaxius/auth'
 ```
 
-### `config.processConfig(config)`
+### `config.normalize(config)` (async)
 
 Processes and validates Discord OAuth2 config, returning internal config with defaults applied.
 
 ```ts
-const internalConfig = config.processConfig({
+const internalConfig = await config.normalize({
   clientId: '...',
   clientSecret: '...',
   secret: '...',
@@ -550,17 +554,13 @@ const challenge = await config.pkce.challenge(verifier)
 const { verifier, challenge } = await config.pkce.create()
 ```
 
-### `config.routes.create(config)`
+### `config.routes.create(config)` (deprecated)
 
-Creates type-safe route handlers with compile-time scope inference.
+> **Deprecated:** Returns 501 Not Implemented. Will be removed in v4 — use route handlers from `discord()` factory directly.
 
 ```ts
-const handlers = config.routes.create<MyConfig>()({
-  callback: async (query, ctx) => {
-    query.error    // Typed OAuth2 error code
-    ctx.scopes     // Inferred from MyConfig
-  },
-})
+// ❌ Deprecated — use discord() factory instead
+const handlers = config.routes.create()
 ```
 
 ---
@@ -686,19 +686,13 @@ Deletes a user's session from storage and revokes their Discord access token.
 await utils.revoke('discord-id', myStorage, clientId, clientSecret)
 ```
 
-### Additional Exported Functions
+### Direct Access (aliases)
 
-The `utils` namespace also exports these functions directly:
+The `utils` namespace also exposes these aliases:
 
-- `utils.hasRoleInGuild(...)`
-- `utils.hasAnyRoleInGuild(...)`
-- `utils.isUserInGuild(...)`
-- `utils.syncUserRoles(...)`
-- `utils.revokeUserSession(...)`
-- `utils.validateConfig(...)`
-- `utils.generateSecureSecret(...)`
-- `utils.autoJoinGuild(...)`
-- `utils.GuildMember` (type)
+- `utils.secret()` — same as `utils.secret`
+- `utils.validate()` — same as `utils.validate`
+- `utils.revoke()` — same as `utils.guild.revoke`
 
 ---
 
@@ -719,14 +713,18 @@ All auth errors extend `AuthError` (extends `Error`) with a machine-readable `co
 ```ts
 class AuthError extends Error {
   constructor(
+    code: string,
     message: string,
-    public readonly code: ErrorCode,
-    public readonly statusCode: number = 400,
-    public readonly retryable: boolean = false,
-    public readonly retryAfter?: number,
+    options?: { cause?: Error; statusCode?: number; retryAfter?: number },
   )
 }
 ```
+
+Properties:
+- `code: string` — Stable error code
+- `statusCode?: number` — HTTP status code (default 500)
+- `retryAfter?: number` — Seconds until retry for rate-limited errors
+- `cause?: Error` — Original error
 
 ### `ErrorCodes`
 
@@ -799,7 +797,7 @@ try {
   await handleCallback(request)
 } catch (e) {
   if (errors.isAuthError(e)) {
-    console.log(e.code, e.statusCode, e.retryable)
+    console.log(e.code, e.statusCode, e.retryAfter)
   }
 }
 ```
@@ -819,7 +817,7 @@ const code = errors.getCode(e) // 'TOKEN_EXPIRED' | undefined
 ```ts
 import { discord, errors } from '@hallaxius/auth'
 
-const { handleCallback } = discord({ /* config */ })
+const { handleCallback } = await discord({ /* config */ })
 
 export async function GET(request: Request) {
   try {
@@ -857,29 +855,6 @@ export async function GET(request: Request) {
 }
 ```
 
-### Retryable Errors
-
-Errors with `retryable: true` support automatic retry with exponential backoff.
-
-```ts
-import { errors } from '@hallaxius/auth'
-
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
-  let lastError: Error
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn()
-    } catch (err) {
-      lastError = err as Error
-      if (!errors.isAuthError(err) || !err.retryable || attempt === maxRetries) throw err
-      const delay = Math.min(1000 * 2 ** attempt, 30000)
-      await new Promise((r) => setTimeout(r, delay))
-    }
-  }
-  throw lastError!
-}
-```
-
 ---
 
 ## Types
@@ -894,7 +869,7 @@ import type { DiscordConfig, CredentialsConfig, SessionUser, StoredUser, UserSto
 
 | Type | Description |
 |------|-------------|
-| `DiscordConfig` | Discord OAuth2 factory config |
+| `DiscordConfig` | Discord OAuth2 factory config (`DiscordFactoryConfig`) |
 | `CredentialsConfig` | Credentials factory config |
 | `AuthStrategy` | `UsernameOnly \| EmailOnly \| UsernameEmail` |
 | `SessionUser` | JWT session payload (`discordId`, `username`, `roles`, etc.) |
@@ -933,7 +908,7 @@ import type { DiscordConfig, CredentialsConfig, SessionUser, StoredUser, UserSto
 | `hasRoleInGuild()`, `hasAnyRoleInGuild()`, `isUserInGuild()` | `utils.guild.hasRole()`, `utils.guild.hasAnyRole()`, `utils.guild.hasMember()` |
 | `revokeUserSession()` | `utils.revoke()` |
 | `syncUserRoles()` | `utils.guild.sync()` |
-| `processConfig()` | `config.processConfig()` |
+| `processConfig()` | `config.normalize()` |
 | `generateCodeVerifier()`, `generateCodeChallenge()`, `generatePKCE()` | `config.pkce.verifier()`, `config.pkce.challenge()`, `config.pkce.create()` |
 | `createTypedRouteHandlers()` | `config.routes.create()` |
 | `InvalidStateError`, `TokenExpiredError`, etc. | `AuthError` with `ErrorCodes` |
@@ -960,7 +935,7 @@ const { handleLogin, handleCallback, handleLogout, handleMe } = auth({
 ```ts
 import { discord } from '@hallaxius/auth'
 
-const { handleLogin, handleCallback, handleLogout, handleMe } = discord({
+const { handleLogin, handleCallback, handleLogout, handleMe } = await discord({
   clientId: process.env.DISCORD_CLIENT_ID!,
   clientSecret: process.env.DISCORD_CLIENT_SECRET!,
   secret: process.env.JWT_SECRET!,
@@ -993,7 +968,8 @@ const { handleRegister, handleLogin, handleLogout, handleMe, getSession, withAut
   session: { secret: process.env.JWT_SECRET!, expiresIn: '7d' },
   storage: myStorage,
   hasher: bcryptHasher,
-  cookies: { name: 'credentials-session', secure: true, sameSite: 'lax' },
+  secure: true,
+  sameSite: 'lax',
 })
 ```
 
@@ -1115,11 +1091,10 @@ const handlers = createTypedRouteHandlers<MyConfig>()({ ... })
 ```ts
 import { config } from '@hallaxius/auth'
 
-const internal = config.processConfig(config)
+const internal = await config.normalize(config)
 const verifier = config.pkce.verifier()
 const challenge = await config.pkce.challenge(verifier)
 const pkce = await config.pkce.create()
-const handlers = config.routes.create<MyConfig>()({ ... })
 ```
 
 ---

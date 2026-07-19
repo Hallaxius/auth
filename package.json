@@ -1,84 +1,84 @@
 {
-  "name": "@hallaxius/auth",
-  "version": "3.0.1",
-  "description": "Plug-and-play authentication for Bun and Next.js. Supports Discord OAuth2 and credentials (username/password) auth with JWT sessions, role-based access control, and edge-compatible middleware.",
-  "author": {
-    "name": "hallaxius",
-    "url": "https://github.com/hallaxius"
-  },
-  "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist"
-  ],
-  "scripts": {
-    "build": "bun build --target=bun --outdir=dist ./src/index.ts && tsc -p tsconfig.build.json --outDir dist",
-    "dev": "bun --watch run src/index.ts",
-    "typecheck": "tsc --noEmit",
-    "lint": "bunx --bun @biomejs/biome check --write --unsafe src/",
-    "lint:check": "bunx --bun @biomejs/biome check src/",
-    "test": "bun test",
-    "test:watch": "bun test --watch",
-    "prepublish": "bun run lint && bun run build && bun test"
-  },
-  "peerDependencies": {
-    "next": ">=14.0.0"
-  },
-  "peerDependenciesMeta": {
-    "next": {
-      "optional": true
-    }
-  },
-  "engines": {
-    "bun": ">=1.0.0"
-  },
-  "dependencies": {
-    "jose": "^6.2.3"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "2.4.16",
-    "@types/bun": "^1.3.14",
-    "bun-types": "latest",
-    "typescript": "^5.9.0"
-  },
-  "keywords": [
-    "authentication",
-    "oauth2",
-    "discord",
-    "credentials",
-    "username-password",
-    "jwt",
-    "session-management",
-    "rbac",
-    "role-based-access-control",
-    "middleware",
-    "bun",
-    "nextjs",
-    "edge-runtime",
-    "csrf-protection",
-    "pkce",
-    "rate-limiting",
-    "discord-api",
-    "discord-oauth",
-    "auth-provider"
-  ],
-  "bugs": {
-    "url": "https://github.com/hallaxius/auth/issues"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/hallaxius/auth.git"
-  },
-  "homepage": "https://github.com/hallaxius/auth"
+	"name": "@hallaxius/auth",
+	"version": "3.1.0",
+	"description": "Plug-and-play authentication for Bun and Next.js. Supports Discord OAuth2 and credentials (username/password) auth with JWT sessions, role-based access control, and edge-compatible middleware.",
+	"author": {
+		"name": "hallaxius",
+		"url": "https://github.com/hallaxius"
+	},
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "bun build --target=bun --outdir=dist ./src/index.ts && tsc -p tsconfig.build.json --outDir dist",
+    "dev": "bun build --target=bun --outdir=dist ./src/index.ts --watch",
+		"typecheck": "tsc --noEmit",
+		"lint": "bunx --bun @biomejs/biome check --write --unsafe src/",
+		"lint:check": "bunx --bun @biomejs/biome check src/",
+		"test": "bun test",
+		"test:watch": "bun test --watch",
+		"prepublish": "bun run lint && bun run build && bun test"
+	},
+	"peerDependencies": {
+		"next": ">=14.0.0"
+	},
+	"peerDependenciesMeta": {
+		"next": {
+			"optional": true
+		}
+	},
+	"engines": {
+		"bun": ">=1.0.0"
+	},
+	"dependencies": {
+		"jose": "^6.2.3"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.4.16",
+		"@types/bun": "^1.3.14",
+		"bun-types": "latest",
+		"typescript": "^5.9.0"
+	},
+	"keywords": [
+		"authentication",
+		"oauth2",
+		"discord",
+		"credentials",
+		"username-password",
+		"jwt",
+		"session-management",
+		"rbac",
+		"role-based-access-control",
+		"middleware",
+		"bun",
+		"nextjs",
+		"edge-runtime",
+		"csrf-protection",
+		"pkce",
+		"rate-limiting",
+		"discord-api",
+		"discord-oauth",
+		"auth-provider"
+	],
+	"bugs": {
+		"url": "https://github.com/hallaxius/auth/issues"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/hallaxius/auth.git"
+	},
+	"homepage": "https://github.com/hallaxius/auth"
 }

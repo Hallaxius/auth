@@ -3,4 +3,4 @@ export type {
 	SafeStoredUser,
 	StoredUser,
 	UserStorage,
-} from "../../discord";
+} from "../../types";

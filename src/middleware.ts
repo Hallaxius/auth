@@ -1,36 +1,18 @@
-/**
- * v3 Middleware — Self-contained implementations
- *
- * Edge-compatible middleware for Next.js, Bun, Node, Cloudflare Workers, Deno.
- */
-
-import { jwtVerify } from "jose";
-
-// ============================================================================
-// Types
-// ============================================================================
+import { parseCookies } from "./internal/cookies";
+import { verifyToken } from "./internal/jwt";
 
 export interface EdgeAuthConfig {
-	/** JWT secret for verifying session tokens */
 	secret: string;
-	/** Cookie name(s) to check — supports multiple cookies for multi-provider auth */
 	cookies?: Array<{ name: string; secret: string }>;
-	/** Single cookie name (legacy, use cookies array instead) */
 	cookieName?: string;
-	/** Login URL for redirects (default: "/auth/discord") */
 	loginUrl?: string;
-	/** Paths that bypass auth (supports * wildcard) */
 	publicPaths?: string[];
 }
 
 export interface EdgeRoleConfig {
-	/** JWT secret for verifying session tokens */
 	secret: string;
-	/** Cookie name (default: "discord-auth-session") */
 	cookieName?: string;
-	/** Login URL for redirects (default: "/auth/discord") */
 	loginUrl?: string;
-	/** Path pattern -> required roles mapping (supports * wildcard) */
 	roles: Record<string, string[]>;
 }
 
@@ -46,46 +28,6 @@ export interface MiddlewareRoleConfig {
 	loginUrl: string;
 	roles: Record<string, string[]>;
 }
-
-// ============================================================================
-// Cookie parsing (inlined from standalone/cookies.ts)
-// ============================================================================
-
-function parseCookies(request: Request): Record<string, string> {
-	const header = request.headers.get("Cookie") ?? "";
-	const cookies: Record<string, string> = {};
-	for (const pair of header.split(";")) {
-		const [key, ...rest] = pair.split("=");
-		if (key) {
-			cookies[key.trim()] = rest.join("=").trim();
-		}
-	}
-	return cookies;
-}
-
-// ============================================================================
-// JWT verification (inlined from standalone/jwt.ts)
-// ============================================================================
-
-function secretToKey(secret: string): Uint8Array {
-	return new TextEncoder().encode(secret);
-}
-
-async function verifyToken<T extends Record<string, unknown>>(
-	token: string,
-	secret: string,
-): Promise<T | null> {
-	try {
-		const { payload } = await jwtVerify(token, secretToKey(secret));
-		return payload as T;
-	} catch {
-		return null;
-	}
-}
-
-// ============================================================================
-// Path matching utilities (inlined from standalone/edge.ts)
-// ============================================================================
 
 export function isPublicPath(path: string, patterns: string[]): boolean {
 	for (const pattern of patterns) {
@@ -122,10 +64,6 @@ export function requiredRole(
 	return null;
 }
 
-// ============================================================================
-// Response helpers
-// ============================================================================
-
 export function redirect(url: string): Response {
 	return new Response(null, { status: 302, headers: { Location: url } });
 }
@@ -136,10 +74,6 @@ export function denied(message = "Forbidden"): Response {
 		headers: { "Content-Type": "application/json" },
 	});
 }
-
-// ============================================================================
-// Session extraction
-// ============================================================================
 
 export async function getSession(
 	request: Request,
@@ -177,15 +111,10 @@ export interface SessionData {
 	roles?: string[];
 }
 
-// ============================================================================
-// Auth middleware (supports multiple cookies for multi-provider)
-// ============================================================================
-
 export function middlewareAuth(config: EdgeAuthConfig) {
 	const loginUrl = config.loginUrl ?? "/auth/discord";
 	const publicPaths = config.publicPaths ?? [];
 
-	// Normalize cookie configs
 	const cookieConfigs =
 		config.cookies ??
 		(config.cookieName
@@ -216,10 +145,6 @@ export function middlewareAuth(config: EdgeAuthConfig) {
 	};
 }
 
-// ============================================================================
-// Role middleware
-// ============================================================================
-
 export function middlewareRole(config: EdgeRoleConfig) {
 	const loginUrl = config.loginUrl ?? "/auth/discord";
 	const cookieName = config.cookieName ?? "discord-auth-session";
@@ -233,7 +158,7 @@ export function middlewareRole(config: EdgeRoleConfig) {
 
 		const required = requiredRole(path, roles);
 		if (!required) {
-			return undefined; // No role requirement for this path
+			return undefined;
 		}
 
 		const user = await getSession(request, {
@@ -252,10 +177,6 @@ export function middlewareRole(config: EdgeRoleConfig) {
 		return undefined;
 	};
 }
-
-// ============================================================================
-// Middleware combinator
-// ============================================================================
 
 export function combine(
 	...middlewares: Array<(request: Request) => Promise<Response | undefined>>

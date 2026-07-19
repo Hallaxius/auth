@@ -1,15 +1,6 @@
-/**
- * @hallaxius/auth v3 — Single entry point
- *
- * Usage:
- *   import { discord, credentials, middleware, config, utils, errors, types } from '@hallaxius/auth'
- */
-
 export { credentials } from "./credentials";
-// ===== MAIN FACTORIES =====
 export { discord } from "./discord";
 
-// ===== MIDDLEWARE (object) =====
 import {
 	combine,
 	denied,
@@ -32,7 +23,6 @@ export const middleware = {
 	deny: denied,
 } as const;
 
-// ===== CONFIG (object) =====
 import {
 	createTypedRouteHandlers,
 	generateCodeChallenge,
@@ -51,7 +41,6 @@ export const config = {
 	routes: { create: createTypedRouteHandlers },
 } as const;
 
-// ===== UTILS (object) =====
 import {
 	autoJoinGuild,
 	generateSecureSecret,
@@ -76,24 +65,25 @@ export const utils = {
 	revoke: revokeUserSession,
 } as const;
 
-export type { ErrorCode } from "./errors";
-// ===== ERRORS =====
-export { AuthError, ErrorCodes, getCode, isAuthError } from "./errors";
-
-// ===== TYPES =====
 export type {
-	CreateCredentialsInput,
+	AuthStrategy,
+	AuthUserStorage,
+	CreateCredentialsUserData as CreateCredentialsInput,
 	CredentialsConfig,
-	CredentialsStorage,
-	DiscordConfig,
+	PasswordHasher,
+} from "./credentials";
+export type { ErrorCode } from "./errors";
+export { AuthError, ErrorCodes, getCode, isAuthError } from "./errors";
+export type {
+	DiscordAuthConfig as DiscordConfig,
+	DiscordScope as Scope,
+	DiscordTokenResponse as TokenResponse,
 	DiscordUser,
 	GuildMember,
-	PasswordHasher,
-	RouteOptions,
-	Scope,
-	SessionOptions,
-	SessionUser,
+	RoutesConfig as RouteOptions,
+	SafeStoredUser,
+	SessionConfig as SessionOptions,
+	SessionData as SessionUser,
 	StoredUser,
-	TokenResponse,
 	UserStorage,
 } from "./types";

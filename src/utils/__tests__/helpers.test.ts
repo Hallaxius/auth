@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "bun:test";
-import type {
-	DiscordGuildMember,
-	DiscordUser,
-	UserStorage,
-} from "../../discord";
 import { AuthError } from "../../errors";
+import type { DiscordGuildMember, DiscordUser, UserStorage } from "../../types";
 import {
 	generateSecureSecret,
 	revokeUserSession,
@@ -41,7 +37,6 @@ const _mockGuildMember: DiscordGuildMember = {
 	pending: false,
 };
 
-// Mock storage helper
 function createMockStorage(): UserStorage & {
 	findByDiscordId: ReturnType<typeof vi.fn>;
 	create: ReturnType<typeof vi.fn>;
@@ -195,16 +190,12 @@ describe("validateConfig", () => {
 	});
 });
 
-// Note: The following tests require actual Discord API calls and are skipped
-// in unit tests. They would need a proper mock server or integration test setup.
-
 describe.skip("hasRoleInGuild (requires Discord API)", () => {
 	beforeEach(() => {
 		vi.restoreAllMocks();
 	});
 
 	it("should return true when user has the role", async () => {
-		// This test requires a real Discord API connection
 		expect(true).toBe(true);
 	});
 });
@@ -215,7 +206,6 @@ describe.skip("hasAnyRoleInGuild (requires Discord API)", () => {
 	});
 
 	it("should return true when user has at least one role", async () => {
-		// This test requires a real Discord API connection
 		expect(true).toBe(true);
 	});
 });
@@ -226,7 +216,6 @@ describe.skip("isUserInGuild (requires Discord API)", () => {
 	});
 
 	it("should return true when user is in guild", async () => {
-		// This test requires a real Discord API connection
 		expect(true).toBe(true);
 	});
 });
@@ -237,7 +226,6 @@ describe.skip("autoJoinGuild (requires Discord API)", () => {
 	});
 
 	it("should successfully add user to guild", async () => {
-		// This test requires a real Discord API connection
 		expect(true).toBe(true);
 	});
 });
