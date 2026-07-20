@@ -1,193 +1,41 @@
-﻿import type { SessionCookieOptions } from "./internal/cookies";
+﻿import { AuthError, ErrorCodes } from "./errors";
 import {
 	clearSessionCookie,
 	createSessionCookie,
 	defaultSecureCookie,
 	parseCookies,
+	type SessionCookieOptions,
 } from "./internal/cookies";
 import { signToken, verifyToken } from "./internal/jwt";
-
-function sanitizeIP(raw: string | null | undefined): string {
-	const ip = raw?.split(",")[0]?.trim() ?? "unknown";
-	const ipv4Regex = /^(?:\d{1,3}\.){3}\d{1,3}$/;
-	const ipv6Regex = /^[0-9a-fA-F:]+$/;
-	const cleaned = ip.replace(/^::ffff:/, "");
-	if (ipv4Regex.test(cleaned) || ipv6Regex.test(cleaned)) {
-		return cleaned;
-	}
-	return "127.0.0.1";
-}
-
-export enum AuthStrategy {
-	UsernameOnly = "username-only",
-
-	EmailOnly = "email-only",
-
-	UsernameEmail = "username-email",
-}
-
-export interface AuthUser {
-	id: string;
-	username: string | null;
-	email: string | null;
-	passwordHash: string;
-	roles: string[];
-	createdAt: Date;
-	updatedAt: Date;
-}
-
-export interface CreateCredentialsUserData {
-	username?: string;
-	email?: string;
-	passwordHash?: string;
-	roles?: string[];
-}
-
-export interface AuthUserIdentifier {
-	username?: string;
-	email?: string;
-}
-
-export interface CredentialsAuthResult {
-	user: AuthUser;
-	token: string;
-}
-
-export interface CredentialsClientConfig {
-	strategy: AuthStrategy;
-	secret: string;
-	expiresIn?: string | number;
-	cookieName?: string;
-	cookiePath?: string;
-	httpOnly?: boolean;
-	secure?: boolean;
-	sameSite?: "lax" | "strict" | "none";
-	defaultRoles?: string[];
-	minPasswordLength?: number;
-}
-
-export interface InternalCredentialsConfig {
-	strategy: AuthStrategy;
-	secret: string;
-	expiresIn: string | number;
-	cookieName: string;
-	cookiePath: string;
-	httpOnly: boolean;
-	secure: boolean;
-	sameSite: "lax" | "strict" | "none";
-	defaultRoles: string[];
-	minPasswordLength: number;
-}
-
-export interface PasswordHasher {
-	hash(password: string): Promise<string>;
-	verify(password: string, hash: string): Promise<boolean>;
-}
-
-export interface AuthUserStorage {
-	findByUsername(username: string): Promise<AuthUser | null>;
-	findByEmail(email: string): Promise<AuthUser | null>;
-	findById(id: string): Promise<AuthUser | null>;
-	create(
-		data: Omit<AuthUser, "id" | "createdAt" | "updatedAt">,
-	): Promise<AuthUser>;
-	update(userId: string, data: Partial<AuthUser>): Promise<AuthUser>;
-	delete(userId: string): Promise<void>;
-}
-
-export class DiscordAuthError extends Error {
-	readonly code: string;
-	readonly cause?: Error;
-	readonly statusCode?: number;
-
-	constructor(
-		code: string,
-		message: string,
-		options?: { cause?: Error; statusCode?: number },
-	) {
-		super(message);
-		this.code = code;
-		this.cause = options?.cause;
-		this.statusCode = options?.statusCode;
-		this.name = this.constructor.name;
-		if (typeof Error.captureStackTrace === "function") {
-			Error.captureStackTrace(this, this.constructor);
-		}
-	}
-}
-
-export class CredentialsAuthError extends DiscordAuthError {}
-
-export class UsernameTakenError extends CredentialsAuthError {
-	constructor(
-		message = "Username is already taken",
-		options?: { cause?: Error },
-	) {
-		super("USERNAME_TAKEN", message, {
-			statusCode: 409,
-			cause: options?.cause,
-		});
-	}
-}
-
-export class EmailTakenError extends CredentialsAuthError {
-	constructor(message = "Email is already taken", options?: { cause?: Error }) {
-		super("EMAIL_TAKEN", message, { statusCode: 409, cause: options?.cause });
-	}
-}
-
-export class InvalidCredentialsError extends CredentialsAuthError {
-	constructor(message = "Invalid credentials", options?: { cause?: Error }) {
-		super("INVALID_CREDENTIALS", message, {
-			statusCode: 401,
-			cause: options?.cause,
-		});
-	}
-}
-
-export class UserNotFoundError extends CredentialsAuthError {
-	constructor(message = "User not found", options?: { cause?: Error }) {
-		super("USER_NOT_FOUND", message, {
-			statusCode: 404,
-			cause: options?.cause,
-		});
-	}
-}
-
-export class CredentialsValidationError extends CredentialsAuthError {
-	constructor(message = "Validation failed", options?: { cause?: Error }) {
-		super("CREDENTIALS_VALIDATION_ERROR", message, {
-			statusCode: 400,
-			cause: options?.cause,
-		});
-	}
-}
-
-export interface BruteForceConfig {
-	enabled: boolean;
-	maxAttempts: number;
-	windowMs: number;
-	blockDurationMs: number;
-	storage?: BruteForceStorage;
-}
-
-export interface BruteForceStorage {
-	increment(key: string, windowMs: number): Promise<number>;
-	isBlocked(key: string): Promise<boolean>;
-	reset(key: string): Promise<void>;
-	block(key: string, durationMs: number): Promise<void>;
-	getCount(key: string): Promise<number>;
-}
+import {
+	AuthStrategy,
+	type AuthUser,
+	type AuthUserIdentifier,
+	type AuthUserStorage,
+	type BruteForceConfig,
+	type BruteForceStorage,
+	type CreateCredentialsUserData,
+	type CredentialsAuthResult,
+	type CredentialsClientConfig,
+	type CredentialsConfig,
+	type CredentialsResult,
+	type InternalCredentialsConfig,
+	type PasswordHasher,
+} from "./types";
+import { sanitizeIP } from "./utils/ip";
+import { LruCache } from "./utils/lru";
 
 export class MemoryBruteForceStorage implements BruteForceStorage {
-	private attempts = new Map<string, { count: number; resetAt: number }>();
-	private blockedUntil = new Map<string, number>();
+	private attempts = new LruCache<string, { count: number; resetAt: number }>(
+		10_000,
+	);
+	private blockedUntil = new LruCache<string, number>(10_000);
 
 	async increment(key: string, windowMs: number): Promise<number> {
 		const now = Date.now();
 		const existing = this.attempts.get(key);
 		if (!existing || now > existing.resetAt) {
-			this.attempts.set(key, { count: 1, resetAt: now + windowMs });
+			this.attempts.set(key, { count: 1, resetAt: now + windowMs }, windowMs);
 			return 1;
 		}
 		existing.count++;
@@ -210,7 +58,7 @@ export class MemoryBruteForceStorage implements BruteForceStorage {
 	}
 
 	async block(key: string, durationMs: number): Promise<void> {
-		this.blockedUntil.set(key, Date.now() + durationMs);
+		this.blockedUntil.set(key, Date.now() + durationMs, durationMs);
 	}
 
 	async getCount(key: string): Promise<number> {
@@ -234,6 +82,10 @@ export class BruteForceProtection {
 		this.storage = storage ?? config.storage ?? new MemoryBruteForceStorage();
 	}
 
+	get maxAttempts(): number {
+		return this.config.maxAttempts;
+	}
+
 	async recordAttempt(key: string, success: boolean): Promise<void> {
 		if (!this.config.enabled) return;
 
@@ -243,9 +95,27 @@ export class BruteForceProtection {
 		}
 
 		const count = await this.storage.increment(key, this.config.windowMs);
-		if (count > this.config.maxAttempts) {
+		if (count >= this.config.maxAttempts) {
 			await this.storage.block(key, this.config.blockDurationMs);
 		}
+	}
+
+	async recordAttemptAndGetCount(
+		key: string,
+		success: boolean,
+	): Promise<number> {
+		if (!this.config.enabled) return 0;
+
+		if (success) {
+			await this.storage.reset(key);
+			return 0;
+		}
+
+		const count = await this.storage.increment(key, this.config.windowMs);
+		if (count >= this.config.maxAttempts) {
+			await this.storage.block(key, this.config.blockDurationMs);
+		}
+		return count;
 	}
 
 	async isBlocked(key: string): Promise<boolean> {
@@ -261,19 +131,27 @@ export class BruteForceProtection {
 		return Math.max(0, this.config.maxAttempts - count);
 	}
 
+	async getRetryAfter(_key: string): Promise<number | undefined> {
+		if (!this.config.enabled) return undefined;
+		// The storage doesn't expose block expiry, so we return the blockDurationMs as an estimate
+		// A proper implementation would need storage.getBlockExpiry(key)
+		return this.config.blockDurationMs;
+	}
+
 	async reset(key: string): Promise<void> {
 		if (!this.config.enabled) return;
 		await this.storage.reset(key);
 	}
 
-	static extractKey(request: Request): string {
+	static extractKey(request: Request, strategy?: AuthStrategy): string {
 		const forwarded = request.headers.get("x-forwarded-for");
 		const ip = forwarded
 			? sanitizeIP(forwarded)
 			: (request.headers.get("x-real-ip") ?? "unknown");
 		const userAgent =
 			request.headers.get("user-agent")?.slice(0, 50) ?? "unknown";
-		return `${ip}:${userAgent}`;
+		const strategyPart = strategy ?? "unknown";
+		return `${ip}:${userAgent}:${strategyPart}`;
 	}
 }
 
@@ -353,26 +231,53 @@ export class CredentialsClient {
 		if (bruteForceKey) {
 			const blocked = await this.bruteForce.isBlocked(bruteForceKey);
 			if (blocked) {
-				const _remaining =
-					await this.bruteForce.getRemainingAttempts(bruteForceKey);
-				throw new InvalidCredentialsError(
+				const retryAfter = await this.bruteForce.getRetryAfter(bruteForceKey);
+				throw new AuthError(
+					ErrorCodes.BRUTE_FORCE_BLOCKED,
 					`Account temporarily locked. Try again later.`,
+					{
+						statusCode: 429,
+						retryable: true,
+						retryAfter,
+					},
 				);
 			}
 		}
 
 		const user = await this.findUserByIdentifier(identifier);
 
-		const dummyHash = user?.passwordHash ?? (await this.getDummyHash());
-		const valid = user
-			? await this.hasher.verify(password, user.passwordHash)
-			: await this.hasher.verify(password, dummyHash);
+		const dummyHash = await this.getDummyHash();
+		const targetHash = user?.passwordHash ?? dummyHash;
+		const valid = await this.hasher.verify(password, targetHash);
+		const userExists = user !== null;
+		const passwordValid = valid && userExists;
 
-		if (!user || !valid) {
+		if (!passwordValid) {
 			if (bruteForceKey) {
-				await this.bruteForce.recordAttempt(bruteForceKey, false);
+				const count = await this.bruteForce.recordAttemptAndGetCount(
+					bruteForceKey,
+					false,
+				);
+				if (count >= this.bruteForce.maxAttempts) {
+					const retryAfter = await this.bruteForce.getRetryAfter(bruteForceKey);
+					throw new AuthError(
+						ErrorCodes.BRUTE_FORCE_BLOCKED,
+						`Account temporarily locked. Try again later.`,
+						{
+							statusCode: 429,
+							retryable: true,
+							retryAfter,
+						},
+					);
+				}
 			}
-			throw new InvalidCredentialsError();
+			throw new AuthError(
+				ErrorCodes.INVALID_CREDENTIALS,
+				"Invalid credentials",
+				{
+					statusCode: 401,
+				},
+			);
 		}
 
 		if (bruteForceKey) {
@@ -428,7 +333,13 @@ export class CredentialsClient {
 		}
 
 		if (errors.length > 0) {
-			throw new CredentialsValidationError(errors.join("; "));
+			throw new AuthError(
+				ErrorCodes.CREDENTIALS_VALIDATION_ERROR,
+				errors.join("; "),
+				{
+					statusCode: 400,
+				},
+			);
 		}
 	}
 
@@ -438,12 +349,22 @@ export class CredentialsClient {
 	): Promise<void> {
 		if (username) {
 			const existing = await this.storage.findByUsername(username);
-			if (existing) throw new UsernameTakenError();
+			if (existing)
+				throw new AuthError(
+					ErrorCodes.USERNAME_TAKEN,
+					"Username is already taken",
+					{
+						statusCode: 409,
+					},
+				);
 		}
 
 		if (email) {
 			const existing = await this.storage.findByEmail(email);
-			if (existing) throw new EmailTakenError();
+			if (existing)
+				throw new AuthError(ErrorCodes.EMAIL_TAKEN, "Email is already taken", {
+					statusCode: 409,
+				});
 		}
 	}
 
@@ -486,10 +407,10 @@ export class CredentialsClient {
 	}
 
 	private getBruteForceKey(
-		identifier: AuthUserIdentifier,
+		_identifier: AuthUserIdentifier,
 		request?: Request,
 	): string | null {
-		const id = identifier.username ?? identifier.email ?? "unknown";
+		const strategy = this.config.strategy;
 		let ip = "unknown";
 		if (request) {
 			const forwarded = request.headers.get("x-forwarded-for");
@@ -497,7 +418,7 @@ export class CredentialsClient {
 				? sanitizeIP(forwarded)
 				: (request.headers.get("x-real-ip") ?? "unknown");
 		}
-		return `credentials-login:${ip}:${id}`;
+		return `credentials-login:${strategy}:${ip}`;
 	}
 }
 
@@ -525,20 +446,39 @@ function jsonResponse(
 	return new Response(JSON.stringify(data), { status, headers });
 }
 
-function _redirectResponse(url: string, cookies?: string[]): Response {
-	const headers = new Headers();
-	headers.set("Location", url);
-	if (cookies) {
-		for (const c of cookies) headers.append("Set-Cookie", c);
-	}
-	return new Response(null, { status: 302, headers });
-}
-
 function errorResponse(error: unknown): Response {
-	if (error instanceof CredentialsAuthError) {
-		return jsonResponse(
-			{ error: error.message, code: error.code },
-			error.statusCode ?? 500,
+	if (error instanceof AuthError) {
+		const headers = new Headers({
+			"Content-Type": "application/json; charset=utf-8",
+		});
+		if (error.retryable && error.retryAfter) {
+			headers.set("Retry-After", String(Math.ceil(error.retryAfter / 1000)));
+			headers.set("RateLimit-Limit", "5");
+			headers.set("RateLimit-Remaining", "0");
+			headers.set(
+				"RateLimit-Reset",
+				String(Math.ceil((Date.now() + error.retryAfter) / 1000)),
+			);
+		}
+		if (
+			error.code === ErrorCodes.BRUTE_FORCE_BLOCKED ||
+			error.code === ErrorCodes.RATE_LIMITED
+		) {
+			headers.set("RateLimit-Limit", "5");
+			headers.set("RateLimit-Remaining", "0");
+			if (error.retryAfter) {
+				headers.set(
+					"RateLimit-Reset",
+					String(Math.ceil((Date.now() + error.retryAfter) / 1000)),
+				);
+			}
+		}
+		return new Response(
+			JSON.stringify({ error: error.message, code: error.code }),
+			{
+				status: error.statusCode ?? 500,
+				headers,
+			},
 		);
 	}
 	console.error("[auth:credentials] Unhandled error:", error);
@@ -680,38 +620,6 @@ function createCredentialsHandlers(ctx: CredentialsHandlerContext) {
 	};
 }
 
-export interface CredentialsConfig {
-	strategy: CredentialsClientConfig["strategy"];
-	session: {
-		secret: string;
-		expiresIn?: string | number;
-		cookieName?: string;
-	};
-	storage: AuthUserStorage;
-	hasher: PasswordHasher;
-	bruteForce?: Partial<BruteForceConfig>;
-	cookiePath?: string;
-	httpOnly?: boolean;
-	secure?: boolean;
-	sameSite?: "lax" | "strict" | "none";
-}
-
-export interface CredentialsResult {
-	handleRegister: (request: Request) => Promise<Response>;
-	handleLogin: (request: Request) => Promise<Response>;
-	handleLogout: (request: Request) => Promise<Response>;
-	handleMe: (request: Request) => Promise<Response>;
-	getSession: (request: Request) => Promise<AuthUser | null>;
-	withAuth: <
-		T extends (
-			request: Request,
-			ctx: { user: AuthUser },
-		) => Promise<Response> | Response,
-	>(
-		handler: T,
-	) => (request: Request) => Promise<Response>;
-}
-
 export function credentials(config: CredentialsConfig): CredentialsResult {
 	const cookieName = config.session.cookieName ?? "credentials-session";
 	const _cookiePath = config.cookiePath ?? "/";
@@ -728,7 +636,7 @@ export function credentials(config: CredentialsConfig): CredentialsResult {
 		},
 		config.storage,
 		config.hasher,
-		config.bruteForce,
+		config.bruteForce ?? {},
 	);
 
 	const handlers = createCredentialsHandlers({

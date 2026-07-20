@@ -110,15 +110,17 @@ export class DiscordClient {
 		const isGlobalRateLimit = res.headers.get("X-RateLimit-Global") === "true";
 
 		if (res.status === 429 || isGlobalRateLimit) {
-			const retryAfter = retryAfterHeader
-				? Number.parseInt(retryAfterHeader, 10)
+			const retryAfterMs = retryAfterHeader
+				? Number.parseInt(retryAfterHeader, 10) * 1000
 				: rateLimitReset
-					? Number.parseInt(rateLimitReset, 10) * 1000
+					? Number.parseInt(rateLimitReset, 10) * 1000 - Date.now()
 					: undefined;
 			throw new AuthError(
 				ErrorCodes.RATE_LIMITED,
-				`Discord API rate limit exceeded${retryAfter ? `, retry after ${retryAfter}ms` : ""}`,
-				{ retryAfter: retryAfter ? Math.ceil(retryAfter / 1000) : undefined },
+				`Discord API rate limit exceeded${retryAfterMs ? `, retry after ${retryAfterMs}ms` : ""}`,
+				{
+					retryAfter: retryAfterMs ? Math.ceil(retryAfterMs / 1000) : undefined,
+				},
 			);
 		}
 
@@ -127,15 +129,17 @@ export class DiscordClient {
 			rateLimitRemaining !== null &&
 			Number.parseInt(rateLimitRemaining, 10) === 0
 		) {
-			const retryAfter = retryAfterHeader
-				? Number.parseInt(retryAfterHeader, 10)
+			const retryAfterMs = retryAfterHeader
+				? Number.parseInt(retryAfterHeader, 10) * 1000
 				: rateLimitReset
-					? Number.parseInt(rateLimitReset, 10) * 1000
+					? Number.parseInt(rateLimitReset, 10) * 1000 - Date.now()
 					: undefined;
 			throw new AuthError(
 				ErrorCodes.RATE_LIMITED,
-				`Discord API rate limit exceeded${retryAfter ? `, retry after ${retryAfter}ms` : ""}`,
-				{ retryAfter: retryAfter ? Math.ceil(retryAfter / 1000) : undefined },
+				`Discord API rate limit exceeded${retryAfterMs ? `, retry after ${retryAfterMs}ms` : ""}`,
+				{
+					retryAfter: retryAfterMs ? Math.ceil(retryAfterMs / 1000) : undefined,
+				},
 			);
 		}
 
@@ -303,6 +307,24 @@ export class DiscordClient {
 		if (!res.ok && res.status !== 201 && res.status !== 204) {
 			const err = await res.text();
 			throw new Error(`Failed to add guild member: ${res.status} ${err}`);
+		}
+	}
+
+	async removeMember(params: {
+		guildId: string;
+		userId: string;
+		botToken: string;
+	}): Promise<void> {
+		const res = await this.fetchWithRateLimitHandling(
+			`${DISCORD_API}/guilds/${params.guildId}/members/${params.userId}`,
+			{
+				method: "DELETE",
+				headers: { Authorization: `Bot ${params.botToken}` },
+			},
+		);
+		if (!res.ok && res.status !== 204) {
+			const err = await res.text();
+			throw new Error(`Failed to remove guild member: ${res.status} ${err}`);
 		}
 	}
 

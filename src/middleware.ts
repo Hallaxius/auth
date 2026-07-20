@@ -1,10 +1,9 @@
 import { parseCookies } from "./internal/cookies";
 import { verifyToken } from "./internal/jwt";
+import type { SessionData } from "./types";
 
 export interface EdgeAuthConfig {
-	secret: string;
-	cookies?: Array<{ name: string; secret: string }>;
-	cookieName?: string;
+	cookies: Array<{ name: string; secret: string }>;
 	loginUrl?: string;
 	publicPaths?: string[];
 }
@@ -29,7 +28,7 @@ export interface MiddlewareRoleConfig {
 	roles: Record<string, string[]>;
 }
 
-export function isPublicPath(path: string, patterns: string[]): boolean {
+export function publicPath(path: string, patterns: string[]): boolean {
 	for (const pattern of patterns) {
 		if (pattern.endsWith("/*")) {
 			const prefix = pattern.slice(0, -2);
@@ -47,7 +46,7 @@ export function isPublicPath(path: string, patterns: string[]): boolean {
 	return false;
 }
 
-export function requiredRole(
+export function required(
 	path: string,
 	roleMap: Record<string, string[]>,
 ): string[] | null {
@@ -65,17 +64,23 @@ export function requiredRole(
 }
 
 export function redirect(url: string): Response {
+	if (!url.startsWith("/")) {
+		throw new Error("redirect url must be a relative path starting with /");
+	}
 	return new Response(null, { status: 302, headers: { Location: url } });
 }
 
-export function denied(message = "Forbidden"): Response {
-	return new Response(JSON.stringify({ error: message }), {
-		status: 403,
-		headers: { "Content-Type": "application/json" },
-	});
+export function deny(message = "Forbidden"): Response {
+	return new Response(
+		JSON.stringify({ error: message, code: "INSUFFICIENT_PERMISSIONS" }),
+		{
+			status: 403,
+			headers: { "Content-Type": "application/json" },
+		},
+	);
 }
 
-export async function getSession(
+export async function session(
 	request: Request,
 	config: { secret: string; cookieName?: string },
 ): Promise<SessionData | null> {
@@ -101,25 +106,10 @@ export async function getSession(
 	};
 }
 
-export interface SessionData {
-	discordId: string;
-	username: string;
-	globalName: string | null;
-	avatar: string | null;
-	email: string | null;
-	locale: string;
-	roles?: string[];
-}
-
-export function middlewareAuth(config: EdgeAuthConfig) {
+export function auth(config: EdgeAuthConfig) {
 	const loginUrl = config.loginUrl ?? "/auth/discord";
 	const publicPaths = config.publicPaths ?? [];
-
-	const cookieConfigs =
-		config.cookies ??
-		(config.cookieName
-			? [{ name: config.cookieName, secret: config.secret }]
-			: []);
+	const cookieConfigs = config.cookies;
 
 	return async function authMiddleware(
 		request: Request,
@@ -127,12 +117,12 @@ export function middlewareAuth(config: EdgeAuthConfig) {
 		const url = new URL(request.url);
 		const path = url.pathname;
 
-		if (isPublicPath(path, publicPaths)) {
+		if (publicPath(path, publicPaths)) {
 			return undefined;
 		}
 
 		for (const cookie of cookieConfigs) {
-			const user = await getSession(request, {
+			const user = await session(request, {
 				secret: cookie.secret,
 				cookieName: cookie.name,
 			});
@@ -145,7 +135,7 @@ export function middlewareAuth(config: EdgeAuthConfig) {
 	};
 }
 
-export function middlewareRole(config: EdgeRoleConfig) {
+export function role(config: EdgeRoleConfig) {
 	const loginUrl = config.loginUrl ?? "/auth/discord";
 	const cookieName = config.cookieName ?? "discord-auth-session";
 	const roles = config.roles;
@@ -156,12 +146,12 @@ export function middlewareRole(config: EdgeRoleConfig) {
 		const url = new URL(request.url);
 		const path = url.pathname;
 
-		const required = requiredRole(path, roles);
-		if (!required) {
+		const requiredRoles = required(path, roles);
+		if (!requiredRoles) {
 			return undefined;
 		}
 
-		const user = await getSession(request, {
+		const user = await session(request, {
 			secret: config.secret,
 			cookieName,
 		});
@@ -170,8 +160,8 @@ export function middlewareRole(config: EdgeRoleConfig) {
 			return redirect(`${loginUrl}?redirect=${encodeURIComponent(path)}`);
 		}
 
-		if (!user.roles || !required.some((r) => user.roles?.includes(r))) {
-			return denied("Insufficient permissions");
+		if (!user.roles || !requiredRoles.some((r) => user.roles?.includes(r))) {
+			return deny("Insufficient permissions");
 		}
 
 		return undefined;

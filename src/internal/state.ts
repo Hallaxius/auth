@@ -1,34 +1,75 @@
 import type { CsrfConfig } from "../types";
+import { LruCache } from "../utils/lru";
+
+const _BASE64_ALPHABET =
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const BASE64_URL_ALPHABET =
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+export function base64URLEncode(bytes: Uint8Array): string {
+	let result = "";
+	for (let i = 0; i < bytes.length; i += 3) {
+		const a = bytes[i] as number;
+		const b = i + 1 < bytes.length ? (bytes[i + 1] as number) : 0;
+		const c = i + 2 < bytes.length ? (bytes[i + 2] as number) : 0;
+		const triplet = (a << 16) | (b << 8) | c;
+		result += BASE64_URL_ALPHABET[(triplet >> 18) & 0x3f] as string;
+		result += BASE64_URL_ALPHABET[(triplet >> 12) & 0x3f] as string;
+		if (i + 1 < bytes.length) {
+			result += BASE64_URL_ALPHABET[(triplet >> 6) & 0x3f] as string;
+		}
+		if (i + 2 < bytes.length) {
+			result += BASE64_URL_ALPHABET[triplet & 0x3f] as string;
+		}
+	}
+	return result;
+}
+
+export function base64URLDecode(str: string): Uint8Array {
+	const chars: number[] = [];
+	for (let i = 0; i < str.length; i++) {
+		const c = str[i] as string;
+		let idx: number;
+		if (c >= "A" && c <= "Z") idx = c.charCodeAt(0) - 65;
+		else if (c >= "a" && c <= "z") idx = c.charCodeAt(0) - 71;
+		else if (c >= "0" && c <= "9") idx = c.charCodeAt(0) + 4;
+		else if (c === "-" || c === "+") idx = 62;
+		else if (c === "_" || c === "/") idx = 63;
+		else continue;
+		chars.push(idx);
+	}
+	const bytes: number[] = [];
+	for (let i = 0; i < chars.length; i += 4) {
+		const a = chars[i] as number;
+		const b = i + 1 < chars.length ? (chars[i + 1] as number) : 0;
+		const c = i + 2 < chars.length ? (chars[i + 2] as number) : 0;
+		const d = i + 3 < chars.length ? (chars[i + 3] as number) : 0;
+		const triplet = (a << 18) | (b << 12) | (c << 6) | d;
+		bytes.push((triplet >> 16) & 0xff);
+		if (i + 2 < chars.length) bytes.push((triplet >> 8) & 0xff);
+		if (i + 3 < chars.length) bytes.push(triplet & 0xff);
+	}
+	return new Uint8Array(bytes);
+}
 
 function toBase64URL(data: ArrayBuffer): string {
-	const bytes = new Uint8Array(data);
-	let binary = "";
-	for (let i = 0; i < bytes.byteLength; i++) {
-		binary += String.fromCharCode(bytes[i]);
-	}
-	return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+	return base64URLEncode(new Uint8Array(data));
 }
 
 function fromBase64URL(str: string): Uint8Array {
-	const base64 =
-		str.replace(/-/g, "+").replace(/_/g, "/") +
-		"=".repeat((4 - (str.length % 4)) % 4);
-	const binary = atob(base64);
-	const bytes = new Uint8Array(binary.length);
-	for (let i = 0; i < binary.length; i++) {
-		bytes[i] = binary.charCodeAt(i);
-	}
-	return bytes;
+	return base64URLDecode(str);
 }
 
 async function hashUserAgent(userAgent: string): Promise<string> {
 	const encoder = new TextEncoder();
 	const data = encoder.encode(userAgent);
 	const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-	return Array.from(new Uint8Array(hashBuffer))
-		.map((b) => b.toString(16).padStart(2, "0"))
-		.join("")
-		.slice(0, 16);
+	const hashArray = new Uint8Array(hashBuffer);
+	let result = "";
+	for (const byte of hashArray) {
+		result += byte.toString(16).padStart(2, "0");
+	}
+	return result.slice(0, 16);
 }
 
 interface StatePayload {
@@ -37,6 +78,7 @@ interface StatePayload {
 	codeVerifier?: string;
 	sessionId?: string;
 	userAgentHash?: string;
+	nonce: string;
 }
 
 export interface StateStore {
@@ -47,53 +89,31 @@ export interface StateStore {
 }
 
 export class MemoryStateStore implements StateStore {
-	private store = new Map<string, number>();
-	private sweepTimer: ReturnType<typeof setInterval> | null = null;
-
-	constructor(private sweepIntervalMs = 60_000) {
-		if (typeof setInterval === "function") {
-			this.sweepTimer = setInterval(
-				() => this.sweepExpired(),
-				this.sweepIntervalMs,
-			);
-			if (this.sweepTimer && typeof this.sweepTimer.unref === "function") {
-				this.sweepTimer.unref();
-			}
-		}
-	}
-
-	private sweepExpired(): void {
-		const now = Date.now();
-		for (const [id, expiresAt] of this.store) {
-			if (expiresAt <= now) this.store.delete(id);
-		}
-	}
+	private store = new LruCache<string, number>(10_000);
+	private locks = new Map<string, Promise<void>>();
+	private disposed = false;
 
 	async has(id: string): Promise<boolean> {
-		const expiresAt = this.store.get(id);
-		if (!expiresAt) return false;
-		if (Date.now() > expiresAt) {
-			this.store.delete(id);
-			return false;
-		}
-		return true;
+		return this.store.has(id);
 	}
 
 	async set(id: string, ttlMs: number): Promise<void> {
-		this.store.set(id, Date.now() + ttlMs);
+		this.store.set(id, Date.now() + ttlMs, ttlMs);
 	}
 
 	async setIfAbsent(id: string, ttlMs: number): Promise<boolean> {
-		const expiresAt = this.store.get(id);
-		if (expiresAt !== undefined) {
-			if (Date.now() > expiresAt) {
-				this.store.set(id, Date.now() + ttlMs);
-				return true;
+		return this.withLock(id, async () => {
+			const expiresAt = this.store.get(id);
+			if (expiresAt !== undefined) {
+				if (Date.now() > expiresAt) {
+					this.store.set(id, Date.now() + ttlMs, ttlMs);
+					return true;
+				}
+				return false;
 			}
-			return false;
-		}
-		this.store.set(id, Date.now() + ttlMs);
-		return true;
+			this.store.set(id, Date.now() + ttlMs, ttlMs);
+			return true;
+		});
 	}
 
 	async delete(id: string): Promise<void> {
@@ -101,9 +121,27 @@ export class MemoryStateStore implements StateStore {
 	}
 
 	dispose(): void {
-		if (this.sweepTimer && typeof clearInterval === "function") {
-			clearInterval(this.sweepTimer);
-			this.sweepTimer = null;
+		this.disposed = true;
+		this.store.dispose();
+	}
+
+	private async withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+		const existingLock = this.locks.get(key);
+		let resolveLock: () => void;
+		const lockPromise = new Promise<void>((resolve) => {
+			resolveLock = resolve;
+		});
+
+		this.locks.set(key, lockPromise);
+
+		try {
+			if (existingLock) {
+				await existingLock;
+			}
+			return await fn();
+		} finally {
+			resolveLock!();
+			this.locks.delete(key);
 		}
 	}
 }
@@ -124,6 +162,7 @@ export async function generateState(
 	const payload: StatePayload = {
 		id: crypto.randomUUID(),
 		iat: Date.now(),
+		nonce: crypto.randomUUID(),
 	};
 
 	if (codeVerifier) {
@@ -167,7 +206,8 @@ export async function validateState(
 	const parts = state.split(".");
 	if (parts.length !== 2) return { valid: false };
 
-	const [encoded, sig] = parts;
+	const encoded = parts[0] as string;
+	const sig = parts[1] as string;
 
 	try {
 		const secretData = new TextEncoder().encode(secret);
@@ -217,7 +257,8 @@ export async function consumeState(
 	const parts = state.split(".");
 	if (parts.length !== 2) return { valid: false };
 
-	const [encoded, sig] = parts;
+	const encoded = parts[0] as string;
+	const sig = parts[1] as string;
 
 	try {
 		const secretData = new TextEncoder().encode(secret);

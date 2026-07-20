@@ -1,3 +1,4 @@
+# Updated: 2026-07-19
 src/
 
 node_modules/
@@ -28,6 +29,7 @@ __tests__/
 omo/
 
 coverage/
+.turbo/
 
 *.tmp
 *.temp

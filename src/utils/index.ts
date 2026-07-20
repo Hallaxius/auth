@@ -1,11 +1,16 @@
+export {
+	isIPv6,
+	maskIPv6To64,
+	sanitizeIP,
+} from "./ip";
 export type { GuildMember } from "./utils";
 export {
-	autoJoinGuild,
-	generateSecureSecret,
-	hasAnyRoleInGuild,
-	hasRoleInGuild,
-	isUserInGuild,
-	revokeUserSession,
-	syncUserRoles,
-	validateConfig,
+	hasAnyRole,
+	hasMember,
+	hasRole,
+	join,
+	revoke,
+	secret,
+	sync,
+	validate,
 } from "./utils";

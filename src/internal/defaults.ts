@@ -3,9 +3,9 @@ import type {
 	BruteForceConfig,
 	Callbacks,
 	CsrfConfig,
+	DiscordMfaConfig,
 	DiscordScope,
 	GuildRoleSyncConfig,
-	MfaConfig,
 	RoutesConfig,
 } from "../types";
 
@@ -36,7 +36,7 @@ export const DEFAULT_BRUTE_FORCE: BruteForceConfig = {
 	blockDurationMs: 30 * 60 * 1000,
 };
 
-export const DEFAULT_MFA: MfaConfig = {
+export const DEFAULT_MFA: DiscordMfaConfig = {
 	enabled: false,
 	requireMfa: false,
 	allowedMethods: ["totp", "sms", "backup_codes"],

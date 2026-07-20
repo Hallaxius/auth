@@ -1,6 +1,6 @@
-# @hallaxius/auth
+﻿# @hallaxius/auth
 
-> Plug-and-play Discord OAuth2 and credentials authentication for Bun, Next.js, and any Node/edge runtime.
+> Plug-and-play Discord OAuth2 and credentials authentication for Bun, Next.js 16+, and any Node/edge runtime.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/@hallaxius/auth)](https://www.npmjs.com/package/@hallaxius/auth)
@@ -12,14 +12,34 @@
 - **Discord OAuth2** — Authorization code flow with PKCE (S256), CSRF protection (HMAC-SHA256)
 - **Credentials Auth** — Username/password or email/password with bcrypt/argon2, JWT sessions, role-based access
 - **AuthStrategy Enum** — `UsernameOnly` | `EmailOnly` | `UsernameEmail` for flexible credential strategies
-- **Single Entry Point** — `import { discord, credentials, middleware, config, utils, errors, types } from '@hallaxius/auth'`
-- **Edge/Next.js Middleware** — `middleware.auth()`, `middleware.role()`, `middleware.combine()`, multi-provider cookie support
+- **Password Reset** — Forgot password / reset flow with HMAC tokens, rate limiting, notifier abstraction
+- **MFA (TOTP + Backup Codes)** — RFC 6238 TOTP, AES-GCM encrypted secrets, one-time backup codes
+- **Rate Limiting** — RFC-compliant headers (`RateLimit`, `RateLimit-Policy`, `Retry-After`), in-memory + custom storage
+- **Single Entry Point** — `import { discord, credentials, passwordReset, mfa, rateLimit, middleware, proxy, config, utils, errors, types } from '@hallaxius/auth'`
+
+> 💡 **Recommendation**: Use `proxy` for Next.js 16+ applications. The `middleware` alias is still available for backward compatibility.
+- **Edge/Next.js Middleware** — `proxy.auth()`, `proxy.role()`, `proxy.combine()`, multi-provider cookie support
 - **User Persistence** — Pluggable `UserStorage` / `AuthUserStorage` interfaces
 - **JWT Sessions** — Stateless, edge-compatible (uses `jose`)
 - **Auto-Join Guild** — `utils.guild.join()` to add users to your Discord server
 - **Guild Role Sync** — `utils.guild.sync()`, `utils.guild.hasRole()`, `utils.guild.hasAnyRole()`, `utils.guild.hasMember()`
 - **Edge Compatible** — Web Crypto API, zero Node dependencies
-- **Zero Unnecessary Deps** — Only `jose`
+- **Zero Unnecessary Deps** — Only `jose` as runtime dependency
+
+## Security Features
+
+- **LRU Cache** — All in-memory stores use LRU eviction with TTL sweep to prevent memory leaks (max entries: 5,000–50,000 depending on store)
+- **Race Condition Protection** — Mutex-based locking (CAS pattern) in `MemoryStateStore`, `DefaultRateLimitStorage`, and `InMemoryMfaStorage` prevents concurrent access issues
+- **Timing Attack Protection** — Constant-time comparison for TOTP codes and backup codes (XOR-based), dummy hash for failed credential lookups
+- **TOTP Replay Protection** — `lastUsedCounter` tracking prevents reuse of previous TOTP codes
+- **TOTP Clock Skew Tolerance** — ±1 step window (90 seconds total) for clock drift compensation
+- **IPv6 Validation** — Full IPv6 support with sanitization, masking to /64 for privacy
+- **PKCE Validation** — RFC 7636 compliant (S256), enabled by default, optional disable via `disablePKCE: false`
+- **RFC-Compliant Rate Limit Headers** — `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After` (RFC 6585 / 8683)
+- **Brute Force Protection** — IP + User-Agent + Strategy based rate limiting with exponential backoff
+- **CSRF Protection** — HMAC-SHA256 state parameter with single-use enforcement, session binding, User-Agent binding
+- **AES-GCM Encryption** — TOTP secrets encrypted at rest with AES-GCM-256
+- **HMAC Token Signing** — Password reset tokens use HMAC-SHA256 with separate selector/validator
 
 ## Installation
 
@@ -39,11 +59,15 @@ bun add @hallaxius/auth
 - [Quick Start](#quick-start)
 - [Discord OAuth2](#discord-oauth2)
 - [Credentials Auth](#credentials-auth)
+- [Password Reset](#password-reset)
+- [MFA (TOTP + Backup Codes)](#mfa-totp--backup-codes)
+- [Rate Limiting](#rate-limiting)
 - [Middleware](#middleware)
 - [Config Utilities](#config-utilities)
 - [Utils](#utils)
 - [Error Handling](#error-handling)
 - [Types](#types)
+- [Migration Guide (v3 → v4)](#migration-guide-v3--v4)
 - [Migration Guide (v2 → v3)](#migration-guide-v2--v3)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
@@ -52,10 +76,10 @@ bun add @hallaxius/auth
 
 ## Quick Start
 
-### Single Import (v3)
+### Single Import (v4)
 
 ```ts
-import { discord, credentials, middleware, config, utils, errors, types } from '@hallaxius/auth'
+import { discord, credentials, passwordReset, mfa, rateLimit, middleware, proxy, config, utils, errors, types } from '@hallaxius/auth'
 ```
 
 ### Discord OAuth2 (Next.js App Router)
@@ -110,23 +134,92 @@ import { handleLogin } from '@/lib/auth'
 export const POST = handleLogin
 ```
 
+### Password Reset (Next.js App Router)
+
+```ts
+// lib/auth.ts
+import { passwordReset } from '@hallaxius/auth'
+
+export const { handleForgotPassword, handleResetPassword } = passwordReset({
+  storage: myResetStorage,
+  notifier: myNotifier,
+  hasher: bcryptHasher,
+})
+```
+
+```ts
+// app/api/auth/forgot-password/route.ts
+import { handleForgotPassword } from '@/lib/auth'
+export const POST = handleForgotPassword
+```
+
+```ts
+// app/api/auth/reset-password/route.ts
+import { handleResetPassword } from '@/lib/auth'
+export const POST = handleResetPassword
+```
+
+### MFA (Next.js App Router)
+
+```ts
+// lib/auth.ts
+import { mfa } from '@hallaxius/auth'
+
+export const { handleMfaSetup, handleMfaVerify, handleMfaChallenge, handleMfaDisable } = mfa({
+  storage: myMfaStorage,
+  secret: process.env.JWT_SECRET!,
+})
+```
+
+### Rate Limiting (Next.js App Router)
+
+```ts
+// lib/auth.ts
+import { rateLimit } from '@hallaxius/auth'
+
+export const { middleware: rateLimitMiddleware } = rateLimit({
+  maxRequests: 100,
+  windowMs: 60_000,
+})
+```
+
 ### Middleware (Next.js Edge)
+
+### Next.js Configuration Update
+
+In Next.js 16, the middleware configuration has changed:
+
+* **Before (Next.js 14/15)**: Used `skipMiddlewareUrlNormalize` in `next.config.ts`
+* **After (Next.js 16+)**: Use `skipProxyUrlNormalize` in `next.config.ts`
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  experimental: {
+    skipProxyUrlNormalize: true,
+  },
+};
+
+export default nextConfig;
+```
 
 ```ts
 // middleware.ts
-import { middleware } from '@hallaxius/auth'
+import { proxy } from '@hallaxius/auth'
 
 export const config = {
   matcher: ['/dashboard/:path*', '/admin/:path*'],
 }
 
-export default middleware.combine(
-  middleware.auth({
+export default proxy.combine(
+  proxy.auth({
     secret: process.env.JWT_SECRET!,
     loginUrl: '/auth/discord',
     publicPaths: ['/', '/auth/*', '/api/public/*'],
   }),
-  middleware.role({
+  proxy.role({
     secret: process.env.JWT_SECRET!,
     loginUrl: '/auth/discord',
     roles: { '/admin/*': ['admin'] },
@@ -233,6 +326,13 @@ When `storage` is provided:
 - `/me` endpoint returns `SafeStoredUser` (no tokens)
 - Roles are embedded in JWT and checked by middleware
 - Discord tokens are auto-refreshed before expiry
+
+### Security Features
+
+- **PKCE (S256)** — RFC 7636 compliant, enabled by default, prevents authorization code interception
+- **CSRF Protection** — HMAC-SHA256 state parameter with single-use enforcement, session binding, User-Agent binding
+- **LRU Cache** — State store with automatic eviction (max 10,000 entries, 5 min TTL)
+- **Race Condition Protection** — Mutex-based locking prevents state replay attacks
 
 ---
 
@@ -349,6 +449,12 @@ export const drizzleStorage: AuthUserStorage = {
   async delete(userId: string) { /* void */ },
 }
 ```
+
+### Security Features
+
+- **Brute Force Protection** — IP + User-Agent + Strategy based rate limiting (default: 5 attempts / 15 min, 30 min block)
+- **Timing Attack Protection** — Constant-time comparison via dummy hash for non-existent users
+- **LRU Cache** — Memory leak prevention in `MemoryBruteForceStorage` (max 10,000 entries)
 
 ---
 
@@ -511,6 +617,317 @@ Patterns support `*` wildcard:
 | `/admin/*` | `/admin`, `/admin/users`, `/admin/settings` |
 | `/api/public/*` | `/api/public`, `/api/public/data` |
 | `/dashboard` | `/dashboard` (exact match only) |
+
+---
+
+## Proxy (Next.js 16+)
+
+The `proxy` export provides the same middleware functions as `middleware` but is the recommended API for Next.js 16+. The `middleware` alias is kept for backward compatibility.
+
+```ts
+import { proxy } from '@hallaxius/auth'
+
+export const config = {
+  matcher: ['/dashboard/:path*', '/admin/:path*'],
+}
+
+export default proxy.combine(
+  proxy.auth({
+    secret: process.env.JWT_SECRET!,
+    loginUrl: '/auth/discord',
+    publicPaths: ['/', '/auth/*', '/api/public/*'],
+  }),
+  proxy.role({
+    secret: process.env.JWT_SECRET!,
+    loginUrl: '/auth/discord',
+    roles: { '/admin/*': ['admin'] },
+  }),
+)
+```
+
+### `proxy.auth(config)` / `proxy.role(config)` / `proxy.combine(...)` / `proxy.session(request, config)` / `proxy.publicPath(path, patterns)` / `proxy.required(path, roleMap)` / `proxy.redirect(url)` / `proxy.deny(message?)`
+
+Identical to their `middleware.*` counterparts. Use `proxy` for new projects on Next.js 16+.
+
+---
+
+## Password Reset
+
+### Factory: `passwordReset(config)`
+
+Creates handlers for forgot-password and reset-password flows.
+
+```ts
+import { passwordReset } from '@hallaxius/auth'
+
+export const { handleForgotPassword, handleResetPassword, requestReset, consumeResetToken } = passwordReset({
+  storage: myResetStorage,
+  notifier: myNotifier,
+  hasher: bcryptHasher,
+  minPasswordLength: 8,
+  tokenExpirationSeconds: 3600,
+  forgotPasswordRateLimit: { maxAttempts: 3, windowMs: 60 * 60 * 1000 },
+  resetPasswordRateLimit: { maxAttempts: 10, windowMs: 15 * 60 * 1000 },
+})
+```
+
+### Config Options
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `storage` | `ResetTokenStorage` | ✅ | — | Token persistence (create, consume, delete) |
+| `notifier` | `ResetNotifier` | ✅ | — | Sends reset link to user (email, SMS, etc.) |
+| `hasher` | `PasswordHasher` | ✅ | — | Password hashing (bcrypt, argon2) |
+| `minPasswordLength` | `number` | ❌ | `8` | Minimum new password length |
+| `tokenExpirationSeconds` | `number` | ❌ | `3600` | Reset token TTL (1 hour) |
+| `forgotPasswordRateLimit` | `{ maxAttempts, windowMs }` | ❌ | `{ 3, 1h }` | Rate limit for forgot-password |
+| `resetPasswordRateLimit` | `{ maxAttempts, windowMs }` | ❌ | `{ 10, 15m }` | Rate limit for reset-password |
+
+### Returns
+
+| Export | Type | Description |
+|--------|------|-------------|
+| `handleForgotPassword` | `(Request) => Promise<Response>` | POST `{ emailOrUsername }` → generates token, stores, notifies |
+| `handleResetPassword` | `(Request) => Promise<Response>` | POST `{ token, newPassword }` → consumes token, updates password |
+| `requestReset` | `(target: string) => Promise<RequestResetResult>` | Non-HTTP helper: lookup user, generate token, notify |
+| `consumeResetToken` | `(token: string) => Promise<ConsumeResetTokenResult>` | Non-HTTP helper: verify token, return user info |
+
+### Route Handlers (Next.js)
+
+```ts
+// app/api/auth/forgot-password/route.ts
+import { handleForgotPassword } from '@/lib/auth'
+export const POST = handleForgotPassword
+```
+
+```ts
+// app/api/auth/reset-password/route.ts
+import { handleResetPassword } from '@/lib/auth'
+export const POST = handleResetPassword
+```
+
+### Storage Interface
+
+```ts
+import type { ResetTokenStorage } from '@hallaxius/auth'
+
+export const myResetStorage: ResetTokenStorage = {
+  async create(token, userId) { /* store selector, validatorHash, expiry, userId */ },
+  async consume(token) { /* verify hash, check expiry, delete, return { userId, email, username } */ },
+  async delete(token) { /* remove token */ },
+}
+```
+
+### Notifier Interface
+
+```ts
+import type { ResetNotifier } from '@hallaxius/auth'
+
+export const myNotifier: ResetNotifier = {
+  async send(token, userId, email, username) {
+    // Send email with reset link: `${process.env.APP_URL}/auth/reset-password?token=${token.selector}.${token.validator}`
+  },
+}
+```
+
+### Security Features
+
+- **HMAC Token Signing** — Separate selector (public) and validator (hashed with SHA-256)
+- **Rate Limiting** — Per-IP rate limits for forgot-password (3/hour) and reset-password (10/15min)
+- **IPv6 Support** — Full IPv6 validation and sanitization
+- **Single-Use Tokens** — Tokens are consumed (deleted) after first use
+- **Time-Bound Expiry** — Default 1-hour TTL with automatic cleanup via LRU cache
+
+### Error Codes
+
+- `RESET_TOKEN_EXPIRED` — Token has expired
+- `RESET_TOKEN_INVALID` — Token is invalid or malformed
+- `RESET_TOKEN_USED` — Token has already been consumed
+- `RESET_PASSWORD_WEAK` — New password doesn't meet minimum length
+
+---
+
+## MFA (TOTP + Backup Codes)
+
+### Factory: `mfa(config)`
+
+Creates handlers for TOTP setup, verification, challenge (during login), and disable.
+
+```ts
+import { mfa } from '@hallaxius/auth'
+
+export const { handleMfaSetup, handleMfaVerify, handleMfaChallenge, handleMfaDisable } = mfa({
+  storage: myMfaStorage,
+  secret: process.env.JWT_SECRET!,
+  issuer: 'MyApp',
+  allowedMethods: ['totp', 'backup_codes'],
+})
+```
+
+### Security Features
+
+- **TOTP Replay Protection** — Tracks `lastUsedCounter` to prevent reuse of previous codes
+- **Clock Skew Tolerance** — ±1 step (90 seconds) window for clock drift
+- **Constant-Time Comparison** — XOR-based comparison prevents timing attacks on backup codes
+- **AES-GCM-256 Encryption** — TOTP secrets encrypted at rest
+- **One-Time Backup Codes** — 10 codes, hashed with SHA-256, consumed on use
+
+### Config Options
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `storage` | `MfaStorage` | ✅ | — | Encrypted secret + backup codes persistence |
+| `secret` | `string` | ✅ | — | Encryption key (AES-GCM-256, min 32 chars) |
+| `issuer` | `string` | ❌ | `'MyApp'` | TOTP URI issuer (shown in authenticator apps) |
+| `allowedMethods` | `('totp' \| 'backup_codes')[]` | ❌ | `['totp', 'backup_codes']` | Enabled MFA methods |
+
+### Returns
+
+| Export | Type | Description |
+|--------|------|-------------|
+| `handleMfaSetup` | `(Request) => Promise<Response>` | POST (requires session) → generates secret + JWT "pending-setup" (10 min), returns `TotpSetupResult` (secret, QR URI, backup codes) |
+| `handleMfaVerify` | `(Request) => Promise<Response>` | POST `{ code }` → verifies TOTP against temp secret, persists encrypted secret + generates backup codes (once) |
+| `handleMfaChallenge` | `(Request) => Promise<Response>` | POST `{ userId, method, code }` → used during login when `mfa.requireMfa=true` |
+| `handleMfaDisable` | `(Request) => Promise<Response>` | POST `{ userId, password }` → verifies password, removes secret + backup codes |
+
+### Route Handlers (Next.js)
+
+```ts
+// app/api/auth/mfa/setup/route.ts
+import { handleMfaSetup } from '@/lib/auth'
+export const POST = handleMfaSetup
+```
+
+```ts
+// app/api/auth/mfa/verify/route.ts
+import { handleMfaVerify } from '@/lib/auth'
+export const POST = handleMfaVerify
+```
+
+```ts
+// app/api/auth/mfa/challenge/route.ts
+import { handleMfaChallenge } from '@/lib/auth'
+export const POST = handleMfaChallenge
+```
+
+```ts
+// app/api/auth/mfa/disable/route.ts
+import { handleMfaDisable } from '@/lib/auth'
+export const POST = handleMfaDisable
+```
+
+### Storage Interface
+
+```ts
+import type { MfaStorage } from '@hallaxius/auth'
+
+export const myMfaStorage: MfaStorage = {
+  async getSecret(userId) { /* return decrypted TOTP secret or null */ },
+  async setSecret(userId, encryptedSecret) { /* store encrypted secret */ },
+  async deleteSecret(userId) { /* remove secret */ },
+  async getBackupCodes(userId) { /* return hashed backup codes */ },
+  async setBackupCodes(userId, hashedCodes) { /* store hashed backup codes */ },
+  async consumeBackupCode(userId, codeIndex) { /* mark backup code as used */ },
+}
+```
+
+### Error Codes
+
+- `MFA_REQUIRED` — MFA required during login
+- `MFA_SETUP_REQUIRED` — MFA setup is required before verifying
+- `MFA_INVALID_CODE` — Invalid TOTP or backup code
+- `MFA_INVALID_BACKUP` — Invalid backup code
+- `MFA_NOT_SETUP` — MFA not set up for user
+- `MFA_ALREADY_SETUP` — MFA already set up
+- `MFA_BACKUP_EXHAUSTED` — All backup codes used
+
+---
+
+## Rate Limiting
+
+### Factory: `rateLimit(config)`
+
+Creates a middleware factory for rate-limiting your own routes with RFC-compliant headers.
+
+```ts
+import { rateLimit } from '@hallaxius/auth'
+
+export const { middleware: rateLimitMiddleware, check } = rateLimit({
+  maxRequests: 100,
+  windowMs: 60_000,
+  keyBy: (request) => `${request.url}:${getClientIP(request)}`,
+})
+```
+
+### Security Features
+
+- **LRU Cache** — Prevents memory leaks with automatic eviction (max 50,000 entries)
+- **Race Condition Protection** — Mutex-based locking (CAS pattern) prevents concurrent increment issues
+- **IPv6 Support** — Full IPv6 validation and sanitization with /64 masking for privacy
+- **RFC-Compliant Headers** — `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After`
+
+### Config Options
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `maxRequests` | `number` | ✅ | — | Max requests per window |
+| `windowMs` | `number` | ✅ | — | Time window in milliseconds |
+| `keyBy` | `(Request) => string` | ❌ | IP-based | Custom key function |
+| `storage` | `RateLimitStorage` | ❌ | InMemory | Custom storage adapter |
+
+### Returns
+
+| Export | Type | Description |
+|--------|------|-------------|
+| `middleware` | `(Request) => Promise<Response \| undefined>` | Rate limit middleware (returns 429 with headers if exceeded) |
+| `check` | `(Request) => Promise<RateLimitResult>` | Manual check without middleware |
+| `reset` | `(Request) => Promise<void>` | Reset rate limit counter for a request |
+
+### Headers (RFC 6585 / 8683)
+
+On every response:
+- `RateLimit` — `limit=100, remaining=99, reset=60`
+- `RateLimit-Policy` — `100;w=60`
+- `Retry-After` — seconds until window resets (on 429)
+
+### Storage Interface
+
+```ts
+import type { RateLimitStorage } from '@hallaxius/auth'
+
+export const myRateLimitStorage: RateLimitStorage = {
+  async increment(key, windowMs) { /* return { count, resetAt } */ },
+  async reset(key) { /* clear key */ },
+}
+```
+
+### Built-in Integration (Optional)
+
+When `config.rateLimit` is provided, factories automatically apply rate limiting:
+
+```ts
+// credentials()
+credentials({
+  // ...other config
+  rateLimit: { handleLogin: { maxRequests: 10, windowMs: 60_000 } },
+})
+
+// discord()
+discord({
+  // ...other config
+  rateLimit: { handleLogin: { maxRequests: 5, windowMs: 60_000 }, handleCallback: { maxRequests: 30, windowMs: 60_000 } },
+})
+
+// passwordReset()
+passwordReset({
+  // ...other config
+  rateLimit: { handleForgotPassword: { maxRequests: 5, windowMs: 60_000 } },
+})
+```
+
+### Error Codes
+
+- `RATE_LIMITED_ROUTE` — Custom route rate limit exceeded (distinct from upstream Discord `RATE_LIMITED`)
 
 ---
 
@@ -756,9 +1173,22 @@ const ErrorCodes = {
 
   // MFA
   MFA_REQUIRED: 'MFA_REQUIRED',
+  MFA_SETUP_REQUIRED: 'MFA_SETUP_REQUIRED',
+  MFA_INVALID_CODE: 'MFA_INVALID_CODE',
+  MFA_INVALID_BACKUP: 'MFA_INVALID_BACKUP',
+  MFA_BACKUP_EXHAUSTED: 'MFA_BACKUP_EXHAUSTED',
+  MFA_NOT_SETUP: 'MFA_NOT_SETUP',
+  MFA_ALREADY_SETUP: 'MFA_ALREADY_SETUP',
+
+  // Password Reset
+  RESET_TOKEN_EXPIRED: 'RESET_TOKEN_EXPIRED',
+  RESET_TOKEN_INVALID: 'RESET_TOKEN_INVALID',
+  RESET_TOKEN_USED: 'RESET_TOKEN_USED',
+  RESET_PASSWORD_WEAK: 'RESET_PASSWORD_WEAK',
 
   // Rate Limiting
   RATE_LIMITED: 'RATE_LIMITED',
+  RATE_LIMITED_ROUTE: 'RATE_LIMITED_ROUTE',
 
   // Upstream / Network
   UPSTREAM_ERROR: 'UPSTREAM_ERROR',
@@ -884,6 +1314,128 @@ import type { DiscordConfig, CredentialsConfig, SessionUser, StoredUser, UserSto
 | `GuildMember` | Discord guild member (camelCase) |
 | `SessionOptions` | Session cookie options |
 | `RouteOptions` | Route configuration options |
+| `PasswordResetConfig` | Password reset factory config |
+| `MfaConfig` | MFA (TOTP + backup codes) factory config |
+| `RateLimitConfig` | Rate limiting factory config |
+
+---
+
+## Migration Guide (v3 → v4)
+
+### Breaking Changes Summary
+
+| v3 Pattern | v4 Replacement |
+|------------|----------------|
+| `peerDependencies.next`: `">=14.0.0"` | `peerDependencies.next`: `">=16.0.0 <17.0.0"` |
+| Middleware file: `middleware.ts` | Recommended: `proxy.ts` (works with `middleware.ts` via alias) |
+| `next.config.ts`: `skipMiddlewareUrlNormalize` | `next.config.ts`: `skipProxyUrlNormalize` |
+| Middleware runtime: `edge` allowed | **Node.js only** (Next.js 16 proxy is Node-only) |
+| Import: `import { middleware } from ...` | Import: `import { proxy } from ...` (preferred) |
+| `middleware.auth()`, `middleware.role()` | `proxy.auth()`, `proxy.role()` (alias `middleware.*` still works) |
+| `proxy = middleware` alias | **Removed** — use `proxy` directly |
+| `DiscordAuthConfig.callbackUrl?: string` | `DiscordAuthConfig.callbackUrl: string` (required) |
+| `CredentialsConfig.hasher?` / `storage?` | `CredentialsConfig.hasher` / `storage` (required) |
+| `PasswordResetConfig.userLookup` type | Explicit: `(emailOrUsername: string) => Promise<{userId,email,username}\|null>` |
+| `MfaFactoryConfig.verifyPassword` type | Explicit: `(userId: string, password: string) => Promise<boolean>` |
+| `RoutesConfig` / `RouteOptions` | Single export: `RoutesConfig` |
+| `SessionConfig` / `SessionOptions` | Single export: `SessionConfig` |
+| `SessionData` / `SessionUser` | Single export: `SessionData` |
+| `CreateCredentialsUserData` / `CreateCredentialsInput` | Single export: `CreateCredentialsUserData` |
+| Error code `RESET_TOKEN_USED` | Replaced by `RESET_TOKEN_CONSUMED` |
+| New error code: `MFA_CHALLENGE_FAILED` | Added for generic MFA challenge failures |
+| `isAuthError()` behavior | Now checks `error.code` against `ErrorCodes` values |
+| `getCode()` return type | Returns `ErrorCode \| undefined` (not `string \| undefined`) |
+| `EdgeAuthConfig.cookies?: [...]` | `EdgeAuthConfig.cookies: [...]` (required array) |
+| `session()` helper cookie config | Accepts `cookies: Array<{name, secret}>` for multi-provider |
+| `role()` middleware 403 response | Returns `{error: "Insufficient permissions", code: "INSUFFICIENT_PERMISSIONS"}` |
+| `forgotPasswordRateLimit` / `resetPasswordRateLimit` | Accept `storage?: BruteForceStorage` option |
+| `rateLimit()` middleware headers | Now includes RFC 8587 headers: `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `Retry-After` |
+
+> **Note:** Users needing Next.js 14/15 support can stay on `@hallaxius/auth@^3.1.0`.
+
+### Before/After Examples
+
+#### Middleware (Next.js 16+)
+
+**v3 (Old):**
+```ts
+// middleware.ts
+import { middleware } from '@hallaxius/auth'
+
+export const config = {
+  matcher: ['/dashboard/:path*', '/admin/:path*'],
+}
+
+export default middleware.combine(
+  middleware.auth({
+    secret: process.env.JWT_SECRET!,
+    loginUrl: '/auth/discord',
+    publicPaths: ['/', '/auth/*', '/api/public/*'],
+  }),
+  middleware.role({
+    secret: process.env.JWT_SECRET!,
+    loginUrl: '/auth/discord',
+    roles: { '/admin/*': ['admin'] },
+  }),
+)
+```
+
+**v4 (New):**
+```ts
+// proxy.ts (recommended) or middleware.ts (still works)
+import { proxy } from '@hallaxius/auth'
+
+export const config = {
+  matcher: ['/dashboard/:path*', '/admin/:path*'],
+}
+
+export default proxy.combine(
+  proxy.auth({
+    secret: process.env.JWT_SECRET!,
+    loginUrl: '/auth/discord',
+    publicPaths: ['/', '/auth/*', '/api/public/*'],
+  }),
+  proxy.role({
+    secret: process.env.JWT_SECRET!,
+    loginUrl: '/auth/discord',
+    roles: { '/admin/*': ['admin'] },
+  }),
+)
+```
+
+#### Next.js Config
+
+**v3 (Old):**
+```ts
+// next.config.ts
+export default {
+  experimental: {
+    skipMiddlewareUrlNormalize: true,
+  },
+}
+```
+
+**v4 (New):**
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  experimental: {
+    skipProxyUrlNormalize: true,
+  },
+};
+
+export default nextConfig;
+```
+
+#### New Features in v4
+
+| Feature | Import | Description |
+|---------|--------|-------------|
+| Password Reset | `import { passwordReset } from '@hallaxius/auth'` | Forgot/reset flow with HMAC tokens |
+| MFA (TOTP + Backup) | `import { mfa } from '@hallaxius/auth'` | RFC 6238 TOTP, AES-GCM encrypted secrets |
+| Rate Limiting | `import { rateLimit } from '@hallaxius/auth'` | RFC headers, in-memory + custom storage |
 
 ---
 
@@ -1194,6 +1746,57 @@ cookies: { secure: true, sameSite: 'lax' }
 
 ---
 
+## Edge Runtime
+
+`@hallaxius/auth` is fully compatible with all Web Crypto runtimes. No Node.js built-in modules are required.
+
+| Runtime | Support | Notes |
+|---------|---------|-------|
+| **Bun** | ✅ Full | Native `Bun.file`, `Bun.password` |
+| **Node.js 20+** | ✅ Full | Web Crypto available natively |
+| **Deno** | ✅ Full | Web Crypto + `jose` compatible |
+| **Cloudflare Workers** | ✅ Full | Use custom storage adapters (KV, D1) |
+| **Vercel Edge** | ✅ Full | No `setTimeout` in edge functions; avoid `DefaultRateLimitStorage` timers |
+| **Next.js 16+** | ✅ Full | Use `proxy` export for middleware |
+
+### Edge Constraints
+
+| Constraint | Impact | Workaround |
+|------------|--------|------------|
+| No `setTimeout` / `setInterval` (Vercel Edge) | `DefaultRateLimitStorage` uses timer for TTL sweep | Provide custom `RateLimitStorage` without timers |
+| No file system | `MemoryStateStore` is in-memory only | Use external state storage (KV, Redis) |
+| 1 MB response body limit | Large guild lists may hit limit | Paginate `getUserGuilds` results |
+| No `crypto.randomUUID` (older runtimes) | `jti` generation falls back | Minimum runtime: Bun 1.0, Node 20, Deno 2 |
+
+### Example: Bun HTTP Server
+
+```ts
+// server.ts
+import { discord } from '@hallaxius/auth'
+
+const { handleLogin, handleCallback, handleLogout, handleMe } = await discord({
+  clientId: process.env.DISCORD_CLIENT_ID!,
+  clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+  secret: process.env.JWT_SECRET!,
+  callbackUrl: process.env.DISCORD_REDIRECT_URI!,
+})
+
+Bun.serve({
+  port: 3000,
+  async fetch(request) {
+    const url = new URL(request.url)
+    if (url.pathname === '/auth/discord') return handleLogin(request)
+    if (url.pathname === '/auth/discord/callback') return handleCallback(request)
+    if (url.pathname === '/auth/logout') return handleLogout(request)
+    if (url.pathname === '/auth/me') return handleMe(request)
+    return new Response('Not found', { status: 404 })
+  },
+})
+```
+
+---
+
 ## License
 
 MIT
+

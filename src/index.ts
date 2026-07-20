@@ -1,89 +1,101 @@
 export { credentials } from "./credentials";
 export { discord } from "./discord";
+export { mfa } from "./mfa";
+export { passwordReset } from "./password-reset";
+export { rateLimit } from "./rate-limit";
 
 import {
+	auth,
 	combine,
-	denied,
-	getSession,
-	isPublicPath,
-	middlewareAuth,
-	middlewareRole,
+	deny,
+	publicPath,
 	redirect,
-	requiredRole,
+	required,
+	role,
+	session,
 } from "./middleware";
 
 export const middleware = {
-	auth: middlewareAuth,
-	role: middlewareRole,
+	auth,
+	role,
 	combine,
-	session: getSession,
-	publicPath: isPublicPath,
-	required: requiredRole,
+	session,
+	publicPath,
+	required,
 	redirect,
-	deny: denied,
+	deny,
 } as const;
 
-import {
-	createTypedRouteHandlers,
-	generateCodeChallenge,
-	generateCodeVerifier,
-	generatePKCE,
-	processConfig,
-} from "./config";
+import { pkce, processConfig, routes } from "./config";
 
 export const config = {
-	normalize: processConfig,
-	pkce: {
-		verifier: generateCodeVerifier,
-		challenge: generateCodeChallenge,
-		create: generatePKCE,
-	},
-	routes: { create: createTypedRouteHandlers },
+	processConfig,
+	pkce,
+	routes,
 } as const;
 
 import {
-	autoJoinGuild,
-	generateSecureSecret,
-	hasAnyRoleInGuild,
-	hasRoleInGuild,
-	isUserInGuild,
-	revokeUserSession,
-	syncUserRoles,
-	validateConfig,
+	hasAnyRole,
+	hasMember,
+	hasRole,
+	join,
+	revoke,
+	secret,
+	sync,
+	validate,
 } from "./utils";
+import { GuildRoleSync } from "./utils/guild";
 
 export const utils = {
-	secret: generateSecureSecret,
-	validate: validateConfig,
+	secret,
+	validate,
 	guild: {
-		join: autoJoinGuild,
-		hasRole: hasRoleInGuild,
-		hasAnyRole: hasAnyRoleInGuild,
-		hasMember: isUserInGuild,
-		sync: syncUserRoles,
+		join,
+		hasRole,
+		hasAnyRole,
+		hasMember,
+		sync,
+		GuildRoleSync,
 	},
-	revoke: revokeUserSession,
+	revoke,
 } as const;
 
-export type {
-	AuthStrategy,
-	AuthUserStorage,
-	CreateCredentialsUserData as CreateCredentialsInput,
-	CredentialsConfig,
-	PasswordHasher,
-} from "./credentials";
+export { MemoryBruteForceStorage } from "./credentials";
 export type { ErrorCode } from "./errors";
 export { AuthError, ErrorCodes, getCode, isAuthError } from "./errors";
+// Export storage implementations for testing/customization
+export { MemoryStateStore } from "./internal/state";
+export { DefaultRateLimitStorage } from "./rate-limit";
 export type {
+	AuthUserStorage,
+	ConsumeResetTokenResult,
+	CreateCredentialsUserData as CreateCredentialsInput,
+	CredentialsConfig,
 	DiscordAuthConfig as DiscordConfig,
 	DiscordScope as Scope,
 	DiscordTokenResponse as TokenResponse,
 	DiscordUser,
 	GuildMember,
+	MfaChallengeResult,
+	MfaFactoryConfig as MfaConfig,
+	MfaMethod,
+	MfaStorage,
+	MfaVerifyResult,
+	PasswordHasher,
+	PasswordResetConfig,
+	RateLimitConfig,
+	RateLimitResult,
+	RateLimitStorage,
+	RequestResetResult,
+	ResetNotifier,
+	ResetPasswordResult,
+	ResetTokenStorage,
 	RoutesConfig as RouteOptions,
 	SafeStoredUser,
 	SessionConfig as SessionOptions,
 	SessionData as SessionUser,
 	StoredUser,
+	TotpSetupResult,
 	UserStorage,
 } from "./types";
+export { AuthStrategy } from "./types";

@@ -9,25 +9,10 @@ export interface CacheEntry {
 	expiresAt: number;
 }
 
+import { LruCache } from "../../utils/lru";
+
 export class MemoryCacheAdapter implements CacheAdapter {
-	private store = new Map<string, CacheEntry>();
-	private sweepTimer: ReturnType<typeof setInterval> | null = null;
-
-	constructor(sweepIntervalMs = 60_000) {
-		if (typeof setInterval === "function") {
-			this.sweepTimer = setInterval(() => this.sweepExpired(), sweepIntervalMs);
-			if (this.sweepTimer && typeof this.sweepTimer.unref === "function") {
-				this.sweepTimer.unref();
-			}
-		}
-	}
-
-	private sweepExpired(): void {
-		const now = Date.now();
-		for (const [key, entry] of this.store) {
-			if (entry.expiresAt <= now) this.store.delete(key);
-		}
-	}
+	private store = new LruCache<string, CacheEntry>(1_000);
 
 	async get(key: string): Promise<CacheEntry | null> {
 		const entry = this.store.get(key);
@@ -43,7 +28,7 @@ export class MemoryCacheAdapter implements CacheAdapter {
 
 	async set(key: string, value: unknown, ttlMs: number): Promise<void> {
 		const expiresAt = Date.now() + ttlMs;
-		this.store.set(key, { value, expiresAt });
+		this.store.set(key, { value, expiresAt }, ttlMs);
 	}
 
 	async delete(key: string): Promise<void> {
@@ -51,9 +36,6 @@ export class MemoryCacheAdapter implements CacheAdapter {
 	}
 
 	dispose(): void {
-		if (this.sweepTimer && typeof clearInterval === "function") {
-			clearInterval(this.sweepTimer);
-			this.sweepTimer = null;
-		}
+		this.store.dispose();
 	}
 }

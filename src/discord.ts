@@ -1,5 +1,10 @@
 import { MemoryCacheAdapter } from "./adapters/cache/memory";
-import { deriveStateSecret, generatePKCE, processConfig } from "./config";
+import { deriveStateSecret, pkce, processConfig } from "./config";
+import {
+	AuthError,
+	type AuthError as AuthErrorType,
+	ErrorCodes,
+} from "./errors";
 import { DiscordClient } from "./internal/client";
 import {
 	clearSessionCookie,
@@ -8,6 +13,7 @@ import {
 } from "./internal/cookies";
 import { signToken, verifyToken } from "./internal/jwt";
 import {
+	base64URLDecode,
 	consumeState,
 	generateState,
 	MemoryStateStore,
@@ -15,167 +21,26 @@ import {
 	validateState,
 } from "./internal/state";
 import type {
+	AutoRefreshConfig,
+	BruteForceConfig,
+	Callbacks,
+	CookieOptions,
+	CsrfConfig,
+	DiscordMfaConfig,
 	DiscordScope,
 	DiscordTokenResponse,
 	DiscordUser,
 	GuildRoleSyncConfig,
 	InternalConfig,
+	RoutesConfig,
 	SafeStoredUser,
 	SessionData,
-	SessionType,
 	StoredUser,
 	UserStorage,
 } from "./types";
+import { GuildRoleSync } from "./utils/guild";
 
-export class DiscordAuthError extends Error {
-	readonly code: string;
-	readonly cause?: Error;
-	readonly statusCode?: number;
-
-	constructor(
-		code: string,
-		message: string,
-		options?: { cause?: Error; statusCode?: number },
-	) {
-		super(message);
-		this.code = code;
-		this.cause = options?.cause;
-		this.statusCode = options?.statusCode;
-		this.name = this.constructor.name;
-		if (typeof Error.captureStackTrace === "function") {
-			Error.captureStackTrace(this, this.constructor);
-		}
-	}
-}
-
-export class StateReusedError extends DiscordAuthError {
-	constructor(
-		message = "State parameter has already been used",
-		options?: { cause?: Error },
-	) {
-		super("STATE_REUSED", message, { statusCode: 403, cause: options?.cause });
-	}
-}
-
-export class StateBindingError extends DiscordAuthError {
-	constructor(
-		message = "State parameter binding validation failed",
-		options?: { cause?: Error },
-	) {
-		super("STATE_BINDING_FAILED", message, {
-			statusCode: 403,
-			cause: options?.cause,
-		});
-	}
-}
-
-export class ConfigurationError extends DiscordAuthError {
-	constructor(message = "Invalid configuration", options?: { cause?: Error }) {
-		super("CONFIGURATION_ERROR", message, {
-			statusCode: 500,
-			cause: options?.cause,
-		});
-	}
-}
-
-export class MfaRequiredError extends DiscordAuthError {
-	constructor(
-		message = "Multi-factor authentication is required",
-		options?: { cause?: Error },
-	) {
-		super("MFA_REQUIRED", message, { statusCode: 403, cause: options?.cause });
-	}
-}
-
-export class RateLimitError extends DiscordAuthError {
-	readonly retryAfter?: number;
-
-	constructor(
-		message = "Rate limit exceeded",
-		options?: { retryAfter?: number; cause?: Error },
-	) {
-		super("RATE_LIMITED", message, {
-			statusCode: 429,
-			cause:
-				options?.cause ??
-				(options?.retryAfter
-					? new Error(`Retry after ${options.retryAfter} seconds`)
-					: undefined),
-		});
-		this.retryAfter = options?.retryAfter;
-	}
-}
-
-export class TokenExpiredError extends DiscordAuthError {
-	constructor(message = "Token has expired", options?: { cause?: Error }) {
-		super("TOKEN_EXPIRED", message, { statusCode: 401, cause: options?.cause });
-	}
-}
-
-interface CachedGuildData {
-	roles: string[];
-	permissions: string[];
-	expiresAt: number;
-}
-
-class GuildRoleSync {
-	private config: GuildRoleSyncConfig;
-	private client: DiscordClient;
-	private cache: MemoryCacheAdapter;
-
-	constructor(
-		config: GuildRoleSyncConfig,
-		client: DiscordClient,
-		cache: MemoryCacheAdapter,
-	) {
-		this.config = config;
-		this.client = client;
-		this.cache = cache;
-	}
-
-	private getCacheKey(userId: string): string {
-		return `guild:${this.config.guildId}:user:${userId}`;
-	}
-
-	async syncUserRoles(userId: string, _accessToken: string): Promise<string[]> {
-		const cacheKey = this.getCacheKey(userId);
-		const cached = await this.cache.get(cacheKey);
-		if (cached) {
-			const cachedData = cached.value as CachedGuildData;
-			if (cachedData.expiresAt > Date.now()) {
-				return cachedData.permissions;
-			}
-		}
-
-		const discordRoleIds = await this.client.getGuildMemberRoles(
-			this.config.guildId,
-			userId,
-			this.config.botToken,
-		);
-		const permissions = this.getMappedPermissions(discordRoleIds);
-
-		const cachedData: CachedGuildData = {
-			roles: discordRoleIds,
-			permissions,
-			expiresAt: Date.now() + this.config.cacheTtlMs,
-		};
-		await this.cache.set(cacheKey, cachedData, this.config.cacheTtlMs);
-		return permissions;
-	}
-
-	getMappedPermissions(discordRoleIds: string[]): string[] {
-		const permissions = new Set<string>();
-		for (const roleId of discordRoleIds) {
-			const mapped = this.config.roleMap[roleId];
-			if (mapped) {
-				for (const perm of mapped) {
-					permissions.add(perm);
-				}
-			}
-		}
-		return Array.from(permissions);
-	}
-}
+const globalCacheAdapter = new MemoryCacheAdapter();
 
 interface CallbackContext {
 	config: InternalConfig;
@@ -200,7 +65,8 @@ async function handleOAuthCallback(
 	const { config, client, storage, code, codeVerifier } = ctx;
 
 	if (!config.redirectUri) {
-		throw new ConfigurationError(
+		throw new AuthError(
+			ErrorCodes.CONFIGURATION_ERROR,
 			"redirectUri is required — set DISCORD_REDIRECT_URI env var or provide redirectUri in config",
 		);
 	}
@@ -217,7 +83,13 @@ async function handleOAuthCallback(
 	const user = await client.getUser(tokens.access_token);
 
 	if (config.mfa.enabled && config.mfa.requireMfa && !user.mfa_enabled) {
-		throw new MfaRequiredError();
+		throw new AuthError(
+			ErrorCodes.MFA_REQUIRED,
+			"Multi-factor authentication is required",
+			{
+				statusCode: 403,
+			},
+		);
 	}
 
 	let storedUser: StoredUser | null = null;
@@ -263,7 +135,7 @@ async function handleOAuthCallback(
 		const guildSync = new GuildRoleSync(
 			config.guildRoleSync,
 			client,
-			new MemoryCacheAdapter(),
+			globalCacheAdapter,
 		);
 		syncedPermissions = await guildSync.syncUserRoles(
 			user.id,
@@ -285,7 +157,7 @@ async function handleOAuthCallback(
 	};
 }
 
-async function revokeAndCleanup(params: {
+async function revokeTokenOnly(params: {
 	storage: UserStorage;
 	client: DiscordClient;
 	clientId: string;
@@ -301,9 +173,13 @@ async function revokeAndCleanup(params: {
 				clientSecret,
 				accessToken: stored.accessToken,
 			});
-			await storage.delete(stored.discordId);
 		}
-	} catch {}
+	} catch (err) {
+		console.error(
+			"[discord] Failed to revoke token:",
+			err instanceof Error ? err.message : err,
+		);
+	}
 }
 
 async function getSessionFromRequest(
@@ -330,84 +206,6 @@ async function getSessionFromRequest(
 		locale: payload.locale as string,
 		roles: (payload.roles as string[]) ?? undefined,
 	};
-}
-
-function isPublicPath(path: string, patterns: string[]): boolean {
-	for (const pattern of patterns) {
-		if (pattern.endsWith("/*")) {
-			const prefix = pattern.slice(0, -2);
-			if (
-				path === prefix ||
-				path.startsWith(`${prefix}/`) ||
-				path === `${prefix}/`
-			) {
-				return true;
-			}
-		} else if (path === pattern) {
-			return true;
-		}
-	}
-	return false;
-}
-
-function _requiredRole(
-	path: string,
-	roleMap: Record<string, string[]>,
-): string[] | null {
-	for (const [pattern, roles] of Object.entries(roleMap)) {
-		if (pattern.endsWith("/*")) {
-			const prefix = pattern.slice(0, -2);
-			if (path === prefix || path.startsWith(`${prefix}/`)) {
-				return roles;
-			}
-		} else if (path === pattern) {
-			return roles;
-		}
-	}
-	return null;
-}
-
-function redirect(url: string): Response {
-	return new Response(null, { status: 302, headers: { Location: url } });
-}
-
-function _denied(message = "Forbidden"): Response {
-	return new Response(JSON.stringify({ error: message }), {
-		status: 403,
-		headers: { "Content-Type": "application/json" },
-	});
-}
-
-interface HandlerContext {
-	config: InternalConfig;
-	client: DiscordClient;
-	storage?: UserStorage;
-}
-
-async function verifySession(
-	token: string,
-	secret: string,
-	sessionType: SessionType,
-): Promise<SessionData | null> {
-	if (sessionType === "server") return null;
-
-	const payload = await verifyToken<Record<string, unknown>>(token, secret);
-	if (!payload) return null;
-
-	return {
-		discordId: payload.discordId as string,
-		username: payload.username as string,
-		globalName: (payload.globalName as string) ?? null,
-		avatar: (payload.avatar as string) ?? null,
-		email: (payload.email as string) ?? null,
-		locale: payload.locale as string,
-		roles: (payload.roles as string[]) ?? undefined,
-	};
-}
-
-function isProductionSecureDefault(): boolean {
-	const nodeEnv = process.env.NODE_ENV;
-	return nodeEnv === "production";
 }
 
 function redirectResponse(url: string, cookies?: string[]): Response {
@@ -452,13 +250,19 @@ function jsonResponse(data: unknown, status = 200): Response {
 	});
 }
 
+interface HandlerContext {
+	config: InternalConfig;
+	client: DiscordClient;
+	storage?: UserStorage;
+}
+
 function createHandlers(ctx: HandlerContext) {
 	const { config, client, storage } = ctx;
 	const stateStore = new MemoryStateStore();
 	const cookieName = config.session.cookieName ?? "discord-auth-session";
 	const cookiePath = config.session.cookiePath ?? "/";
 	const sameSite = config.session.sameSite ?? "lax";
-	const secure = config.session.secure ?? isProductionSecureDefault();
+	const secure = config.session.secure ?? true;
 	const httpOnly = config.session.httpOnly ?? true;
 	const sessionCookieName = cookieName;
 
@@ -476,9 +280,9 @@ function createHandlers(ctx: HandlerContext) {
 		let codeVerifier: string | undefined;
 
 		if (pkceEnabled) {
-			const pkce = await generatePKCE();
-			codeChallenge = pkce.codeChallenge;
-			codeVerifier = pkce.codeVerifier;
+			const pkcePair = await pkce.create();
+			codeChallenge = pkcePair.challenge;
+			codeVerifier = pkcePair.verifier;
 		}
 
 		const cookies = parseCookies(request);
@@ -510,6 +314,17 @@ function createHandlers(ctx: HandlerContext) {
 		const url = new URL(request.url);
 		const code = url.searchParams.get("code");
 		const state = url.searchParams.get("state");
+		const error = url.searchParams.get("error");
+
+		if (error === "interaction_required" || error === "login_required") {
+			const promptNoneError = new AuthError(
+				ErrorCodes.INTERACTION_REQUIRED,
+				"User interaction required - prompt=none not allowed",
+				{ statusCode: 401 },
+			);
+			await config.callbacks.onError(promptNoneError, "callback");
+			return htmlResponse(promptNoneError.message, 401);
+		}
 
 		if (!code) return htmlResponse("Missing authorization code", 400);
 		if (!state) return htmlResponse("Missing state parameter", 400);
@@ -519,7 +334,7 @@ function createHandlers(ctx: HandlerContext) {
 		const userAgent = request.headers.get("user-agent") ?? undefined;
 
 		let stateValidation: ValidatedState;
-		let csrfError: Error | null = null;
+		let csrfError: AuthErrorType | null = null;
 
 		if (config.csrf.enabled) {
 			stateValidation = await consumeState(
@@ -535,44 +350,68 @@ function createHandlers(ctx: HandlerContext) {
 				const parts = state.split(".");
 				if (parts.length === 2) {
 					try {
-						const [encoded] = parts;
-						const decoded = new TextDecoder().decode(
-							new Uint8Array(
-								atob(encoded.replace(/-/g, "+").replace(/_/g, "/"))
-									.split("")
-									.map((c) => c.charCodeAt(0)),
-							),
-						);
+						const encoded = parts[0] as string;
+						const decoded = new TextDecoder().decode(base64URLDecode(encoded));
 						const payload = JSON.parse(decoded);
 						if (payload.id && (await stateStore.has(payload.id))) {
-							csrfError = new StateReusedError();
+							csrfError = new AuthError(
+								ErrorCodes.STATE_REUSED,
+								"State parameter has already been used",
+								{ statusCode: 403 },
+							);
 						} else {
-							csrfError = new StateBindingError();
+							csrfError = new AuthError(
+								ErrorCodes.STATE_BINDING_FAILED,
+								"State parameter binding validation failed",
+								{ statusCode: 403 },
+							);
 						}
 					} catch {
-						csrfError = new StateBindingError();
+						csrfError = new AuthError(
+							ErrorCodes.STATE_BINDING_FAILED,
+							"State parameter binding validation failed",
+							{ statusCode: 403 },
+						);
 					}
 				} else {
-					csrfError = new StateBindingError();
+					csrfError = new AuthError(
+						ErrorCodes.STATE_BINDING_FAILED,
+						"State parameter binding validation failed",
+						{ statusCode: 403 },
+					);
 				}
 			}
 		} else {
 			stateValidation = await validateState(state, config.stateSecret);
 			if (!stateValidation.valid) {
-				csrfError = new Error("Invalid state parameter - possible CSRF attack");
+				csrfError = new AuthError(
+					ErrorCodes.INVALID_STATE,
+					"Invalid state parameter - possible CSRF attack",
+					{ statusCode: 403 },
+				);
 			}
 		}
 
 		if (csrfError) {
 			await config.callbacks.onError(csrfError, "callback");
-			const statusCode =
-				csrfError instanceof DiscordAuthError
-					? (csrfError.statusCode ?? 403)
-					: 403;
+			const statusCode = csrfError.statusCode ?? 403;
 			return htmlResponse(csrfError.message, statusCode);
 		}
 
 		const codeVerifier = stateValidation.codeVerifier;
+
+		if (codeVerifier && !config.disablePKCE) {
+			const verifierValid = /^[A-Za-z0-9\-._~]{43,128}$/.test(codeVerifier);
+			if (!verifierValid) {
+				const csrfError = new AuthError(
+					ErrorCodes.INVALID_CODE_VERIFIER,
+					"Invalid code_verifier format",
+					{ statusCode: 400 },
+				);
+				await config.callbacks.onError(csrfError, "callback");
+				return htmlResponse(csrfError.message, 400);
+			}
+		}
 
 		let callbackResult: CallbackResult;
 		try {
@@ -588,11 +427,10 @@ function createHandlers(ctx: HandlerContext) {
 		} catch (err) {
 			await config.callbacks.onError(err as Error, "callback");
 			const statusCode =
-				err instanceof DiscordAuthError ? (err.statusCode ?? 500) : 500;
-			return htmlResponse(
-				err instanceof DiscordAuthError ? err.message : "Authentication failed",
-				statusCode,
-			);
+				err instanceof AuthError ? (err.statusCode ?? 500) : 500;
+			const message =
+				err instanceof AuthError ? err.message : "Authentication failed";
+			return htmlResponse(message, statusCode);
 		}
 
 		const { user, tokens, syncedPermissions, storedUser } = callbackResult;
@@ -643,13 +481,21 @@ function createHandlers(ctx: HandlerContext) {
 		const sessionToken = cookies[sessionCookieName];
 
 		if (storage && sessionToken) {
-			const userData = await verifySession(
+			const payload = await verifyToken<Record<string, unknown>>(
 				sessionToken,
 				config.session.secret,
-				config.session.type,
 			);
-			if (userData) {
-				await revokeAndCleanup({
+			if (payload) {
+				const userData: SessionData = {
+					discordId: payload.discordId as string,
+					username: payload.username as string,
+					globalName: (payload.globalName as string) ?? null,
+					avatar: (payload.avatar as string) ?? null,
+					email: (payload.email as string) ?? null,
+					locale: payload.locale as string,
+					roles: (payload.roles as string[]) ?? undefined,
+				};
+				await revokeTokenOnly({
 					storage,
 					client,
 					clientId: config.clientId,
@@ -674,16 +520,25 @@ function createHandlers(ctx: HandlerContext) {
 
 		if (!sessionToken) return jsonResponse({ error: "Unauthorized" }, 401);
 
-		const userData = await verifySession(
+		const payload = await verifyToken<Record<string, unknown>>(
 			sessionToken,
 			config.session.secret,
-			config.session.type,
 		);
-		if (!userData) return jsonResponse({ error: "Session expired" }, 401);
+		if (!payload) return jsonResponse({ error: "Session expired" }, 401);
 
-		if (!storage) return jsonResponse(userData);
+		const sessionData: SessionData = {
+			discordId: payload.discordId as string,
+			username: payload.username as string,
+			globalName: (payload.globalName as string) ?? null,
+			avatar: (payload.avatar as string) ?? null,
+			email: (payload.email as string) ?? null,
+			locale: payload.locale as string,
+			roles: (payload.roles as string[]) ?? undefined,
+		};
 
-		const stored = await storage.findByDiscordId(userData.discordId);
+		if (!storage) return jsonResponse(sessionData);
+
+		const stored = await storage.findByDiscordId(sessionData.discordId);
 		if (!stored) return jsonResponse({ error: "User not found" }, 404);
 
 		const { accessToken, refreshToken, ...safe } = stored;
@@ -699,47 +554,6 @@ function createHandlers(ctx: HandlerContext) {
 	};
 }
 
-interface EdgeAuthConfig {
-	secret: string;
-	cookieName?: string;
-	loginUrl?: string;
-	publicPaths?: string[];
-}
-
-function middlewareAuth(config: EdgeAuthConfig) {
-	const loginUrl = config.loginUrl ?? "/auth/discord";
-	const publicPaths = config.publicPaths ?? [];
-	const cookieConfigs = [
-		{
-			name: config.cookieName ?? "discord-auth-session",
-			secret: config.secret,
-		},
-	];
-
-	return async function authMiddleware(
-		request: Request,
-	): Promise<Response | undefined> {
-		const url = new URL(request.url);
-		const path = url.pathname;
-
-		if (isPublicPath(path, publicPaths)) {
-			return undefined;
-		}
-
-		for (const cookie of cookieConfigs) {
-			const user = await getSessionFromRequest(request, {
-				secret: cookie.secret,
-				cookieName: cookie.name,
-			});
-			if (user) {
-				return undefined;
-			}
-		}
-
-		return redirect(`${loginUrl}?redirect=${encodeURIComponent(path)}`);
-	};
-}
-
 export interface DiscordFactoryConfig {
 	clientId: string;
 	clientSecret: string;
@@ -748,12 +562,18 @@ export interface DiscordFactoryConfig {
 	scopes?: DiscordScope[];
 	prompt?: "consent" | "none";
 	storage?: UserStorage;
-	meRoute?: string;
+	routes?: RoutesConfig;
+	cookies?: CookieOptions;
+	pkce?: boolean;
 	redirectUri?: string;
 	disablePKCE?: boolean;
+	autoRefresh?: Partial<AutoRefreshConfig>;
+	bruteForce?: Partial<BruteForceConfig>;
+	mfa?: Partial<DiscordMfaConfig>;
+	guildRoleSync?: Partial<GuildRoleSyncConfig>;
+	csrf?: Partial<CsrfConfig>;
+	callbacks?: Callbacks;
 	stateSecret?: string;
-	publicPaths?: string[];
-	loginUrl?: string;
 }
 
 export type AuthHandler = (
@@ -766,18 +586,8 @@ export interface DiscordAuthResult {
 	handleCallback: (request: Request) => Promise<Response>;
 	handleLogout: (request: Request) => Promise<Response>;
 	handleMe: (request: Request) => Promise<Response>;
-	middleware: (request: Request) => Promise<Response | undefined>;
 	getSession: (request: Request) => Promise<SessionData | null>;
 	withAuth: (handler: AuthHandler) => (request: Request) => Promise<Response>;
-	withOptionalAuth: (
-		handler: (
-			request: Request,
-			ctx: { user: SessionData | null; storedUser: SafeStoredUser | null },
-		) => Response | Promise<Response>,
-	) => (request: Request) => Promise<Response>;
-	withRole: (
-		...roles: string[]
-	) => (handler: AuthHandler) => (request: Request) => Promise<Response>;
 	dispose?: () => void;
 }
 
@@ -794,11 +604,16 @@ export async function discord(
 		scopes,
 		prompt,
 		storage,
-		meRoute = "/auth/me",
+		routes,
 		redirectUri,
 		disablePKCE = false,
-		publicPaths = ["/", "/auth/*", "/api/auth/*"],
-		loginUrl = "/auth/discord",
+		autoRefresh,
+		bruteForce,
+		mfa,
+		guildRoleSync,
+		csrf,
+		callbacks,
+		stateSecret,
 	} = config;
 
 	if (!clientId || !clientSecret) {
@@ -810,31 +625,31 @@ export async function discord(
 
 	const client = new DiscordClient(clientId, clientSecret);
 
-	const stateSecret = config.stateSecret ?? (await deriveStateSecret(secret));
+	const derivedStateSecret = stateSecret ?? (await deriveStateSecret(secret));
 
 	const internalConfig = await processConfig({
 		clientId,
 		clientSecret,
+		secret,
+		callbackUrl,
 		session: { type: "jwt", secret, cookieName: COOKIE_NAME },
-		scopes: scopes as DiscordScope[] | undefined,
+		scopes,
 		prompt,
-		routes: { callback: callbackUrl },
+		routes: { callback: callbackUrl, ...routes },
 		storage,
-		meRoute,
 		redirectUri,
 		disablePKCE,
-		stateSecret,
+		autoRefresh,
+		bruteForce,
+		mfa,
+		guildRoleSync,
+		csrf,
+		callbacks,
+		stateSecret: derivedStateSecret,
 	});
 
 	const { handleLogin, handleCallback, handleLogout, handleMe, dispose } =
 		createHandlers({ config: internalConfig, client, storage });
-
-	const middleware = middlewareAuth({
-		secret,
-		cookieName: COOKIE_NAME,
-		loginUrl,
-		publicPaths,
-	});
 
 	const getSessionHelper = (request: Request) =>
 		getSessionFromRequest(request, { secret, cookieName: COOKIE_NAME });
@@ -845,7 +660,6 @@ export async function discord(
 		handleLogout,
 		handleMe,
 		dispose,
-		middleware,
 		getSession: getSessionHelper,
 		withAuth:
 			(handler: AuthHandler) =>
@@ -871,69 +685,7 @@ export async function discord(
 				}
 				return handler(request, { user: session, storedUser });
 			},
-		withOptionalAuth:
-			(
-				handler: (
-					request: Request,
-					ctx: { user: SessionData | null; storedUser: SafeStoredUser | null },
-				) => Response | Promise<Response>,
-			) =>
-			async (request: Request): Promise<Response> => {
-				const session = await getSessionHelper(request);
-				let storedUser: SafeStoredUser | null = null;
-				if (storage && session) {
-					const stored = await storage.findByDiscordId(session.discordId);
-					if (stored) {
-						const {
-							accessToken: _accessToken,
-							refreshToken: _refreshToken,
-							...safe
-						} = stored;
-						storedUser = safe;
-					}
-				}
-				return handler(request, { user: session, storedUser });
-			},
-		withRole:
-			(...roles: string[]) =>
-			(handler: AuthHandler) =>
-			async (request: Request): Promise<Response> => {
-				const session = await getSessionHelper(request);
-				if (!session) {
-					return new Response(JSON.stringify({ error: "Unauthorized" }), {
-						status: 401,
-						headers: { "Content-Type": "application/json" },
-					});
-				}
-				if (!storage) {
-					return new Response(
-						JSON.stringify({ error: "Storage not configured for role checks" }),
-						{
-							status: 500,
-							headers: { "Content-Type": "application/json" },
-						},
-					);
-				}
-				const stored = await storage.findByDiscordId(session.discordId);
-				if (!stored) {
-					return new Response(JSON.stringify({ error: "User not found" }), {
-						status: 404,
-						headers: { "Content-Type": "application/json" },
-					});
-				}
-				const hasRole = roles.some((r) => stored.roles.includes(r));
-				if (!hasRole) {
-					return new Response(JSON.stringify({ error: "Forbidden" }), {
-						status: 403,
-						headers: { "Content-Type": "application/json" },
-					});
-				}
-				const {
-					accessToken: _accessToken,
-					refreshToken: _refreshToken,
-					...safe
-				} = stored;
-				return handler(request, { user: session, storedUser: safe });
-			},
 	};
 }
+
+export { AuthStrategy } from "./types";

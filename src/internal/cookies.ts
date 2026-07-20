@@ -49,7 +49,11 @@ export function clearSessionCookie(
 }
 
 export function defaultSecureCookie(): boolean {
-	const nodeEnv =
-		typeof process !== "undefined" ? process.env.NODE_ENV : undefined;
-	return nodeEnv === "production";
+	try {
+		const nodeEnv =
+			typeof process !== "undefined" ? process.env.NODE_ENV : undefined;
+		return nodeEnv === "production";
+	} catch {
+		return false;
+	}
 }

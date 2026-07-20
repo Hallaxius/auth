@@ -1,8 +1,9 @@
 import { AuthError, ErrorCodes } from "../errors";
 import { DiscordClient } from "../internal/client";
+import { base64URLEncode } from "../internal/state";
 import type { DiscordAuthConfig, DiscordUser, UserStorage } from "../types";
 
-export function validateConfig(config: DiscordAuthConfig): void {
+export function validate(config: DiscordAuthConfig): void {
 	if (!config.clientId) {
 		throw new AuthError(
 			ErrorCodes.CONFIGURATION_ERROR,
@@ -17,17 +18,17 @@ export function validateConfig(config: DiscordAuthConfig): void {
 		);
 	}
 
-	if (!config.session?.secret) {
+	if (!config.secret) {
 		throw new AuthError(
 			ErrorCodes.CONFIGURATION_ERROR,
-			"Missing required configuration: 'session.secret' is required. Generate a strong secret (min 32 chars): crypto.randomUUID() + crypto.randomUUID()",
+			"Missing required configuration: 'secret' is required. Generate a strong secret (min 32 chars): crypto.randomUUID() + crypto.randomUUID()",
 		);
 	}
 
-	if (config.session?.secret?.length < 32) {
+	if (config.secret && config.secret.length < 32) {
 		throw new AuthError(
 			ErrorCodes.CONFIGURATION_ERROR,
-			"session.secret must be at least 32 characters long for security",
+			"secret must be at least 32 characters long for security",
 		);
 	}
 
@@ -80,7 +81,7 @@ export function validateConfig(config: DiscordAuthConfig): void {
 	}
 }
 
-export async function hasRoleInGuild(
+export async function hasRole(
 	userId: string,
 	guildId: string,
 	roleId: string,
@@ -98,7 +99,7 @@ export async function hasRoleInGuild(
 	}
 }
 
-export async function hasAnyRoleInGuild(
+export async function hasAnyRole(
 	userId: string,
 	guildId: string,
 	roleIds: string[],
@@ -116,42 +117,24 @@ export async function hasAnyRoleInGuild(
 	}
 }
 
-export async function revokeUserSession(
-	discordId: string,
-	storage: UserStorage,
+export async function hasMember(
+	userId: string,
+	guildId: string,
+	botToken: string,
 	clientId: string,
 	clientSecret: string,
-): Promise<void> {
+): Promise<boolean> {
 	const client = new DiscordClient(clientId, clientSecret);
 
 	try {
-		const user = await storage.findByDiscordId(discordId);
-
-		if (user) {
-			await storage.delete(discordId);
-
-			try {
-				await client.revokeToken({
-					clientId,
-					clientSecret,
-					accessToken: user.accessToken,
-				});
-			} catch (revokeError) {
-				console.warn(
-					`Failed to revoke Discord token for user ${discordId}:`,
-					revokeError,
-				);
-			}
-		}
-	} catch (error) {
-		throw new AuthError(
-			ErrorCodes.STORAGE_WRITE_ERROR,
-			`Failed to revoke user session: ${error}`,
-		);
+		await client.getGuildMember(guildId, userId, botToken);
+		return true;
+	} catch {
+		return false;
 	}
 }
 
-export async function syncUserRoles(
+export async function sync(
 	discordId: string,
 	guildId: string,
 	botToken: string,
@@ -186,7 +169,7 @@ export async function syncUserRoles(
 	}
 }
 
-export async function autoJoinGuild(params: {
+export async function join(params: {
 	guildId: string;
 	userId: string;
 	accessToken: string;
@@ -215,6 +198,41 @@ export async function autoJoinGuild(params: {
 	}
 }
 
+export async function revoke(
+	discordId: string,
+	storage: UserStorage,
+	clientId: string,
+	clientSecret: string,
+): Promise<void> {
+	const client = new DiscordClient(clientId, clientSecret);
+
+	try {
+		const user = await storage.findByDiscordId(discordId);
+
+		if (user) {
+			await storage.delete(discordId);
+
+			try {
+				await client.revokeToken({
+					clientId,
+					clientSecret,
+					accessToken: user.accessToken,
+				});
+			} catch (revokeError) {
+				console.warn(
+					`Failed to revoke Discord token for user ${discordId}:`,
+					revokeError,
+				);
+			}
+		}
+	} catch (error) {
+		throw new AuthError(
+			ErrorCodes.STORAGE_WRITE_ERROR,
+			`Failed to revoke user session: ${error}`,
+		);
+	}
+}
+
 export interface GuildMember {
 	user: DiscordUser;
 	nick: string | null;
@@ -226,28 +244,8 @@ export interface GuildMember {
 	pending: boolean;
 }
 
-export async function isUserInGuild(
-	userId: string,
-	guildId: string,
-	botToken: string,
-	clientId: string,
-	clientSecret: string,
-): Promise<boolean> {
-	const client = new DiscordClient(clientId, clientSecret);
-
-	try {
-		await client.getGuildMember(guildId, userId, botToken);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-export function generateSecureSecret(length: number = 32): string {
+export function secret(length: number = 32): string {
 	const array = new Uint8Array(length);
 	crypto.getRandomValues(array);
-	return btoa(String.fromCharCode(...Array.from(array)))
-		.replace(/\+/g, "-")
-		.replace(/\//g, "_")
-		.replace(/=+$/, "");
+	return base64URLEncode(array);
 }

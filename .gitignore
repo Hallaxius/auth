@@ -1,3 +1,4 @@
+# Updated: 2026-07-19
 dist/
 *.tsbuildinfo
 
@@ -17,6 +18,7 @@ npm-debug.log*
 *.swo
 
 coverage/
+.turbo/
 
 .opencode/
 .omo/

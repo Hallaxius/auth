@@ -1,12 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "bun:test";
 import { AuthError } from "../../errors";
 import type { DiscordGuildMember, DiscordUser, UserStorage } from "../../types";
-import {
-	generateSecureSecret,
-	revokeUserSession,
-	syncUserRoles,
-	validateConfig,
-} from "../utils";
+import { revoke, secret, sync, validate } from "../utils";
 
 const mockDiscordUser: DiscordUser = {
 	id: "user-id",
@@ -51,84 +46,77 @@ function createMockStorage(): UserStorage & {
 	};
 }
 
-describe("generateSecureSecret", () => {
+describe("secret", () => {
 	it("should generate a secure secret with default length", () => {
-		const secret = generateSecureSecret();
-		expect(secret).toBeDefined();
-		expect(typeof secret).toBe("string");
-		expect(secret.length).toBeGreaterThan(40);
-		expect(secret).toMatch(/^[A-Za-z0-9-_]+$/);
+		const secretValue = secret();
+		expect(secretValue).toBeDefined();
+		expect(typeof secretValue).toBe("string");
+		expect(secretValue.length).toBeGreaterThan(40);
+		expect(secretValue).toMatch(/^[A-Za-z0-9-_]+$/);
 	});
 
 	it("should generate a secure secret with custom length", () => {
-		const secret = generateSecureSecret(64);
-		expect(secret).toBeDefined();
-		expect(secret.length).toBeGreaterThan(80);
+		const secretValue = secret(64);
+		expect(secretValue).toBeDefined();
+		expect(secretValue.length).toBeGreaterThan(80);
 	});
 
 	it("should generate unique secrets on each call", () => {
-		const secret1 = generateSecureSecret();
-		const secret2 = generateSecureSecret();
+		const secret1 = secret();
+		const secret2 = secret();
 		expect(secret1).not.toBe(secret2);
 	});
 });
 
-describe("validateConfig", () => {
+describe("validate", () => {
+	const validSecret = "test-secret-123456789012345678901234567890";
+
 	it("should throw AuthError when clientId is missing", () => {
 		expect(() =>
-			validateConfig({
+			validate({
 				clientId: "",
 				clientSecret: "test-secret",
-				session: {
-					type: "jwt",
-					secret: "test-secret-123456789012345678901234567890",
-				},
-			} as Parameters<typeof validateConfig>[0]),
+				secret: validSecret,
+			} as Parameters<typeof validate>[0]),
 		).toThrow(AuthError);
 	});
 
 	it("should throw AuthError when clientSecret is missing", () => {
 		expect(() =>
-			validateConfig({
+			validate({
 				clientId: "test-id",
 				clientSecret: "",
-				session: {
-					type: "jwt",
-					secret: "test-secret-123456789012345678901234567890",
-				},
-			} as Parameters<typeof validateConfig>[0]),
+				secret: validSecret,
+			} as Parameters<typeof validate>[0]),
 		).toThrow(AuthError);
 	});
 
-	it("should throw AuthError when session.secret is missing", () => {
+	it("should throw AuthError when secret is missing", () => {
 		expect(() =>
-			validateConfig({
+			validate({
 				clientId: "test-id",
 				clientSecret: "test-secret",
-				session: { type: "jwt", secret: "" },
-			} as Parameters<typeof validateConfig>[0]),
+				secret: "",
+			} as Parameters<typeof validate>[0]),
 		).toThrow(AuthError);
 	});
 
-	it("should throw AuthError when session.secret is too short", () => {
+	it("should throw AuthError when secret is too short", () => {
 		expect(() =>
-			validateConfig({
+			validate({
 				clientId: "test-id",
 				clientSecret: "test-secret",
-				session: { type: "jwt", secret: "short" },
-			} as Parameters<typeof validateConfig>[0]),
+				secret: "short",
+			} as Parameters<typeof validate>[0]),
 		).toThrow(AuthError);
 	});
 
 	it("should not throw for valid configuration", () => {
 		expect(() =>
-			validateConfig({
+			validate({
 				clientId: "test-id",
 				clientSecret: "test-secret",
-				session: {
-					type: "jwt",
-					secret: "test-secret-123456789012345678901234567890",
-				},
+				secret: validSecret,
 				scopes: ["identify"],
 			}),
 		).not.toThrow();
@@ -136,13 +124,10 @@ describe("validateConfig", () => {
 
 	it("should throw AuthError for empty scopes array", () => {
 		expect(() =>
-			validateConfig({
+			validate({
 				clientId: "test-id",
 				clientSecret: "test-secret",
-				session: {
-					type: "jwt",
-					secret: "test-secret-123456789012345678901234567890",
-				},
+				secret: validSecret,
 				scopes: [] as never,
 			}),
 		).toThrow(AuthError);
@@ -150,13 +135,10 @@ describe("validateConfig", () => {
 
 	it("should throw AuthError for invalid prompt value", () => {
 		expect(() =>
-			validateConfig({
+			validate({
 				clientId: "test-id",
 				clientSecret: "test-secret",
-				session: {
-					type: "jwt",
-					secret: "test-secret-123456789012345678901234567890",
-				},
+				secret: validSecret,
 				prompt: "invalid" as never,
 			}),
 		).toThrow(AuthError);
@@ -164,25 +146,24 @@ describe("validateConfig", () => {
 
 	it("should throw AuthError for invalid session.type", () => {
 		expect(() =>
-			validateConfig({
+			validate({
 				clientId: "test-id",
 				clientSecret: "test-secret",
-				session: {
-					type: "invalid" as never,
-					secret: "test-secret-123456789012345678901234567890",
-				},
+				secret: validSecret,
+				session: { type: "invalid" as never, secret: validSecret },
 			}),
 		).toThrow(AuthError);
 	});
 
 	it("should throw AuthError for invalid sameSite value", () => {
 		expect(() =>
-			validateConfig({
+			validate({
 				clientId: "test-id",
 				clientSecret: "test-secret",
+				secret: validSecret,
 				session: {
 					type: "jwt",
-					secret: "test-secret-123456789012345678901234567890",
+					secret: validSecret,
 					sameSite: "invalid" as never,
 				},
 			}),
@@ -242,7 +223,7 @@ describe("revokeUserSession", () => {
 		mockStorage.findByDiscordId.mockResolvedValue(null);
 
 		await expect(
-			revokeUserSession("user-id", mockStorage, "test-id", "test-secret"),
+			revoke("user-id", mockStorage, "test-id", "test-secret"),
 		).resolves.toBeUndefined();
 
 		expect(mockStorage.delete).not.toHaveBeenCalled();
@@ -252,7 +233,7 @@ describe("revokeUserSession", () => {
 		mockStorage.findByDiscordId.mockRejectedValue(new Error("Storage error"));
 
 		await expect(
-			revokeUserSession("user-id", mockStorage, "test-id", "test-secret"),
+			revoke("user-id", mockStorage, "test-id", "test-secret"),
 		).rejects.toThrow(AuthError);
 	});
 });
@@ -269,7 +250,7 @@ describe("syncUserRoles", () => {
 		mockStorage.findByDiscordId.mockResolvedValue(null);
 
 		await expect(
-			syncUserRoles(
+			sync(
 				"user-id",
 				"guild-id",
 				"bot-token",
