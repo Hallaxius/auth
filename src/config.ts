@@ -10,13 +10,10 @@ import {
 } from "./internal/defaults";
 import { base64URLEncode } from "./internal/state";
 import type {
-	CallbackQuery,
 	Callbacks,
 	DiscordAuthConfig,
 	DiscordScope,
-	ErrorQuery,
 	InternalConfig,
-	LoginQuery,
 	RoutesConfig,
 } from "./types";
 
@@ -83,7 +80,11 @@ export async function processConfig(
 			cookieName: config.session?.cookieName ?? "discord-auth-session",
 			cookiePath: config.session?.cookiePath ?? "/",
 			httpOnly: config.session?.httpOnly ?? true,
-			secure: config.session?.secure ?? true,
+			secure:
+				config.session?.secure ??
+				(typeof process !== "undefined"
+					? process.env.NODE_ENV === "production"
+					: false),
 			sameSite: config.session?.sameSite ?? "lax",
 			expiresIn: config.session?.expiresIn ?? "7d",
 		},
@@ -192,49 +193,4 @@ export const pkce = {
 	verifier,
 	challenge,
 	create,
-} as const;
-
-export interface TypedCallbackQuery extends CallbackQuery {
-	error?: OAuth2ErrorCode;
-}
-
-export interface TypedErrorQuery extends ErrorQuery {
-	error: OAuth2ErrorCode;
-}
-
-export type OAuth2ErrorCode =
-	| "access_denied"
-	| "invalid_request"
-	| "unauthorized_client"
-	| "unsupported_response_type"
-	| "invalid_scope"
-	| "server_error"
-	| "temporarily_unavailable"
-	| "invalid_grant"
-	| "invalid_token";
-
-export interface TypedRouteHandlers<_Config extends DiscordAuthConfig> {
-	callback: (query: TypedCallbackQuery) => Promise<Response>;
-	login: (query?: LoginQuery) => Promise<Response>;
-	error: (query: TypedErrorQuery) => Promise<Response>;
-}
-
-export function createTypedRouteHandlers<
-	Config extends DiscordAuthConfig,
->(): TypedRouteHandlers<Config> {
-	return {
-		callback: async (_query: TypedCallbackQuery) => {
-			return new Response("Not implemented", { status: 501 });
-		},
-		login: async (_query?: LoginQuery) => {
-			return new Response("Not implemented", { status: 501 });
-		},
-		error: async (_query: TypedErrorQuery) => {
-			return new Response("Not implemented", { status: 501 });
-		},
-	};
-}
-
-export const routes = {
-	create: createTypedRouteHandlers,
 } as const;

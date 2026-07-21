@@ -38,4 +38,8 @@ export class MemoryCacheAdapter implements CacheAdapter {
 	dispose(): void {
 		this.store.dispose();
 	}
+
+	getSize(): number {
+		return this.store.size();
+	}
 }

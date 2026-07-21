@@ -11,6 +11,11 @@ import {
 	createSessionCookie,
 	parseCookies,
 } from "./internal/cookies";
+import {
+	htmlResponse,
+	jsonResponse,
+	redirectResponse,
+} from "./internal/http-utils";
 import { signToken, verifyToken } from "./internal/jwt";
 import {
 	base64URLDecode,
@@ -208,46 +213,37 @@ async function getSessionFromRequest(
 	};
 }
 
-function redirectResponse(url: string, cookies?: string[]): Response {
-	const headers = new Headers();
-	headers.set("Location", url);
-	if (cookies) {
-		for (const c of cookies) headers.append("Set-Cookie", c);
-	}
-	return new Response(null, { status: 302, headers });
-}
-
-function isSafeRedirect(target: string): boolean {
+function isSafeRedirect(target: string, allowedOrigins?: string[]): boolean {
 	if (typeof target !== "string" || target.length === 0) return false;
 	if (target.startsWith("//")) return false;
-	if (/^[a-z][a-z0-9+.-]*:/i.test(target)) return false;
+	if (/^[a-z][a-z0-9+.-]*:/i.test(target)) {
+		try {
+			const url = new URL(target);
+			if (allowedOrigins && allowedOrigins.length > 0) {
+				return allowedOrigins.some((origin) => {
+					const allowedUrl = new URL(origin);
+					return (
+						url.origin === allowedUrl.origin &&
+						url.protocol === allowedUrl.protocol
+					);
+				});
+			}
+			return false;
+		} catch {
+			return false;
+		}
+	}
 	if (!target.startsWith("/")) return false;
 	if (target.includes("\\")) return false;
 	return true;
 }
 
-function sanitizeRedirect(target: string | undefined | null): string {
-	if (target && isSafeRedirect(target)) return target;
+function sanitizeRedirect(
+	target: string | undefined | null,
+	allowedOrigins?: string[],
+): string {
+	if (target && isSafeRedirect(target, allowedOrigins)) return target;
 	return "/";
-}
-
-function htmlResponse(
-	body: string,
-	status = 200,
-	cookies?: string[],
-): Response {
-	const headers = new Headers({ "Content-Type": "text/html; charset=utf-8" });
-	if (cookies) {
-		for (const c of cookies) headers.append("Set-Cookie", c);
-	}
-	return new Response(body, { status, headers });
-}
-
-function jsonResponse(data: unknown, status = 200): Response {
-	return new Response(JSON.stringify(data), {
-		status,
-		headers: { "Content-Type": "application/json; charset=utf-8" },
-	});
 }
 
 interface HandlerContext {
@@ -262,7 +258,11 @@ function createHandlers(ctx: HandlerContext) {
 	const cookieName = config.session.cookieName ?? "discord-auth-session";
 	const cookiePath = config.session.cookiePath ?? "/";
 	const sameSite = config.session.sameSite ?? "lax";
-	const secure = config.session.secure ?? true;
+	const secure =
+		config.session.secure ??
+		(typeof process !== "undefined"
+			? process.env.NODE_ENV === "production"
+			: false);
 	const httpOnly = config.session.httpOnly ?? true;
 	const sessionCookieName = cookieName;
 

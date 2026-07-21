@@ -1,3 +1,6 @@
+import type { PasswordHasher } from "./utils/password";
+
+export type { PasswordHasher };
 export type SessionType = "jwt" | "server";
 export interface SessionConfig {
 	type?: "jwt" | "server";
@@ -412,6 +415,7 @@ export interface MiddlewareRoleConfig {
 	roles: Record<string, string[]>;
 }
 export interface SessionCookieOptions {
+	maxAge?: number;
 	path?: string;
 	httpOnly?: boolean;
 	secure?: boolean;
@@ -468,10 +472,6 @@ export interface InternalCredentialsConfig {
 	sameSite: "lax" | "strict" | "none";
 	defaultRoles: string[];
 	minPasswordLength: number;
-}
-export interface PasswordHasher {
-	hash(password: string): Promise<string>;
-	verify(password: string, hash: string): Promise<boolean>;
 }
 export interface AuthUserStorage {
 	findByUsername(username: string): Promise<AuthUser | null>;

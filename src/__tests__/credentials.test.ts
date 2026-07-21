@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "vitest";
 import { credentials } from "../credentials";
 import type { AuthUserStorage, PasswordHasher } from "../types";
 import { AuthStrategy } from "../types";
@@ -547,7 +547,12 @@ describe("BruteForceProtection - additional methods", () => {
 
 	test("getRemainingAttempts returns max when disabled", async () => {
 		const { BruteForceProtection } = await import("../credentials");
-		const bf = new BruteForceProtection({ enabled: false });
+		const bf = new BruteForceProtection({
+			enabled: false,
+			maxAttempts: 5,
+			windowMs: 60000,
+			blockDurationMs: 60000,
+		});
 		const remaining = await bf.getRemainingAttempts("any-key");
 		expect(remaining).toBe(5);
 	});
@@ -556,6 +561,8 @@ describe("BruteForceProtection - additional methods", () => {
 		const { BruteForceProtection } = await import("../credentials");
 		const bf = new BruteForceProtection({
 			enabled: true,
+			maxAttempts: 5,
+			windowMs: 60000,
 			blockDurationMs: 12345,
 		});
 		const retryAfter = await bf.getRetryAfter("key");
@@ -564,14 +571,24 @@ describe("BruteForceProtection - additional methods", () => {
 
 	test("getRetryAfter returns undefined when disabled", async () => {
 		const { BruteForceProtection } = await import("../credentials");
-		const bf = new BruteForceProtection({ enabled: false });
+		const bf = new BruteForceProtection({
+			enabled: false,
+			maxAttempts: 5,
+			windowMs: 60000,
+			blockDurationMs: 60000,
+		});
 		const retryAfter = await bf.getRetryAfter("key");
 		expect(retryAfter).toBeUndefined();
 	});
 
 	test("reset does nothing when disabled", async () => {
 		const { BruteForceProtection } = await import("../credentials");
-		const bf = new BruteForceProtection({ enabled: false });
+		const bf = new BruteForceProtection({
+			enabled: false,
+			maxAttempts: 5,
+			windowMs: 60000,
+			blockDurationMs: 60000,
+		});
 		await expect(bf.reset("key")).resolves.toBeUndefined();
 	});
 

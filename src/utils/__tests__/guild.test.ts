@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { MemoryCacheAdapter } from "../../adapters/cache/memory";
 import type { GuildRoleSyncConfig } from "../../types";
 import { GuildRoleSync } from "../guild";

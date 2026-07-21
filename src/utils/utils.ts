@@ -1,7 +1,7 @@
 import { AuthError, ErrorCodes } from "../errors";
 import { DiscordClient } from "../internal/client";
 import { base64URLEncode } from "../internal/state";
-import type { DiscordAuthConfig, DiscordUser, UserStorage } from "../types";
+import type { DiscordAuthConfig, UserStorage } from "../types";
 
 export function validate(config: DiscordAuthConfig): void {
 	if (!config.clientId) {
@@ -231,17 +231,6 @@ export async function revoke(
 			`Failed to revoke user session: ${error}`,
 		);
 	}
-}
-
-export interface GuildMember {
-	user: DiscordUser;
-	nick: string | null;
-	roles: string[];
-	joinedAt: string;
-	premiumSince: string | null;
-	deaf: boolean;
-	mute: boolean;
-	pending: boolean;
 }
 
 export function secret(length: number = 32): string {

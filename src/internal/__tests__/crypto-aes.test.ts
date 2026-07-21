@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { decrypt, encrypt } from "../crypto-aes";
 
 describe("crypto-aes", () => {
@@ -23,16 +23,16 @@ describe("crypto-aes", () => {
 
 	test("fails with wrong secret", async () => {
 		const encrypted = await encrypt("sensitive-data", secret);
-		expect(() =>
+		await expect(
 			decrypt(encrypted, "wrong-secret-32-chars-long!!!!!"),
-		).toThrow();
+		).rejects.toThrow();
 	});
 
 	test("fails with tampered ciphertext", async () => {
 		const encrypted = await encrypt("data", secret);
 		const parts = encrypted.split(":");
 		parts[3] = "ff".repeat(parts[3].length / 2);
-		expect(() => decrypt(parts.join(":"), secret)).toThrow();
+		await expect(decrypt(parts.join(":"), secret)).rejects.toThrow();
 	});
 
 	test("fails with invalid encrypted format", async () => {

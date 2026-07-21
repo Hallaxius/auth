@@ -1,4 +1,4 @@
-# Updated: 2026-07-19
+# Updated: 2026-07-20
 src/
 
 node_modules/
@@ -23,6 +23,7 @@ bun.lock
 *.test.ts
 *.spec.ts
 __tests__/
+tests/
 
 .opencode/
 .omo/
@@ -35,3 +36,14 @@ coverage/
 *.temp
 
 .DS_Store
+
+# Docker
+docker-compose.yml
+Dockerfile.test
+
+# Documentation
+docs/
+
+# Misc
+*.md
+!README.md

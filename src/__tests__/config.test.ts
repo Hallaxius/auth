@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import {
 	challenge,
 	create,
@@ -243,18 +243,5 @@ describe("pkce namespace", () => {
 		expect(pkce.verifier).toBe(verifier);
 		expect(pkce.challenge).toBe(challenge);
 		expect(pkce.create).toBe(create);
-	});
-});
-
-describe("createTypedRouteHandlers", () => {
-	test("returns handler that returns 501", async () => {
-		const { createTypedRouteHandlers } = await import("../config");
-		const handlers = createTypedRouteHandlers();
-		const callbackRes = await handlers.callback({} as never);
-		expect(callbackRes.status).toBe(501);
-		const loginRes = await handlers.login();
-		expect(loginRes.status).toBe(501);
-		const errorRes = await handlers.error({} as never);
-		expect(errorRes.status).toBe(501);
 	});
 });

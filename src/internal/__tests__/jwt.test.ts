@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { ConfigurationError } from "../../errors";
 import { parseExpiresIn, secretToKey, signToken, verifyToken } from "../jwt";
 

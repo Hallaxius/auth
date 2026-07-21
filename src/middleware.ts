@@ -1,32 +1,6 @@
 import { parseCookies } from "./internal/cookies";
 import { verifyToken } from "./internal/jwt";
-import type { SessionData } from "./types";
-
-export interface EdgeAuthConfig {
-	cookies: Array<{ name: string; secret: string }>;
-	loginUrl?: string;
-	publicPaths?: string[];
-}
-
-export interface EdgeRoleConfig {
-	secret: string;
-	cookieName?: string;
-	loginUrl?: string;
-	roles: Record<string, string[]>;
-}
-
-export interface MiddlewareAuthConfig {
-	cookies: Array<{ name: string; secret: string }>;
-	publicPaths: string[];
-	loginUrl: string;
-}
-
-export interface MiddlewareRoleConfig {
-	secret: string;
-	cookieName: string;
-	loginUrl: string;
-	roles: Record<string, string[]>;
-}
+import type { EdgeAuthConfig, EdgeRoleConfig, SessionData } from "./types";
 
 export function publicPath(path: string, patterns: string[]): boolean {
 	for (const pattern of patterns) {
@@ -109,7 +83,7 @@ export async function session(
 export function auth(config: EdgeAuthConfig) {
 	const loginUrl = config.loginUrl ?? "/auth/discord";
 	const publicPaths = config.publicPaths ?? [];
-	const cookieConfigs = config.cookies;
+	const cookieConfigs = config.cookies ?? [];
 
 	return async function authMiddleware(
 		request: Request,

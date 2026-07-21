@@ -9,6 +9,8 @@ import type {
 	MfaVerifyResult,
 	TotpSetupResult,
 } from "./types";
+import { constantTimeCompare } from "./utils/constant-time";
+import { sha256Hex } from "./utils/ip";
 
 const TOTP_STEP = 30;
 const TOTP_DIGITS = 6;
@@ -116,14 +118,6 @@ function generatePendingToken(): string {
 		hex += (bytes[i] as number).toString(16).padStart(2, "0");
 	}
 	return hex;
-}
-
-async function sha256Hex(input: string): Promise<string> {
-	const data = new TextEncoder().encode(input);
-	const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-	return Array.from(new Uint8Array(hashBuffer))
-		.map((b) => b.toString(16).padStart(2, "0"))
-		.join("");
 }
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -475,15 +469,4 @@ export function mfa(config: MfaFactoryConfig) {
 			throw error;
 		}
 	}
-}
-
-function constantTimeCompare(a: Uint8Array, b: Uint8Array): boolean {
-	if (a.length !== b.length) {
-		return false;
-	}
-	let result = 0;
-	for (let i = 0; i < a.length; i++) {
-		result |= a[i]! ^ b[i]!;
-	}
-	return result === 0;
 }

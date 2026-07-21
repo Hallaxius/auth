@@ -1,3 +1,7 @@
+import type { SessionCookieOptions } from "../types";
+
+export type { SessionCookieOptions };
+
 export function parseCookies(request: Request): Record<string, string> {
 	const header = request.headers.get("Cookie") ?? "";
 	const cookies: Record<string, string> = {};
@@ -8,14 +12,6 @@ export function parseCookies(request: Request): Record<string, string> {
 		}
 	}
 	return cookies;
-}
-
-export interface SessionCookieOptions {
-	maxAge?: number;
-	path?: string;
-	httpOnly?: boolean;
-	secure?: boolean;
-	sameSite?: "lax" | "strict" | "none";
 }
 
 export function createSessionCookie(

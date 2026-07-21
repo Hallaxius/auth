@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "bun:test";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthError } from "../../errors";
 import type { DiscordGuildMember, DiscordUser, UserStorage } from "../../types";
 import { revoke, secret, sync, validate } from "../utils";

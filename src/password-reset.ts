@@ -6,7 +6,7 @@ import type {
 	PasswordResetConfig,
 	RequestResetResult,
 } from "./types";
-import { isIPv6, sanitizeIP } from "./utils/ip";
+import { isIPv6, maskIPv6To64, sanitizeIP } from "./utils/ip";
 
 export function passwordReset(config: PasswordResetConfig) {
 	const minPasswordLength = config.minPasswordLength ?? 8;
@@ -40,7 +40,7 @@ export function passwordReset(config: PasswordResetConfig) {
 		if (forwarded) {
 			const ip = sanitizeIP(forwarded);
 			if (isIPv6(ip)) {
-				return ip;
+				return maskIPv6To64(ip);
 			}
 			return ip;
 		}
@@ -48,7 +48,7 @@ export function passwordReset(config: PasswordResetConfig) {
 		if (realIP) {
 			const ip = sanitizeIP(realIP);
 			if (isIPv6(ip)) {
-				return ip;
+				return maskIPv6To64(ip);
 			}
 			return ip;
 		}
@@ -56,7 +56,7 @@ export function passwordReset(config: PasswordResetConfig) {
 		if (cfConnectingIP) {
 			const ip = sanitizeIP(cfConnectingIP);
 			if (isIPv6(ip)) {
-				return ip;
+				return maskIPv6To64(ip);
 			}
 			return ip;
 		}

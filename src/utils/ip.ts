@@ -23,13 +23,28 @@ export function isIPv6(ip: string): boolean {
 }
 
 export function maskIPv6To64(ip: string): string {
-	if (ip.includes(":")) {
-		const parts = ip.split(":");
-		if (parts.length >= 4) {
-			return `${parts.slice(0, 4).join(":")}::`;
+	if (!ip.includes(":")) {
+		return ip;
+	}
+
+	if (ip.includes("::ffff:") && ip.includes(".")) {
+		const parts = ip.split("::ffff:");
+		if (parts.length === 2) {
+			return parts[1]!;
 		}
 	}
-	return ip;
+
+	const parts = ip.split(":");
+	const nonEmptyParts = parts.filter((p) => p !== "");
+
+	if (nonEmptyParts.length < 4) {
+		if (ip.startsWith("::")) {
+			return "::";
+		}
+		return `${parts.slice(0, 4).join(":")}::`;
+	}
+
+	return `${parts.slice(0, 4).join(":")}::`;
 }
 
 export function getRequestIP(request: Request): string {
@@ -46,4 +61,12 @@ export function getRequestIP(request: Request): string {
 		return sanitizeIP(cfConnectingIP);
 	}
 	return "unknown";
+}
+
+export async function sha256Hex(input: string): Promise<string> {
+	const data = new TextEncoder().encode(input);
+	const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+	return Array.from(new Uint8Array(hashBuffer))
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
 }

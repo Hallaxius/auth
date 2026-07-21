@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "vitest";
 import { AuthError, ErrorCodes } from "../errors";
 import { mfa } from "../mfa";
 import type { MfaStorage } from "../types";

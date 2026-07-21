@@ -6,7 +6,7 @@ import {
 	expect,
 	it,
 	vi,
-} from "bun:test";
+} from "vitest";
 import { AuthError } from "../errors";
 import { DiscordClient } from "../internal/client";
 import type { DiscordGuildMember, DiscordUser, UserStorage } from "../types";

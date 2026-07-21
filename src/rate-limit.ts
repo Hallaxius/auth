@@ -3,7 +3,7 @@ import type {
 	RateLimitResult,
 	RateLimitStorage,
 } from "./types";
-import { sanitizeIP } from "./utils/ip";
+import { getRequestIP, maskIPv6To64 } from "./utils/ip";
 import { LruCache } from "./utils/lru";
 
 export class DefaultRateLimitStorage implements RateLimitStorage {
@@ -11,7 +11,6 @@ export class DefaultRateLimitStorage implements RateLimitStorage {
 		50_000,
 	);
 	private locks = new Map<string, Promise<void>>();
-	private disposed = false;
 
 	private async withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 		const existingLock = this.locks.get(key);
@@ -58,7 +57,6 @@ export class DefaultRateLimitStorage implements RateLimitStorage {
 	}
 
 	dispose(): void {
-		this.disposed = true;
 		this.store.dispose();
 	}
 }
@@ -105,9 +103,9 @@ export function rateLimit(config: RateLimitConfig) {
 			: undefined;
 
 		const headers: HeadersInit = {
-			"X-RateLimit-Limit": String(result.limit),
-			"X-RateLimit-Remaining": String(result.remaining),
-			"X-RateLimit-Reset": String(resetSeconds),
+			"RateLimit-Limit": String(result.limit),
+			"RateLimit-Remaining": String(result.remaining),
+			"RateLimit-Reset": String(resetSeconds),
 		};
 
 		if (!result.allowed) {
@@ -129,13 +127,24 @@ export function rateLimit(config: RateLimitConfig) {
 				},
 			);
 		}
+
+		return undefined;
 	}
 }
 
 function getDefaultKey(request: Request): string {
-	const forwarded = request.headers.get("x-forwarded-for");
-	const ip = forwarded
-		? sanitizeIP(forwarded)
-		: sanitizeIP(request.headers.get("x-real-ip") ?? "unknown");
-	return `ratelimit:${ip}`;
+	const ip = getRequestIP(request);
+	const normalized = normalizeIpForRateLimit(ip);
+	return `ratelimit:${normalized}`;
+}
+
+export function normalizeIpForRateLimit(ip: string): string {
+	if (ip.includes(":")) {
+		return maskIPv6To64(ip);
+	}
+	return ip;
+}
+
+export function extractIpFromRequest(request: Request): string {
+	return getRequestIP(request);
 }

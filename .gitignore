@@ -1,4 +1,4 @@
-# Updated: 2026-07-19
+# Updated: 2026-07-20
 dist/
 *.tsbuildinfo
 
@@ -6,6 +6,7 @@ node_modules/
 
 *.log
 npm-debug.log*
+security.log
 
 .env
 .env.*
@@ -25,3 +26,35 @@ coverage/
 
 *.tmp
 *.temp
+
+# Test artifacts
+*.test.db
+test.sqlite
+tests/integration/db/*.sqlite
+tests/integration/db/*.db
+
+# Docker
+docker-compose.override.yml
+.docker/
+
+# Performance test artifacts
+tests/performance/*.json
+tests/performance/*.csv
+
+# Security scan results
+tests/security/zap/*.html
+tests/security/zap/*.md
+
+# Temporary test files
+tests/**/*.tmp
+tests/**/*.temp
+
+# Build artifacts
+build/
+
+# Type duplication check
+type-check-results.json
+
+# Plugin system
+packages/*/dist/
+packages/*/*.tsbuildinfo

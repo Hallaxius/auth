@@ -22,7 +22,7 @@ import {
 	type InternalCredentialsConfig,
 	type PasswordHasher,
 } from "./types";
-import { sanitizeIP } from "./utils/ip";
+import { getRequestIP } from "./utils/ip";
 import { LruCache } from "./utils/lru";
 
 export class MemoryBruteForceStorage implements BruteForceStorage {
@@ -144,10 +144,7 @@ export class BruteForceProtection {
 	}
 
 	static extractKey(request: Request, strategy?: AuthStrategy): string {
-		const forwarded = request.headers.get("x-forwarded-for");
-		const ip = forwarded
-			? sanitizeIP(forwarded)
-			: (request.headers.get("x-real-ip") ?? "unknown");
+		const ip = getRequestIP(request);
 		const userAgent =
 			request.headers.get("user-agent")?.slice(0, 50) ?? "unknown";
 		const strategyPart = strategy ?? "unknown";
@@ -411,13 +408,7 @@ export class CredentialsClient {
 		request?: Request,
 	): string | null {
 		const strategy = this.config.strategy;
-		let ip = "unknown";
-		if (request) {
-			const forwarded = request.headers.get("x-forwarded-for");
-			ip = forwarded
-				? sanitizeIP(forwarded)
-				: (request.headers.get("x-real-ip") ?? "unknown");
-		}
+		const ip = request ? getRequestIP(request) : "unknown";
 		return `credentials-login:${strategy}:${ip}`;
 	}
 }

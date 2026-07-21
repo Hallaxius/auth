@@ -55,7 +55,9 @@ export async function verifyToken<T extends Record<string, unknown>>(
 	secret: string,
 ): Promise<T | null> {
 	try {
-		const { payload } = await jwtVerify(token, secretToKey(secret));
+		const { payload } = await jwtVerify(token, secretToKey(secret), {
+			algorithms: ["HS256"],
+		});
 		return payload as T;
 	} catch {
 		return null;

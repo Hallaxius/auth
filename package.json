@@ -1,7 +1,7 @@
 {
 	"name": "@hallaxius/auth",
-	"version": "4.0.0",
-	"description": "Plug-and-play authentication for Bun and Next.js 16+. Supports Discord OAuth2, credentials (username/password) auth with JWT sessions, password reset, MFA (TOTP + backup codes), rate limiting, role-based access control, and edge-compatible middleware. v4: security hardening (PBKDF2, JWT jti, RFC 8587 headers), breaking interface updates (required config fields, consolidated types), GuildRoleSync class export.",
+	"version": "5.0.0",
+	"description": "Complete authentication for Bun and Next.js 16+. Discord OAuth2, credentials, MFA (TOTP), password reset, rate limiting, and edge-compatible middleware.",
 	"author": {
 		"name": "hallaxius",
 		"url": "https://github.com/hallaxius"
@@ -27,7 +27,15 @@
 		"test": "bun test",
 		"test:watch": "bun test --watch",
 		"test:coverage": "bun test --coverage",
-		"prepublish": "bun run lint && bun run build && bun test"
+		"test:unit": "vitest run",
+		"test:unit:coverage": "vitest run --coverage",
+		"test:unit:watch": "vitest watch",
+		"test:integration": "bun test tests/integration/**/*.test.ts",
+		"test:security": "bun test tests/security/**/*.test.ts",
+		"test:performance": "bun test tests/performance/**/*.test.ts",
+		"test:all": "bun run test:unit:coverage",
+		"test:baseline": "bun run tests/performance/run-baseline.ts",
+		"prepublishOnly": "bun run build && bun run test:all"
 	},
 	"peerDependencies": {
 		"next": ">=16.0.0 <17.0.0"
@@ -41,13 +49,16 @@
 		"bun": ">=1.0.0"
 	},
 	"dependencies": {
-		"jose": "^6.2.3"
+		"jose": "^6.2.3",
+		"zod": "^4.4.3"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.4",
 		"@types/bun": "^1.3.14",
+		"@vitest/coverage-v8": "^4.1.10",
 		"bun-types": "latest",
-		"typescript": "7.0.2"
+		"typescript": "^5.7.2",
+		"vitest": "^4.1.10"
 	},
 	"keywords": [
 		"authentication",

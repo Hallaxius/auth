@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "vitest";
 import { AuthError } from "../errors";
 import { passwordReset } from "../password-reset";
 import type {

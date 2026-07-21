@@ -91,7 +91,7 @@ export interface StateStore {
 export class MemoryStateStore implements StateStore {
 	private store = new LruCache<string, number>(10_000);
 	private locks = new Map<string, Promise<void>>();
-	private disposed = false;
+	public disposed: boolean = false;
 
 	async has(id: string): Promise<boolean> {
 		return this.store.has(id);

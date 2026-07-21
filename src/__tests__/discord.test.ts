@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { discord } from "../discord";
 import type { StoredUser, UserStorage } from "../types";
 

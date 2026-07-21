@@ -26,12 +26,13 @@ export const middleware = {
 	deny,
 } as const;
 
-import { pkce, processConfig, routes } from "./config";
+export const proxy = middleware;
+
+import { pkce, processConfig } from "./config";
 
 export const config = {
 	processConfig,
 	pkce,
-	routes,
 } as const;
 
 import {
@@ -60,12 +61,20 @@ export const utils = {
 	revoke,
 } as const;
 
+export {
+	AuthStrategySchema,
+	BruteForceConfigSchema,
+	CredentialsClientConfigSchema,
+	DiscordAuthConfigSchema,
+	RateLimitConfigSchema,
+	SessionConfigSchema,
+	validateCredentialsConfig,
+	validateDiscordAuthConfig,
+	validateRateLimitConfig,
+} from "./config/schema";
 export { MemoryBruteForceStorage } from "./credentials";
 export type { ErrorCode } from "./errors";
 export { AuthError, ErrorCodes, getCode, isAuthError } from "./errors";
-// Export storage implementations for testing/customization
-export { MemoryStateStore } from "./internal/state";
-export { DefaultRateLimitStorage } from "./rate-limit";
 export type {
 	AuthUserStorage,
 	ConsumeResetTokenResult,
@@ -99,3 +108,18 @@ export type {
 	UserStorage,
 } from "./types";
 export { AuthStrategy } from "./types";
+
+export {
+	constantTimeCompare,
+	constantTimeCompareHex,
+	constantTimeCompareStrings,
+} from "./utils/constant-time";
+export {
+	BcryptHasher,
+	type BcryptOptions,
+	benchmarkPasswordHasher,
+	createPasswordHasher,
+	type PasswordHasher as IPasswordHasher,
+	Pbkdf2Hasher,
+	type Pbkdf2Options,
+} from "./utils/password";
