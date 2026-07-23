@@ -5,26 +5,29 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/@hallaxius/auth)](https://www.npmjs.com/package/@hallaxius/auth)
 [![npm downloads](https://img.shields.io/npm/dm/@hallaxius/auth)](https://www.npmjs.com/package/@hallaxius/auth)
-[![Last Commit](https://img.shields.io/github/last-commit/hallaxius/auth)](https://github.com/hallaxius/auth)
 
 ## Features
+
+> **Status:** Production Ready ✅ | **Version:** v5.0.0 | **Redis Support:** Available (optional)
 
 - **Discord OAuth2** — Authorization code flow with PKCE (S256), CSRF protection (HMAC-SHA256)
 - **Credentials Auth** — Username/password or email/password with bcrypt/argon2, JWT sessions, role-based access
 - **AuthStrategy Enum** — `UsernameOnly` | `EmailOnly` | `UsernameEmail` for flexible credential strategies
 - **Password Reset** — Forgot password / reset flow with HMAC tokens, rate limiting, notifier abstraction
 - **MFA (TOTP + Backup Codes)** — RFC 6238 TOTP, AES-GCM encrypted secrets, one-time backup codes
-- **Rate Limiting** — RFC-compliant headers (`RateLimit`, `RateLimit-Policy`, `Retry-After`), in-memory + custom storage
+- **Rate Limiting** — RFC-compliant headers (`RateLimit`, `RateLimit-Policy`, `Retry-After`), in-memory + Redis storage
 - **Single Entry Point** — `import { discord, credentials, passwordReset, mfa, rateLimit, middleware, proxy, config, utils, errors, types } from '@hallaxius/auth'`
 
-> 💡 **Recommendation**: Use `proxy` for Next.js 16+ applications. The `middleware` alias is still available for backward compatibility.
+> 💡 **Note**: `proxy` and `middleware` are aliases for the same functionality. Use whichever naming you prefer - both work identically in all Next.js versions.
 - **Edge/Next.js Middleware** — `proxy.auth()`, `proxy.role()`, `proxy.combine()`, multi-provider cookie support
 - **User Persistence** — Pluggable `UserStorage` / `AuthUserStorage` interfaces
 - **JWT Sessions** — Stateless, edge-compatible (uses `jose`)
 - **Auto-Join Guild** — `utils.guild.join()` to add users to your Discord server
 - **Guild Role Sync** — `utils.guild.sync()`, `utils.guild.hasRole()`, `utils.guild.hasAnyRole()`, `utils.guild.hasMember()`
-- **Edge Compatible** — Web Crypto API, zero Node dependencies
-- **Zero Unnecessary Deps** — Only `jose` as runtime dependency
+- **Redis Integration** — `RedisStateStore` and `ResilientRedisStateStore` with circuit breaker for production (optional, recommended for multi-worker)
+- **Edge Compatible** — Web Crypto API, zero Node dependencies (Redis is optional dependency)
+- **Multi-Worker Support** — Redis-backed state stores enable horizontal scaling
+- **Zero Unnecessary Deps** — Only `jose` as runtime dependency (Redis is optional)
 
 ## Security Features
 
@@ -33,46 +36,61 @@
 - **Timing Attack Protection** — Constant-time comparison for TOTP codes and backup codes (XOR-based), dummy hash for failed credential lookups
 - **TOTP Replay Protection** — `lastUsedCounter` tracking prevents reuse of previous TOTP codes
 - **TOTP Clock Skew Tolerance** — ±1 step window (90 seconds total) for clock drift compensation
-- **IPv6 Validation** — Full IPv6 support with sanitization, masking to /64 for privacy
-- **PKCE Validation** — RFC 7636 compliant (S256), enabled by default, optional disable via `disablePKCE: false`
+- **IPv6 Validation** — Full IPv6 support with sanitization, masking to /64 for privacy (implemented)
+- **PKCE Validation** — RFC 7636 compliant (S256), **REQUIRED** in production, do NOT disable
 - **RFC-Compliant Rate Limit Headers** — `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After` (RFC 6585 / 8683)
 - **Brute Force Protection** — IP + User-Agent + Strategy based rate limiting with exponential backoff
 - **CSRF Protection** — HMAC-SHA256 state parameter with single-use enforcement, session binding, User-Agent binding
 - **AES-GCM Encryption** — TOTP secrets encrypted at rest with AES-GCM-256
 - **HMAC Token Signing** — Password reset tokens use HMAC-SHA256 with separate selector/validator
 
-## Security Best Practices
+## Security Limitations
 
-### Production Configuration
+> ⚠️ **Critical Production Warnings:**
+>
+> - **JWT tokens cannot be revoked** before expiry - use short expiry times (15-30 min)
+> - **Memory stores don't work in multi-worker** deployments - use Redis for production
+> - **PKCE is MANDATORY** - never set `disablePKCE: true` in production
+> - **Rate limiting requires Redis** for multi-worker/load-balanced environments
+>
+> For detailed security documentation, see [Security Guide](docs/security.md).
 
-Ensure the following settings for production:
-- Set `session.secure: true`
-- Use `session.sameSite: 'lax'` or `'strict'`
-- Enable PKCE with `disablePKCE: false`
-- Configure user storage for session persistence
-- Enable rate limiting
-- Use JWT secret with minimum 32 characters
-- Store environment variables in `.env` (do not commit)
+## Production Configuration
 
-### Brute Force Protection
+### Production Checklist ✅
 
-Automatically enabled with default settings:
-- Max attempts: 5 per 15 minutes
-- Block duration: 30 minutes
-- IP + User-Agent + Strategy based
+```ts
+export const { handleLogin } = await discord({
+  session: {
+    secure: true,      // Required in production
+    sameSite: 'lax',
+    httpOnly: true,
+  },
+  disablePKCE: false,  // REQUIRED - do NOT disable
+  storage: drizzleStorage, // Required for persistence
+  stateSecret: process.env.AUTH_STATE_SALT!,
+})
+```
 
-### CSRF Protection
+**Requirements:**
+- ✅ `session.secure: true`
+- ✅ PKCE enabled (`disablePKCE: false`)
+- ✅ User storage configured
+- ✅ Redis-backed stores for multi-worker
+- ✅ `AUTH_STATE_SALT` environment variable
+- ✅ Secrets manager (not just .env)
 
-Enabled by default:
-- HMAC-SHA256 state parameter
-- Single-use enforcement
-- Session + User-Agent binding
+### Development (localhost)
 
-### PKCE (RFC 7636)
+```ts
+export const { handleLogin } = await discord({
+  session: { secure: false }, // OK for localhost
+  disablePKCE: false,         // Keep PKCE enabled
+  // Memory stores OK for single-worker dev
+})
+```
 
-Enabled by default (S256):
-- Prevents authorization code interception
-- Do NOT disable in production
+**Note:** Test with Redis before deploying to production.
 
 ## Testing
 
@@ -108,7 +126,18 @@ bun add @hallaxius/auth
 # yarn add @hallaxius/auth
 ```
 
+### Optional: Redis Integration (Recommended for Production)
+
+```bash
+bun add ioredis
+# npm install ioredis
+# pnpm add ioredis
+# yarn add ioredis
+```
+
 > **Engine requirement:** `bun >= 1.0.0` (or Node 20+, Deno, Cloudflare Workers, any Web Crypto runtime)
+> 
+> **Redis:** Optional for development, **required** for multi-worker/cluster deployments.
 
 ## Environment Variables
 
@@ -123,19 +152,20 @@ DISCORD_REDIRECT_URI=http://localhost:3000/auth/discord/callback
 # Required - JWT Sessions
 JWT_SECRET=your_super_secret_jwt_key_min_32_characters_long
 
+# Required - State Signing (HMAC-SHA256)
+AUTH_STATE_SALT=your_state_signing_secret_min_32_chars
+
 # Optional - Discord Bot (for guild features)
 DISCORD_BOT_TOKEN=your_bot_token
 
 # Optional - Application URL (for password reset)
 APP_URL=http://localhost:3000
+
+# Optional - Redis (for production/multi-worker)
+REDIS_URL=redis://localhost:6379
 ```
 
-> **Security Note:** Never commit `.env` files. Add to `.gitignore`:
-> ```
-> .env
-> .env.local
-> .env.production
-> ```
+> ⚠️ **Security Warning:** `AUTH_STATE_SALT` is **REQUIRED** for production. Never use default or empty values. Generate with `openssl rand -base64 32`.
 
 ### Generating Secure Secrets
 
@@ -162,7 +192,30 @@ Example output:
 xK9mP2nQ5vR8wT3yU6zA1bC4dE7fG0hI2jL5mN8oP1qS4tV7xY0zA3bC6dE9fG
 ```
 
-> **Security Note:** Use different secrets for development and production. Never reuse secrets across projects.
+#### DISCORD_BOT_TOKEN (Optional)
+
+Generate from Discord Developer Portal:
+1. Go to https://discord.com/developers/applications
+2. Create a new application
+3. Go to "Bot" section
+4. Click "Reset Token" and copy the token
+
+#### AUTH_STATE_SALT (Required for Production)
+
+Generate a separate secret for HMAC state parameter signing (REQUIRED for production):
+
+```bash
+# Using OpenSSL (recommended)
+openssl rand -base64 32
+
+# Using Node.js crypto
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+
+# Using Bun
+bun -e "console.log(crypto.randomBytes(32).toString('base64'))"
+```
+
+> ⚠️ **Security Warning:** Never use the same value for `JWT_SECRET` and `AUTH_STATE_SALT`. Always generate separate secrets.
 
 #### DISCORD_BOT_TOKEN (Optional)
 
@@ -172,14 +225,11 @@ Generate from Discord Developer Portal:
 3. Go to "Bot" section
 4. Click "Reset Token" and copy the token
 
-#### State Secret / MFA Secret (Optional - derived from JWT_SECRET)
+#### MFA Secret (Optional - derived from JWT_SECRET)
 
-If you want separate secrets for state signing or MFA encryption:
+If you want a separate encryption key for MFA secrets:
 
 ```bash
-# Generate separate state secret
-openssl rand -base64 32
-
 # Generate separate MFA encryption key
 openssl rand -base64 32
 ```
@@ -202,47 +252,58 @@ DISCORD_REDIRECT_URI=http://localhost:3000/auth/discord/callback
 # Required - JWT Sessions (generate with: openssl rand -base64 32)
 JWT_SECRET=
 
+# Required - State Signing (generate with: openssl rand -base64 32)
+AUTH_STATE_SALT=
+
 # Optional - Discord Bot (for guild features)
 DISCORD_BOT_TOKEN=
 
 # Optional - Application URL (for password reset)
 APP_URL=http://localhost:3000
 
+# Optional - Redis (for production/multi-worker)
+REDIS_URL=redis://localhost:6379
+
 # Optional - Separate secrets (if not using JWT_SECRET for everything)
-# STATE_SECRET=
 # MFA_SECRET=
 # RESET_TOKEN_SECRET=
 ```
-
-> **Tip:** Copy `.env.example` to `.env` and fill in the values. Never commit `.env` files to version control.
 
 ---
 
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+  - [Discord OAuth2](#discord-oauth2-quick-start)
+  - [Credentials Auth](#credentials-auth-quick-start)
+  - [Password Reset](#password-reset-quick-start)
+  - [MFA](#mfa-quick-start)
+  - [Rate Limiting](#rate-limiting-quick-start)
+  - [Middleware](#middleware-quick-start)
+- [Redis Integration](#redis-integration)
+- [Adapters](#adapters)
 - [Production vs Development](#production-vs-development)
-- [Security Best Practices](#security-best-practices)
+- [Security Features](#security-features)
+- [Security Limitations](#security-limitations)
 - [Testing](#testing)
 - [Discord OAuth2](#discord-oauth2)
 - [Credentials Auth](#credentials-auth)
 - [Password Reset](#password-reset)
 - [MFA (TOTP + Backup Codes)](#mfa-totp--backup-codes)
 - [Rate Limiting](#rate-limiting)
-- [Middleware](#middleware)
-- [Proxy (Next.js 16+)](#proxy-nextjs-16)
+- [Middleware / Proxy](#middleware--proxy)
 - [Config Utilities](#config-utilities)
 - [Utils](#utils)
 - [Error Handling](#error-handling)
-- [Types](#types)
 - [Troubleshooting](#troubleshooting)
+- [Edge Runtime](#edge-runtime)
 - [License](#license)
 
 ---
 
 ## Quick Start
 
-### Single Import (v4)
+### Single Import
 
 ```ts
 import { discord, credentials, passwordReset, mfa, rateLimit, middleware, proxy, config, utils, errors, types } from '@hallaxius/auth'
@@ -352,107 +413,97 @@ export const { middleware: rateLimitMiddleware } = rateLimit({
 })
 ```
 
-### Middleware (Next.js Edge)
+---
 
-### Next.js Configuration Update
+## Redis Integration
 
-In Next.js 16, the middleware configuration has changed:
+> **Redis** is optional for development but **required** for production with multiple workers.
 
-* **Before (Next.js 14/15)**: Used `skipMiddlewareUrlNormalize` in `next.config.ts`
-* **After (Next.js 16+)**: Use `skipProxyUrlNormalize` in `next.config.ts`
+### Quick Example
 
 ```ts
-// next.config.ts
-import type { NextConfig } from "next";
+import { discord, ResilientRedisStateStore, MemoryStateStore } from '@hallaxius/auth'
 
-const nextConfig: NextConfig = {
-  experimental: {
-    skipProxyUrlNormalize: true,
+const stateStore = new ResilientRedisStateStore({
+  redisUrl: process.env.REDIS_URL!,
+  ttl: 300,
+  prefix: 'auth:state:',
+  circuitBreaker: {
+    failureThreshold: 5,
+    resetTimeout: 30000,
   },
-};
+  fallback: new MemoryStateStore(), // Graceful degradation
+})
 
-export default nextConfig;
+export const { handleLogin, handleCallback } = await discord({ stateStore })
 ```
+
+### Why Redis?
+
+- ✅ Multi-worker support (shared state)
+- ✅ Persistence across restarts
+- ✅ Accurate rate limiting
+- ✅ Brute force protection
+
+### Fallback Pattern
+
+Always use `ResilientRedisStateStore` with fallback for production:
 
 ```ts
-// middleware.ts
-import { proxy } from '@hallaxius/auth'
-
-export const config = {
-  matcher: ['/dashboard/:path*', '/admin/:path*'],
-}
-
-export default proxy.combine(
-  proxy.auth({
-    secret: process.env.JWT_SECRET!,
-    loginUrl: '/auth/discord',
-    publicPaths: ['/', '/auth/*', '/api/public/*'],
-  }),
-  proxy.role({
-    secret: process.env.JWT_SECRET!,
-    loginUrl: '/auth/discord',
-    roles: { '/admin/*': ['admin'] },
-  }),
-)
+const stateStore = new ResilientRedisStateStore({
+  redisUrl: process.env.REDIS_URL!,
+  fallback: new MemoryStateStore(),
+  circuitBreaker: { failureThreshold: 5, resetTimeout: 30000 },
+})
 ```
+
+For detailed Redis documentation, see [Redis Guide](docs/redis.md).
 
 ---
 
-## Production vs Development
+## Adapters
 
-### Production (Next.js 16+)
+State stores and storage adapters determine where authentication data is persisted.
 
-```ts
-// lib/auth.ts
-export const { handleLogin } = await discord({
-  session: {
-    secure: true, // Required in production
-    sameSite: 'lax',
-    httpOnly: true,
-  },
-  disablePKCE: false, // Keep PKCE enabled
-  storage: drizzleStorage, // Required persistence
-})
-```
+### Memory Adapters (Development Only)
 
-### Development (localhost)
+**Use ONLY for development and testing. NOT suitable for production.**
 
-```ts
-// lib/auth.ts
-export const { handleLogin } = await discord({
-  session: {
-    secure: false, // Automatic if NODE_ENV !== 'production'
-  },
-  disablePKCE: false, // Keep PKCE even in development
-})
-```
+| Adapter | Purpose | Max Entries | TTL | Multi-Worker |
+|---------|---------|-------------|-----|--------------|
+| `MemoryStateStore` | OAuth2 state storage | 10,000 | 5 min | ❌ No |
+| `MemoryBruteForceStorage` | Brute force counters | 10,000 | 30 min | ❌ No |
+| `DefaultRateLimitStorage` | Rate limit counters | 50,000 | 60 min | ❌ No |
 
-### Next.js 16+ Configuration
+### Redis Adapters (Production)
 
-```ts
-// next.config.ts
-import type { NextConfig } from "next";
+**REQUIRED for production with multiple workers or horizontal scaling.**
 
-const nextConfig: NextConfig = {
-  experimental: {
-    skipProxyUrlNormalize: true, // Required for middleware
-  },
-};
+| Adapter | Purpose | Persistence | Multi-Worker | Circuit Breaker |
+|---------|---------|-------------|--------------|-----------------|
+| `RedisStateStore` | OAuth2 state storage | ✅ Yes | ✅ Yes | ❌ No |
+| `ResilientRedisStateStore` | OAuth2 state storage | ✅ Yes | ✅ Yes | ✅ Yes |
+| `RedisBruteForceStorage` | Brute force counters | ✅ Yes | ✅ Yes | ❌ No |
+| `RedisRateLimitStorage` | Rate limit counters | ✅ Yes | ✅ Yes | ❌ No |
 
-export default nextConfig;
-```
+### User Storage (Required for Credentials Auth)
 
-### Middleware Runtime
+User storage adapters persist user accounts and sessions.
 
-⚠️ **Important:** Next.js 16+ middleware requires Node.js runtime (Edge runtime not supported):
+| Adapter | Purpose | Multi-Worker | Example |
+|---------|---------|-------------|---------|
+| `DrizzleStorage` | Drizzle ORM adapter | ✅ Yes | PostgreSQL, MySQL, SQLite |
+| `PrismaStorage` | Prisma ORM adapter | ✅ Yes | PostgreSQL, MySQL, MongoDB |
+| Custom | Implement `AuthUserStorage` | ✅ Yes | Any database |
 
-```ts
-// middleware.ts
-export const config = {
-  matcher: ['/dashboard/:path*'],
-  runtime: 'nodejs', // Force Node runtime
-}
-```
+### Choosing the Right Adapter
+
+| Scenario | State Store | Brute Force | Rate Limit |
+|----------|-------------|-------------|------------|
+| **Local Development** | MemoryStateStore | MemoryBruteForce | DefaultRateLimit |
+| **Production (Single Worker)** | RedisStateStore | RedisBruteForce | RedisRateLimit |
+| **Production (Multi-Worker)** | ResilientRedisStateStore | RedisBruteForce | RedisRateLimit |
+| **High Availability** | ResilientRedisStateStore + fallback | RedisBruteForce | RedisRateLimit + fallback |
 
 ---
 
@@ -561,13 +612,6 @@ When `storage` is provided:
 - `/me` endpoint returns `SafeStoredUser` (no tokens)
 - Roles are embedded in JWT and checked by middleware
 - Discord tokens are auto-refreshed before expiry
-
-### Security Features
-
-- **PKCE (S256)** — RFC 7636 compliant, enabled by default, prevents authorization code interception
-- **CSRF Protection** — HMAC-SHA256 state parameter with single-use enforcement, session binding, User-Agent binding
-- **LRU Cache** — State store with automatic eviction (max 10,000 entries, 5 min TTL)
-- **Race Condition Protection** — Mutex-based locking prevents state replay attacks
 
 ---
 
@@ -687,22 +731,18 @@ export const drizzleStorage: AuthUserStorage = {
 }
 ```
 
-### Security Features
-
-- **Brute Force Protection** — IP + User-Agent + Strategy based rate limiting (default: 5 attempts / 15 min, 30 min block)
-- **Timing Attack Protection** — Constant-time comparison via dummy hash for non-existent users
-- **LRU Cache** — Memory leak prevention in `MemoryBruteForceStorage` (max 10,000 entries)
-
 ---
 
-## Middleware
+## Middleware / Proxy
 
-### Object: `middleware`
+### Middleware / Proxy
 
-All edge/Next.js middleware functions grouped under a single namespace.
+All edge/Next.js middleware functions grouped under a single namespace. The `proxy` export is an alias for `middleware` - both work identically.
 
 ```ts
 import { middleware } from '@hallaxius/auth'
+// or
+import { proxy } from '@hallaxius/auth' // alias for middleware
 
 // Auth middleware
 const auth = middleware.auth({
@@ -857,37 +897,6 @@ Patterns support `*` wildcard:
 
 ---
 
-## Proxy (Next.js 16+)
-
-The `proxy` export provides the same middleware functions as `middleware` but is the recommended API for Next.js 16+. The `middleware` alias is kept for backward compatibility.
-
-```ts
-import { proxy } from '@hallaxius/auth'
-
-export const config = {
-  matcher: ['/dashboard/:path*', '/admin/:path*'],
-}
-
-export default proxy.combine(
-  proxy.auth({
-    secret: process.env.JWT_SECRET!,
-    loginUrl: '/auth/discord',
-    publicPaths: ['/', '/auth/*', '/api/public/*'],
-  }),
-  proxy.role({
-    secret: process.env.JWT_SECRET!,
-    loginUrl: '/auth/discord',
-    roles: { '/admin/*': ['admin'] },
-  }),
-)
-```
-
-### `proxy.auth(config)` / `proxy.role(config)` / `proxy.combine(...)` / `proxy.session(request, config)` / `proxy.publicPath(path, patterns)` / `proxy.required(path, roleMap)` / `proxy.redirect(url)` / `proxy.deny(message?)`
-
-Identical to their `middleware.*` counterparts. Use `proxy` for new projects on Next.js 16+.
-
----
-
 ## Password Reset
 
 ### Factory: `passwordReset(config)`
@@ -969,19 +978,11 @@ export const myNotifier: ResetNotifier = {
 }
 ```
 
-### Security Features
-
-- **HMAC Token Signing** — Separate selector (public) and validator (hashed with SHA-256)
-- **Rate Limiting** — Per-IP rate limits for forgot-password (3/hour) and reset-password (10/15min)
-- **IPv6 Support** — Full IPv6 validation and sanitization (/64 masking planned)
-- **Single-Use Tokens** — Tokens are consumed (deleted) after first use
-- **Time-Bound Expiry** — Default 1-hour TTL with automatic cleanup via LRU cache
-
 ### Error Codes
 
 - `RESET_TOKEN_EXPIRED` — Token has expired
 - `RESET_TOKEN_INVALID` — Token is invalid or malformed
-- `RESET_TOKEN_USED` — Token has already been consumed
+- `RESET_TOKEN_USED` — Token has already been consumed (alias: `RESET_TOKEN_CONSUMED`)
 - `RESET_PASSWORD_WEAK` — New password doesn't meet minimum length
 
 ---
@@ -1002,15 +1003,6 @@ export const { handleMfaSetup, handleMfaVerify, handleMfaChallenge, handleMfaDis
   allowedMethods: ['totp', 'backup_codes'],
 })
 ```
-
-### Security Features
-
-- **TOTP Replay Protection** — Tracks `lastUsedCounter` to prevent reuse of previous codes
-- **Clock Skew Tolerance** — ±1 step (90 seconds) window for clock drift
-- **Constant-Time Comparison** — XOR-based comparison prevents timing attacks on backup codes
-- **AES-GCM-256 Encryption** — TOTP secrets encrypted at rest
-- **One-Time Backup Codes** — 10 codes, hashed with SHA-256, consumed on use
-- **Race Condition Protection** — Mutex-based locking on `lastUsedCounter` prevents concurrent TOTP code reuse
 
 ### Config Options
 
@@ -1107,13 +1099,6 @@ export const { middleware: rateLimitMiddleware, check } = rateLimit({
 })
 ```
 
-### Security Features
-
-- **LRU Cache** — Prevents memory leaks with automatic eviction (max 50,000 entries)
-- **Race Condition Protection** — Mutex-based locking (CAS pattern) prevents concurrent increment issues
-- **IPv6 Support** — Full IPv6 validation and sanitization with /64 masking for privacy
-- **RFC-Compliant Headers** — `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After`
-
 ### Config Options
 
 | Option | Type | Required | Default | Description |
@@ -1175,48 +1160,26 @@ passwordReset({
 
 ### Error Codes
 
-- `RATE_LIMITED_ROUTE` — Custom route rate limit exceeded (distinct from upstream Discord `RATE_LIMITED`)
+- `RATE_LIMITED` — General rate limit exceeded
+- `RATE_LIMITED_ROUTE` — Specific route rate limit exceeded (used for custom routes)
+
+**Note:** `RATE_LIMITED` is used for general rate limiting, while `RATE_LIMITED_ROUTE` is used for custom route-specific limits.
 
 ---
 
 ## Config Utilities
 
-### Object: `config`
-
-Configuration normalization and PKCE/route helpers.
-
 ```ts
 import { config } from '@hallaxius/auth'
-```
 
-### `config.processConfig(config)` (async)
+// Process config with defaults
+const internalConfig = await config.processConfig(userConfig)
 
-Processes and validates Discord OAuth2 config, returning internal config with defaults applied.
-
-```ts
-const internalConfig = await config.processConfig({
-  clientId: '...',
-  clientSecret: '...',
-  secret: '...',
-  callbackUrl: '...',
-  scopes: ['identify', 'email'],
-})
-```
-
-### `config.pkce`
-
-PKCE (Proof Key for Code Exchange) utilities.
-
-```ts
-// Generate code_verifier (43-char base64url)
-const verifier = config.pkce.verifier()
-
-// Generate code_challenge (S256) from verifier
-const challenge = await config.pkce.challenge(verifier)
-
-// Generate both as a pair
+// PKCE utilities
 const { verifier, challenge } = await config.pkce.create()
 ```
+
+For advanced configuration, see [Config Guide](docs/config.md).
 
 ---
 
@@ -1292,8 +1255,6 @@ const bytesMatch = utils.constantTimeCompare(new Uint8Array([1,2,3]), new Uint8A
 const hexMatch = utils.constantTimeCompareHex('a1b2c3', 'a1b2c3') // true
 ```
 
-> **Note:** Password hashing utilities (`createPasswordHasher`, `benchmarkPasswordHasher`) and constant-time comparison functions (`constantTimeCompare`, `constantTimeCompareStrings`, `constantTimeCompareHex`) are available in the source code. If not exported from your installed version, import directly from source files or use alternative implementations.
-
 ### IP Utilities
 
 ```ts
@@ -1314,132 +1275,32 @@ const clean = utils.sanitizeIP('[2001:db8::1]') // '2001:db8::1'
 
 Guild (Discord server) operations.
 
-#### `utils.guild.join(params)`
-
-Adds a user to a Discord guild after authentication. Requires `guilds.join` scope and a bot token.
-
 ```ts
+import { utils } from '@hallaxius/auth'
+
+// Add user to guild
 await utils.guild.join({
   guildId: 'guild-id',
   userId: 'user-id',
-  accessToken: 'user-oauth-token',
+  accessToken: 'user-token',
   botToken: process.env.DISCORD_BOT_TOKEN!,
-  nick: 'New Member',
-  roles: ['role-id'],
-  clientId: 'client-id',
-  clientSecret: 'client-secret',
 })
-```
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `guildId` | `string` | ✅ | Discord server ID |
-| `userId` | `string` | ✅ | User's Discord ID |
-| `accessToken` | `string` | ✅ | OAuth2 access token |
-| `botToken` | `string` | ✅ | Discord bot token |
-| `nick` | `string` | ❌ | Nickname for the member |
-| `roles` | `string[]` | ❌ | Role IDs to assign |
-| `clientId` | `string` | ✅ | Discord OAuth2 Client ID |
-| `clientSecret` | `string` | ✅ | Discord OAuth2 Client Secret |
-
-#### `utils.guild.hasRole(userId, guildId, roleId, botToken, clientId, clientSecret)`
-
-Checks whether a Discord user has a specific role in a guild. Returns `false` on any error.
-
-```ts
-const isAdmin = await utils.guild.hasRole(
-  'discord-user-id',
-  'guild-id',
-  'admin-role-id',
-  process.env.DISCORD_BOT_TOKEN!,
-  process.env.DISCORD_CLIENT_ID!,
-  process.env.DISCORD_CLIENT_SECRET!,
-)
-```
-
-#### `utils.guild.hasAnyRole(userId, guildId, roleIds, botToken, clientId, clientSecret)`
-
-Checks whether a Discord user has at least one of the given roles. Returns `false` on any error.
-
-```ts
-const isStaff = await utils.guild.hasAnyRole(
-  'user-id', 'guild-id',
-  ['admin-role', 'mod-role'],
-  botToken, clientId, clientSecret,
-)
-```
-
-#### `utils.guild.hasMember(userId, guildId, botToken, clientId, clientSecret)`
-
-Returns `true` if the user is a member of the specified guild, `false` otherwise.
-
-```ts
-const isMember = await utils.guild.hasMember('user-id', 'guild-id', botToken, clientId, clientSecret)
-```
-
-#### `utils.guild.sync(discordId, guildId, botToken, storage, clientId, clientSecret)`
-
-Fetches the latest Discord guild roles for a user and updates their stored roles. Returns the updated roles array.
-
-```ts
-const roles = await utils.guild.sync('discord-id', 'guild-id', botToken, myStorage, clientId, clientSecret)
-```
-
-### `utils.revoke(discordId, storage, clientId, clientSecret)`
-
-Deletes a user's session from storage and revokes their Discord access token.
-
-```ts
-await utils.revoke('discord-id', myStorage, clientId, clientSecret)
-```
-
-> **Note:** `utils.revoke` is also available as `utils.guild.revoke` (same function, two aliases).
-
-#### `utils.guild.GuildRoleSync`
-
-Class for advanced guild role synchronization with custom strategies.
-
-```ts
-import { utils, DiscordClient } from '@hallaxius/auth'
-import { MemoryCacheAdapter } from '@hallaxius/auth'
-
-// Requires DiscordClient and CacheAdapter instances
-const client = new DiscordClient({ botToken: process.env.DISCORD_BOT_TOKEN! })
-const cache = new MemoryCacheAdapter()
-
-const sync = new utils.guild.GuildRoleSync(
-  {
-    guildId: 'guild-id',
-    roleMap: { admin: ['admin-role-id'], moderator: ['mod-role-id'] },
-    cacheTtlMs: 300_000, // 5 minutes
-    syncOnLogin: true,
-  },
-  client,
-  cache
-)
-
-// Sync roles for a user
-await sync.syncRoles('discord-user-id')
 
 // Check if user has role
-const hasRole = await sync.hasRole('discord-user-id', 'admin-role-id')
+const isAdmin = await utils.guild.hasRole(
+  'user-id', 'guild-id', 'admin-role-id',
+  process.env.DISCORD_BOT_TOKEN!
+)
 
-// Check if user has any role
-const hasAny = await sync.hasAnyRole('discord-user-id', ['admin', 'mod'])
-
-// Check if user is guild member
-const isMember = await sync.hasMember('discord-user-id')
+// Sync roles
+const roles = await utils.guild.sync(
+  'discord-id', 'guild-id',
+  process.env.DISCORD_BOT_TOKEN!,
+  storage
+)
 ```
 
-> **Note:** `GuildRoleSync` requires a `DiscordClient` instance and `MemoryCacheAdapter`. For simpler use cases, prefer `utils.guild.sync()`, `utils.guild.hasRole()`, etc.
-
-### Direct Access (aliases)
-
-The `utils` namespace also exposes these aliases:
-
-- `utils.secret()` — same as `utils.secret`
-- `utils.validate()` — same as `utils.validate`
-- `utils.revoke()` — same as `utils.guild.revoke`
+For advanced guild operations, see [Guild Guide](docs/guild.md).
 
 ---
 
@@ -1623,137 +1484,20 @@ export async function GET(request: Request) {
 
 ## Types
 
-Over 40 TypeScript types exported from `types` namespace:
+TypeScript types are fully documented in our [TypeDoc](https://hallaxius.github.io/auth/typedoc/).
+
+### Commonly Used Types
 
 ```ts
-import { types } from '@hallaxius/auth'
-// or
-import type { SessionData, DiscordConfig, UserStorage, ... } from '@hallaxius/auth'
+import type { SessionData, AuthError, DiscordConfig } from '@hallaxius/auth'
 ```
 
-### Core Session Types
+- `SessionData` - User session from JWT
+- `AuthError` - Base error class with error codes
+- `DiscordConfig` - Configuration options
+- `AuthUser` - User object from credentials auth
 
-| Type | Description |
-|------|-------------|
-| `SessionData` | JWT session payload (`discordId`, `username`, `roles`, `email`, etc.) |
-| `SessionUser` | Alias for `SessionData` |
-| `StoredUser` | Full persisted user with tokens (`accessToken`, `refreshToken`, `expiresAt`) |
-| `SafeStoredUser` | `StoredUser` without sensitive fields (no `accessToken`/`refreshToken`) |
-| `SessionType` | `'discord' \| 'credentials'` — Session type discriminator |
-| `SessionConfig` | Session cookie and JWT configuration |
-| `SessionCookieOptions` | Cookie options for sessions (`secure`, `httpOnly`, `sameSite`, `path`) |
-
-### Config Types
-
-| Type | Description |
-|------|-------------|
-| `DiscordConfig` | Discord OAuth2 factory config (alias: `DiscordAuthConfig`) |
-| `CredentialsConfig` | Credentials auth factory config |
-| `PasswordResetConfig` | Password reset factory config |
-| `MfaConfig` | MFA factory config (alias: `MfaFactoryConfig`) |
-| `RateLimitConfig` | Rate limiting factory config |
-| `AutoRefreshConfig` | Auto-refresh configuration for Discord tokens |
-| `BruteForceConfig` | Brute force protection configuration |
-| `DiscordMfaConfig` | MFA configuration for Discord OAuth2 |
-| `GuildRoleSyncConfig` | Guild role synchronization configuration |
-| `CsrfConfig` | CSRF protection configuration |
-| `Callbacks` | Custom callbacks (`onSuccess`, `onError`, `onTokenRefresh`) |
-| `RouteOptions` | Route configuration (alias: `RoutesConfig`) |
-| `EdgeAuthConfig` | Edge middleware auth configuration |
-| `EdgeRoleConfig` | Edge middleware role configuration |
-| `MiddlewareAuthConfig` | Middleware auth configuration |
-| `MiddlewareRoleConfig` | Middleware role configuration |
-
-### Storage Types
-
-| Type | Description |
-|------|-------------|
-| `UserStorage` | Interface for Discord user persistence |
-| `AuthUserStorage` | Interface for credentials user persistence |
-| `ResetTokenStorage` | Interface for password reset token storage |
-| `MfaStorage` | Interface for MFA secret and backup codes storage |
-| `RateLimitStorage` | Interface for rate limit counter storage |
-| `BruteForceStorage` | Interface for brute force attempt tracking |
-
-### Credential Types
-
-| Type | Description |
-|------|-------------|
-| `AuthStrategy` | `'username-only' \| 'email-only' \| 'username-email'` |
-| `AuthUser` | Credentials user object (`id`, `username`, `email`, `passwordHash`, `roles`) |
-| `CreateCredentialsUserData` | Input for creating credentials user |
-| `AuthUserIdentifier` | Username or email identifier |
-| `CredentialsAuthResult` | Result of credentials authentication |
-| `CredentialsClientConfig` | Internal credentials client configuration |
-| `InternalCredentialsConfig` | Resolved credentials config with defaults |
-| `CredentialsResult` | Credentials factory result |
-| `PasswordHasher` | Interface for password hashing (`hash`, `verify`) |
-| `IPassworder` | Interface for password hashing (alias) |
-
-### Discord API Types
-
-| Type | Description |
-|------|-------------|
-| `DiscordUser` | Raw Discord API user object (snake_case) |
-| `DiscordGuildMember` | Discord guild member object |
-| `GuildMember` | Discord guild member (camelCase alias) |
-| `DiscordGuild` | Discord guild/server object |
-| `DiscordConnection` | Discord OAuth2 connection object |
-| `DiscordScope` | Discord OAuth2 scope (`'identify' \| 'email' \| 'guilds' \| ...`) |
-| `Scope` | Alias for `DiscordScope` |
-| `DiscordTokenResponse` | OAuth2 token response from Discord |
-| `TokenResponse` | Alias for `DiscordTokenResponse` |
-| `PromptType` | Discord OAuth2 prompt (`'consent' \| 'none'`) |
-| `OAuth2UrlParams` | Parameters for building OAuth2 URL |
-| `TokenRequestParams` | Parameters for token exchange request |
-| `PKCEParams` | PKCE code verifier and challenge |
-| `RefreshTokenParams` | Parameters for token refresh |
-| `RevokeTokenParams` | Parameters for token revocation |
-| `AddMemberParams` | Parameters for adding member to guild |
-| `GetGuildMemberParams` | Parameters for getting guild member |
-| `DiscordClientInterface` | Discord API client interface |
-| `OAuth2ErrorCode` | Discord OAuth2 error codes |
-| `TypedCallbackQuery` | Typed OAuth2 callback query |
-| `TypedErrorQuery` | Typed OAuth2 error query |
-
-### Password Reset Types
-
-| Type | Description |
-|------|-------------|
-| `ResetNotifier` | Interface for sending reset notifications |
-| `RequestResetResult` | Result of password reset request |
-| `ConsumeResetTokenResult` | Result of consuming reset token |
-| `ResetPasswordResult` | Result of password reset |
-
-### MFA Types
-
-| Type | Description |
-|------|-------------|
-| `MfaMethod` | `'totp' \| 'backup_codes'` — MFA method type |
-| `TotpSetupResult` | TOTP setup result (`secret`, `qrUri`, `backupCodes`) |
-| `MfaVerifyResult` | TOTP verification result |
-| `MfaChallengeResult` | MFA challenge result |
-
-### Rate Limiting Types
-
-| Type | Description |
-|------|-------------|
-| `RateLimitResult` | Rate limit check result (`limited`, `remaining`, `resetAt`) |
-
-### Error Types
-
-| Type | Description |
-|------|-------------|
-| `ErrorCode` | Union of all error code strings |
-| `AuthError` | Base class for all auth errors |
-
-### Utility Types
-
-| Type | Description |
-|------|-------------|
-| `CreateUserData` | Data for creating a new user |
-| `CookieOptions` | Cookie configuration options |
-| `InternalConfig` | Internal resolved configuration with all defaults |
+For complete type definitions, see the [TypeDoc](https://hallaxius.github.io/auth/typedoc/).
 
 ---
 
@@ -1878,51 +1622,23 @@ export const { handleLogin, handleCallback, handleLogout, handleMe } = await dis
 
 ## Edge Runtime
 
-`@hallaxius/auth` is fully compatible with all Web Crypto runtimes. No Node.js built-in modules are required.
+@hallaxius/auth is fully compatible with Edge runtimes:
 
 | Runtime | Support | Notes |
 |---------|---------|-------|
-| **Bun** | ✅ Full | Native `Bun.file`, `Bun.password` |
-| **Node.js 20+** | ✅ Full | Web Crypto available natively |
-| **Deno** | ✅ Full | Web Crypto + `jose` compatible |
-| **Cloudflare Workers** | ✅ Full | Use custom storage adapters (KV, D1) |
-| **Vercel Edge** | ✅ Full | No `setTimeout` in edge functions; avoid `DefaultRateLimitStorage` timers |
-| **Next.js 16+** | ✅ Full | Use `proxy` export for middleware |
+| Next.js Edge | ✅ Full | Default for middleware |
+| Cloudflare Workers | ✅ Full | Web Crypto API required |
+| Deno | ✅ Full | Web Crypto API required |
+| Node.js 20+ | ✅ Full | Native Web Crypto |
+| Bun | ✅ Full | Recommended runtime |
 
-### Edge Constraints
+### Constraints
 
-| Constraint | Impact | Workaround |
-|------------|--------|------------|
-| No `setTimeout` / `setInterval` (Vercel Edge) | `DefaultRateLimitStorage` uses timer for TTL sweep | Provide custom `RateLimitStorage` without timers |
-| No file system | `MemoryStateStore` is in-memory only | Use external state storage (KV, Redis) |
-| 1 MB response body limit | Large guild lists may hit limit | Paginate `getUserGuilds` results |
-| No `crypto.randomUUID` (older runtimes) | `jti` generation falls back | Minimum runtime: Bun 1.0, Node 20, Deno 2 |
+- Maximum 1MB bundle size (Cloudflare)
+- No `setTimeout` > 30s (some platforms)
+- Web Crypto API required (polyfilled in Node.js)
 
-### Example: Bun HTTP Server
-
-```ts
-// server.ts
-import { discord } from '@hallaxius/auth'
-
-const { handleLogin, handleCallback, handleLogout, handleMe } = await discord({
-  clientId: process.env.DISCORD_CLIENT_ID!,
-  clientSecret: process.env.DISCORD_CLIENT_SECRET!,
-  secret: process.env.JWT_SECRET!,
-  callbackUrl: process.env.DISCORD_REDIRECT_URI!,
-})
-
-Bun.serve({
-  port: 3000,
-  async fetch(request) {
-    const url = new URL(request.url)
-    if (url.pathname === '/auth/discord') return handleLogin(request)
-    if (url.pathname === '/auth/discord/callback') return handleCallback(request)
-    if (url.pathname === '/auth/logout') return handleLogout(request)
-    if (url.pathname === '/auth/me') return handleMe(request)
-    return new Response('Not found', { status: 404 })
-  },
-})
-```
+For platform-specific guides, see [Edge Guide](docs/edge.md).
 
 ---
 

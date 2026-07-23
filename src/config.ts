@@ -108,13 +108,45 @@ export async function processConfig(
 	};
 }
 
+/**
+ * Derives a deterministic state secret from session secret using PBKDF2
+ *
+ * Uses 100,000 PBKDF2 iterations with SHA-256 for key derivation.
+ * Supports optional salt for additional security (recommended in production).
+ *
+ * @param sessionSecret - The main session secret (JWT_SECRET)
+ * @param salt - Optional salt (defaults to env AUTH_STATE_SALT or random UUID)
+ * @returns Hex-encoded 256-bit derived key
+ *
+ * @security
+ * - PBKDF2 with 100k iterations makes brute force computationally expensive
+ * - Salt prevents rainbow table attacks
+ * - Deterministic: same inputs always produce same output
+ *
+ * @example
+ * ```typescript
+ * // Production: use environment variable for salt
+ * const stateSecret = await deriveStateSecret(
+ *   process.env.JWT_SECRET!,
+ *   process.env.AUTH_STATE_SALT
+ * );
+ *
+ * // Development: Auto-generate salt (not recommended for production)
+ * const stateSecret = await deriveStateSecret('my-session-secret');
+ * ```
+ */
 export async function deriveStateSecret(
 	sessionSecret: string,
+	salt?: string,
 ): Promise<string> {
 	const encoder = new TextEncoder();
-	const envSalt =
-		typeof process !== "undefined" ? process.env.AUTH_STATE_SALT : undefined;
-	const salt = encoder.encode(envSalt ?? "hallaxius-auth-state-v4");
+	
+	const configSalt = salt ?? 
+		(typeof process !== "undefined" ? process.env.AUTH_STATE_SALT : undefined) ?? 
+		crypto.randomUUID();
+	
+	const saltBytes = encoder.encode(configSalt);
+	
 	const keyMaterial = await crypto.subtle.importKey(
 		"raw",
 		encoder.encode(sessionSecret),
@@ -122,16 +154,18 @@ export async function deriveStateSecret(
 		false,
 		["deriveBits"],
 	);
+	
 	const derivedBits = await crypto.subtle.deriveBits(
 		{
 			name: "PBKDF2",
-			salt,
+			salt: saltBytes,
 			iterations: 100_000,
 			hash: "SHA-256",
 		},
 		keyMaterial,
 		256,
 	);
+	
 	const hashArray = new Uint8Array(derivedBits);
 	let result = "";
 	for (const byte of hashArray) {

@@ -11,9 +11,26 @@ import type { DiscordAuthConfig } from "../../src/types";
  * Baseline Version: v4.1.0
  * Date: 2026-07-20
  * Environment: Bun 1.0+, Node.js 18+
+ *
+ * Performance targets:
+ * - p95 latency: <200ms
+ * - Memory growth: <10% over 1 hour
+ * - Throughput: >1000 req/s
  */
 
-// Test configuration
+/**
+ * Performance baseline test suite
+ *
+ * Measures:
+ * - Login latency (p50, p95, p99)
+ * - Memory usage under load
+ * - Request throughput (req/s)
+ *
+ * Baseline targets:
+ * - p95 latency: <200ms
+ * - Memory growth: <10% over 1 hour
+ * - Throughput: >1000 req/s
+ */
 const TEST_CONFIG: DiscordAuthConfig = {
 	clientId: "test-client-id",
 	clientSecret: "test-client-secret",

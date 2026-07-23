@@ -1,3 +1,12 @@
+/**
+ * @file Middleware functions for authentication and authorization
+ *
+ * Provides route protection utilities for Next.js and edge runtimes.
+ * Supports multi-provider authentication, role-based access control,
+ * and session extraction from requests.
+ *
+ * @module middleware
+ */
 import { parseCookies } from "./internal/cookies";
 import { verifyToken } from "./internal/jwt";
 import type { EdgeAuthConfig, EdgeRoleConfig, SessionData } from "./types";

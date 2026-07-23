@@ -131,6 +131,46 @@ function errorResponse(code: string, message: string, status = 400): Response {
 	return jsonResponse({ error: message, code }, status);
 }
 
+/**
+ * MFA factory function for TOTP and backup code authentication
+ *
+ * Implements RFC 6238 TOTP with AES-GCM-256 encryption for secrets at rest.
+ * Supports backup codes as fallback authentication method.
+ *
+ * @param config - MFA configuration
+ * @param config.storage - MFA storage interface for secrets and backup codes
+ * @param config.secret - Encryption key (AES-GCM-256, minimum 32 characters)
+ * @param config.issuer - TOTP URI issuer (shown in authenticator apps, default: 'AuthApp')
+ * @param config.allowedMethods - Enabled MFA methods (default: ['totp', 'backup_codes'])
+ * @param config.verifyPassword - Optional password verification for MFA disable
+ *
+ * @returns Object with setup, verify, challenge, disable methods and HTTP handlers
+ *
+ * @example
+ * ```typescript
+ * const mfa = mfa({
+ *   storage: myStorage,
+ *   secret: process.env.MFA_SECRET
+ * });
+ *
+ * // Setup MFA for user
+ * const setup = await mfa.setup(userId);
+ * console.log(setup.totpUri); // QR code URI
+ * console.log(setup.backupCodes); // One-time backup codes
+ *
+ * // Verify TOTP code
+ * const result = await mfa.verify(userId, '123456');
+ * if (result.success) {
+ *   console.log('MFA enabled');
+ * }
+ * ```
+ *
+ * @security
+ * - TOTP secrets encrypted with AES-GCM-256
+ * - Backup codes hashed with SHA-256 before storage
+ * - Constant-time comparison prevents timing attacks
+ * - Replay protection via lastUsedCounter tracking
+ */
 export function mfa(config: MfaFactoryConfig) {
 	const issuer = config.issuer ?? "AuthApp";
 

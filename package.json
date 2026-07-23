@@ -1,6 +1,6 @@
 {
 	"name": "@hallaxius/auth",
-	"version": "5.0.0",
+	"version": "5.1.0",
 	"description": "Complete authentication for Bun and Next.js 16+. Discord OAuth2, credentials, MFA (TOTP), password reset, rate limiting, and edge-compatible middleware.",
 	"author": {
 		"name": "hallaxius",
@@ -50,6 +50,7 @@
 	},
 	"dependencies": {
 		"jose": "^6.2.3",
+		"redis": "^6.1.0",
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {

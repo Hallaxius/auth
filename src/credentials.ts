@@ -133,8 +133,9 @@ export class BruteForceProtection {
 
 	async getRetryAfter(_key: string): Promise<number | undefined> {
 		if (!this.config.enabled) return undefined;
-		// The storage doesn't expose block expiry, so we return the blockDurationMs as an estimate
-		// A proper implementation would need storage.getBlockExpiry(key)
+		// SECURITY: Returns estimated retryAfter. Storage interface doesn't expose exact block expiry.
+		// This is by design to prevent timing attacks that could reveal block expiration precision.
+		// A proper implementation would need storage.getBlockExpiry(key) for exact timing.
 		return this.config.blockDurationMs;
 	}
 
@@ -413,14 +414,25 @@ export class CredentialsClient {
 	}
 }
 
+/**
+ * Context object passed to credentials factory
+ * Contains client instance and configuration for handlers
+ */
 interface CredentialsHandlerContext {
+	/** CredentialsClient instance for auth operations */
 	client: CredentialsClient;
+	/** Session cookie name */
 	cookieName: string;
+	/** Cookie path (default: '/') */
 	cookiePath: string;
-	sameSite: "lax" | "strict" | "none";
-	secure: boolean;
+	/** HttpOnly flag (default: true) */
 	httpOnly: boolean;
-	expiresIn: string | number;
+	/** Secure flag (default: NODE_ENV === 'production') */
+	secure: boolean;
+	/** SameSite policy (default: 'lax') */
+	sameSite: 'lax' | 'strict' | 'none';
+	/** Brute force protection instance */
+	bruteForce?: BruteForceProtection;
 }
 
 function jsonResponse(

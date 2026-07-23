@@ -74,6 +74,19 @@ export function passwordReset(config: PasswordResetConfig) {
 		return null;
 	}
 
+	/**
+	 * Generates a secure password reset token pair (selector + validator)
+	 *
+	 * Security design:
+	 * - Selector: Stored in database in plain text (used for lookup)
+	 * - Validator: Hashed with SHA-256 before storage (never stored in plain text)
+	 * - Combined token: selector.validator (sent to user via email)
+	 *
+	 * This prevents token reconstruction even if database is compromised.
+	 *
+	 * @returns Object with selector, validator, and combined token for email
+	 * @security Token is single-use and expires after 1 hour (configurable)
+	 */
 	function generateResetToken() {
 		const selectorBytes = new Uint8Array(16);
 		crypto.getRandomValues(selectorBytes);
@@ -100,6 +113,12 @@ export function passwordReset(config: PasswordResetConfig) {
 		return { selector: parts[0] as string, validator: parts[1] as string };
 	}
 
+	/**
+	 * Hashes validator using SHA-256
+	 * @param validator - Plain text validator string
+	 * @returns SHA-256 hash in hex format
+	 * @security Prevents token reconstruction from database
+	 */
 	async function hashValidator(validator: string): Promise<string> {
 		const encoded = new TextEncoder().encode(validator);
 		const digest = await crypto.subtle.digest("SHA-256", encoded);

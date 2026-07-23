@@ -145,26 +145,77 @@ describe("processConfig", () => {
 
 describe("deriveStateSecret", () => {
 	test("derives a hex string from session secret", async () => {
-		const secret = await deriveStateSecret(MINIMAL_CONFIG.secret);
+		const secret = await deriveStateSecret(MINIMAL_CONFIG.secret, "fixed-salt-for-test");
 		expect(secret).toBeTruthy();
 		expect(typeof secret).toBe("string");
 		expect(secret.length).toBe(64);
 	});
 
-	test("derives consistent results for same input", async () => {
-		const secret1 = await deriveStateSecret(MINIMAL_CONFIG.secret);
-		const secret2 = await deriveStateSecret(MINIMAL_CONFIG.secret);
+	test("derives consistent results for same input and salt", async () => {
+		const salt = "fixed-salt-consistency-test";
+		const secret1 = await deriveStateSecret(MINIMAL_CONFIG.secret, salt);
+		const secret2 = await deriveStateSecret(MINIMAL_CONFIG.secret, salt);
 		expect(secret1).toBe(secret2);
 	});
 
 	test("derives different results for different input", async () => {
+		const salt = "fixed-salt-test";
 		const secret1 = await deriveStateSecret(
 			"secret-one-32-chars-long-for-test!",
+			salt,
 		);
 		const secret2 = await deriveStateSecret(
 			"secret-two-32-chars-long-for-test!",
+			salt,
 		);
 		expect(secret1).not.toBe(secret2);
+	});
+
+	test("accepts optional salt parameter", async () => {
+		const secret1 = await deriveStateSecret(MINIMAL_CONFIG.secret, "custom-salt-123");
+		const secret2 = await deriveStateSecret(MINIMAL_CONFIG.secret, "custom-salt-123");
+		const secret3 = await deriveStateSecret(MINIMAL_CONFIG.secret, "different-salt-456");
+		
+		expect(secret1).toBe(secret2);
+		expect(secret1).not.toBe(secret3);
+	});
+
+	test("uses AUTH_STATE_SALT env var when salt parameter not provided", async () => {
+		process.env.AUTH_STATE_SALT = "env-salt-789";
+		const secret1 = await deriveStateSecret(MINIMAL_CONFIG.secret);
+		const secret2 = await deriveStateSecret(MINIMAL_CONFIG.secret);
+		
+		expect(secret1).toBe(secret2);
+		expect(secret1).not.toBe(await deriveStateSecret(MINIMAL_CONFIG.secret, "custom"));
+		
+		delete process.env.AUTH_STATE_SALT;
+	});
+
+	test("generates unique salt with crypto.randomUUID when no salt provided", async () => {
+		const secret1 = await deriveStateSecret(MINIMAL_CONFIG.secret);
+		const secret2 = await deriveStateSecret(MINIMAL_CONFIG.secret);
+		
+		expect(secret1).not.toBe(secret2);
+	});
+
+	test("parameter salt takes precedence over env var", async () => {
+		process.env.AUTH_STATE_SALT = "env-salt";
+		const secret = await deriveStateSecret(MINIMAL_CONFIG.secret, "param-salt");
+		const expected = await deriveStateSecret(MINIMAL_CONFIG.secret, "param-salt");
+		
+		expect(secret).toBe(expected);
+		expect(secret).not.toBe(await deriveStateSecret(MINIMAL_CONFIG.secret));
+		
+		delete process.env.AUTH_STATE_SALT;
+	});
+
+	test("derivation is deterministic with same salt", async () => {
+		const salt = "test-salt-deterministic";
+		const results = await Promise.all(
+			Array(10).fill(null).map(() => deriveStateSecret(MINIMAL_CONFIG.secret, salt))
+		);
+		
+		expect(new Set(results).size).toBe(1);
 	});
 });
 

@@ -213,6 +213,23 @@ async function getSessionFromRequest(
 	};
 }
 
+/**
+ * Validates redirect URL to prevent open redirect vulnerabilities
+ *
+ * Security checks:
+ * 1. Blocks protocol-relative URLs (//evil.com)
+ * 2. Blocks absolute URLs (https://evil.com)
+ * 3. Blocks backslash tricks (/\\/evil.com)
+ * 4. Allows relative paths (/auth/callback)
+ * 5. Allows whitelisted origins if provided
+ *
+ * @param target - URL to validate
+ * @param allowedOrigins - Optional whitelist of allowed origins
+ * @returns true if URL is safe, false otherwise
+ *
+ * @security Prevents OAuth redirect to malicious domains
+ * @see OWASP Unvalidated Redirects and Forwards
+ */
 function isSafeRedirect(target: string, allowedOrigins?: string[]): boolean {
 	if (typeof target !== "string" || target.length === 0) return false;
 	if (target.startsWith("//")) return false;
