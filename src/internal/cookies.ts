@@ -53,3 +53,13 @@ export function defaultSecureCookie(): boolean {
 		return false;
 	}
 }
+
+export function defaultSameSite(): "strict" | "lax" | "none" {
+	try {
+		const nodeEnv =
+			typeof process !== "undefined" ? process.env.NODE_ENV : undefined;
+		return nodeEnv === "production" ? "strict" : "lax";
+	} catch {
+		return "lax";
+	}
+}

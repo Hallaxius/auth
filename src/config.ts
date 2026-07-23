@@ -140,13 +140,16 @@ export async function deriveStateSecret(
 	salt?: string,
 ): Promise<string> {
 	const encoder = new TextEncoder();
-	
-	const configSalt = salt ?? 
-		(typeof process !== "undefined" ? process.env.AUTH_STATE_SALT : undefined) ?? 
+
+	const configSalt =
+		salt ??
+		(typeof process !== "undefined"
+			? process.env.AUTH_STATE_SALT
+			: undefined) ??
 		crypto.randomUUID();
-	
+
 	const saltBytes = encoder.encode(configSalt);
-	
+
 	const keyMaterial = await crypto.subtle.importKey(
 		"raw",
 		encoder.encode(sessionSecret),
@@ -154,7 +157,7 @@ export async function deriveStateSecret(
 		false,
 		["deriveBits"],
 	);
-	
+
 	const derivedBits = await crypto.subtle.deriveBits(
 		{
 			name: "PBKDF2",
@@ -165,7 +168,7 @@ export async function deriveStateSecret(
 		keyMaterial,
 		256,
 	);
-	
+
 	const hashArray = new Uint8Array(derivedBits);
 	let result = "";
 	for (const byte of hashArray) {

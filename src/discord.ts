@@ -9,6 +9,7 @@ import { DiscordClient } from "./internal/client";
 import {
 	clearSessionCookie,
 	createSessionCookie,
+	defaultSameSite,
 	parseCookies,
 } from "./internal/cookies";
 import {
@@ -179,11 +180,8 @@ async function revokeTokenOnly(params: {
 				accessToken: stored.accessToken,
 			});
 		}
-	} catch (err) {
-		console.error(
-			"[discord] Failed to revoke token:",
-			err instanceof Error ? err.message : err,
-		);
+	} catch (_err) {
+		// Silently fail - token revocation is best-effort
 	}
 }
 
@@ -274,7 +272,7 @@ function createHandlers(ctx: HandlerContext) {
 	const stateStore = new MemoryStateStore();
 	const cookieName = config.session.cookieName ?? "discord-auth-session";
 	const cookiePath = config.session.cookiePath ?? "/";
-	const sameSite = config.session.sameSite ?? "lax";
+	const sameSite = config.session.sameSite ?? defaultSameSite();
 	const secure =
 		config.session.secure ??
 		(typeof process !== "undefined"
@@ -286,7 +284,7 @@ function createHandlers(ctx: HandlerContext) {
 	const sessionConfig = {
 		cookieName,
 		cookiePath,
-		sameSite,
+		sameSite: sameSite ?? "strict",
 		secure,
 		httpOnly,
 	};

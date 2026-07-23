@@ -1,9 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
 import { mfa } from "../mfa";
+import type { MfaStorage } from "../types";
 
 describe("mfa - coverage gaps", () => {
 	test("line 251: challenge throws MFA_INVALID_CODE for wrong totp code", async () => {
-		const mockStorage = {
+		const mockStorage: MfaStorage = {
 			getSecret: vi.fn().mockResolvedValue("JBSWY3DPEHPK3PXP"),
 			setSecret: vi.fn().mockResolvedValue(undefined),
 			deleteSecret: vi.fn().mockResolvedValue(undefined),
@@ -15,7 +16,7 @@ describe("mfa - coverage gaps", () => {
 		};
 
 		const handlers = await mfa({
-			storage: mockStorage as any,
+			storage: mockStorage,
 			issuer: "TestApp",
 			secret: "test-secret-key-32-chars-long!!",
 		});
@@ -26,7 +27,7 @@ describe("mfa - coverage gaps", () => {
 	});
 
 	test("line 251: challenge throws MFA_INVALID_CODE for wrong backup code", async () => {
-		const mockStorage = {
+		const mockStorage: MfaStorage = {
 			getSecret: vi.fn().mockResolvedValue(null),
 			setSecret: vi.fn().mockResolvedValue(undefined),
 			deleteSecret: vi.fn().mockResolvedValue(undefined),
@@ -38,7 +39,7 @@ describe("mfa - coverage gaps", () => {
 		};
 
 		const handlers = await mfa({
-			storage: mockStorage as any,
+			storage: mockStorage,
 			issuer: "TestApp",
 			secret: "test-secret-key-32-chars-long!!",
 		});
@@ -49,7 +50,7 @@ describe("mfa - coverage gaps", () => {
 	});
 
 	test("challenge with backup_codes method when no codes exist", async () => {
-		const mockStorage = {
+		const mockStorage: MfaStorage = {
 			getSecret: vi.fn().mockResolvedValue(null),
 			setSecret: vi.fn().mockResolvedValue(undefined),
 			deleteSecret: vi.fn().mockResolvedValue(undefined),
@@ -61,7 +62,7 @@ describe("mfa - coverage gaps", () => {
 		};
 
 		const handlers = await mfa({
-			storage: mockStorage as any,
+			storage: mockStorage,
 			issuer: "TestApp",
 			secret: "test-secret-key-32-chars-long!!",
 		});
@@ -72,7 +73,7 @@ describe("mfa - coverage gaps", () => {
 	});
 
 	test("isEnabled returns false when no secret exists", async () => {
-		const mockStorage = {
+		const mockStorage: MfaStorage = {
 			getSecret: vi.fn().mockResolvedValue(null),
 			setSecret: vi.fn().mockResolvedValue(undefined),
 			deleteSecret: vi.fn().mockResolvedValue(undefined),
@@ -84,7 +85,7 @@ describe("mfa - coverage gaps", () => {
 		};
 
 		const handlers = await mfa({
-			storage: mockStorage as any,
+			storage: mockStorage,
 			issuer: "TestApp",
 			secret: "test-secret-key-32-chars-long!!",
 		});
@@ -94,7 +95,7 @@ describe("mfa - coverage gaps", () => {
 	});
 
 	test("disable removes secret", async () => {
-		const mockStorage = {
+		const mockStorage: MfaStorage = {
 			getSecret: vi.fn().mockResolvedValue("secret123"),
 			setSecret: vi.fn().mockResolvedValue(undefined),
 			deleteSecret: vi.fn().mockResolvedValue(undefined),
@@ -106,7 +107,7 @@ describe("mfa - coverage gaps", () => {
 		};
 
 		const handlers = await mfa({
-			storage: mockStorage as any,
+			storage: mockStorage,
 			issuer: "TestApp",
 			secret: "test-secret-key-32-chars-long!!",
 		});

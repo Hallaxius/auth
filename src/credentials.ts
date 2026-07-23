@@ -2,6 +2,7 @@
 import {
 	clearSessionCookie,
 	createSessionCookie,
+	defaultSameSite,
 	defaultSecureCookie,
 	parseCookies,
 	type SessionCookieOptions,
@@ -319,15 +320,36 @@ export class CredentialsClient {
 		}
 
 		if (data.email) {
-			const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+			const emailRegex =
+				/^(?:"?[^"@\s\\]+\.?_?[^"@\s\\]*"?|"[^"\\]*(?:\\.[^"\\]*)*")@(?:(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}|(?:\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|\[[a-fA-F0-9:]+\])])$/;
 			if (!emailRegex.test(data.email)) {
-				errors.push("Email format is invalid");
+				errors.push("Email format is invalid (RFC 5322 compliant)");
 			}
 		}
 
 		const minLen = this.config.minPasswordLength ?? 8;
 		if (!data.password || data.password.length < minLen) {
 			errors.push(`Password must be at least ${minLen} characters`);
+		}
+
+		if (
+			data.password &&
+			data.password.length >= minLen &&
+			process.env.NODE_ENV === "production"
+		) {
+			const hasUpper = /[A-Z]/.test(data.password);
+			const hasLower = /[a-z]/.test(data.password);
+			const hasNumber = /[0-9]/.test(data.password);
+			const hasSpecial = /[^A-Za-z0-9]/.test(data.password);
+			const varietyCount = [hasUpper, hasLower, hasNumber, hasSpecial].filter(
+				Boolean,
+			).length;
+
+			if (varietyCount < 3) {
+				errors.push(
+					"Password must include at least 3 of: uppercase, lowercase, numbers, special characters",
+				);
+			}
 		}
 
 		if (errors.length > 0) {
@@ -430,7 +452,7 @@ interface CredentialsHandlerContext {
 	/** Secure flag (default: NODE_ENV === 'production') */
 	secure: boolean;
 	/** SameSite policy (default: 'lax') */
-	sameSite: 'lax' | 'strict' | 'none';
+	sameSite: "lax" | "strict" | "none";
 	/** Brute force protection instance */
 	bruteForce?: BruteForceProtection;
 }
@@ -484,7 +506,6 @@ function errorResponse(error: unknown): Response {
 			},
 		);
 	}
-	console.error("[auth:credentials] Unhandled error:", error);
 	const message =
 		error instanceof Error ? error.message : "Internal server error";
 	return jsonResponse({ error: message }, 500);
@@ -626,7 +647,7 @@ function createCredentialsHandlers(ctx: CredentialsHandlerContext) {
 export function credentials(config: CredentialsConfig): CredentialsResult {
 	const cookieName = config.session.cookieName ?? "credentials-session";
 	const _cookiePath = config.cookiePath ?? "/";
-	const _sameSite = config.sameSite ?? "lax";
+	const _sameSite = config.sameSite ?? "strict";
 	const _secure = config.secure ?? defaultSecureCookie();
 	const _httpOnly = config.httpOnly ?? true;
 
@@ -646,10 +667,9 @@ export function credentials(config: CredentialsConfig): CredentialsResult {
 		client,
 		cookieName,
 		cookiePath: config.cookiePath ?? "/",
-		sameSite: config.sameSite ?? "lax",
+		sameSite: config.sameSite ?? defaultSameSite(),
 		secure: config.secure ?? defaultSecureCookie(),
 		httpOnly: config.httpOnly ?? true,
-		expiresIn: config.session.expiresIn ?? "7d",
 	});
 
 	async function getSession(request: Request): Promise<AuthUser | null> {

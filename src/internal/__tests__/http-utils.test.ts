@@ -213,7 +213,10 @@ describe("errorResponse", () => {
 		);
 
 		const json = await response.json();
-		expect(json).toEqual({ error: "Something went wrong", code: "INTERNAL_ERROR" });
+		expect(json).toEqual({
+			error: "Something went wrong",
+			code: "INTERNAL_ERROR",
+		});
 	});
 
 	it("accepts custom status code", async () => {
@@ -232,7 +235,10 @@ describe("errorResponse", () => {
 		expect(response.status).toBe(500);
 
 		const json = await response.json();
-		expect(json).toEqual({ error: "Internal server error", code: "INTERNAL_ERROR" });
+		expect(json).toEqual({
+			error: "Internal server error",
+			code: "INTERNAL_ERROR",
+		});
 	});
 
 	it("handles null error", async () => {
@@ -241,7 +247,10 @@ describe("errorResponse", () => {
 		expect(response.status).toBe(500);
 
 		const json = await response.json();
-		expect(json).toEqual({ error: "Internal server error", code: "INTERNAL_ERROR" });
+		expect(json).toEqual({
+			error: "Internal server error",
+			code: "INTERNAL_ERROR",
+		});
 	});
 
 	it("handles undefined error", async () => {
@@ -250,7 +259,10 @@ describe("errorResponse", () => {
 		expect(response.status).toBe(500);
 
 		const json = await response.json();
-		expect(json).toEqual({ error: "Internal server error", code: "INTERNAL_ERROR" });
+		expect(json).toEqual({
+			error: "Internal server error",
+			code: "INTERNAL_ERROR",
+		});
 	});
 
 	it("handles number error", async () => {
@@ -259,7 +271,10 @@ describe("errorResponse", () => {
 		expect(response.status).toBe(500);
 
 		const json = await response.json();
-		expect(json).toEqual({ error: "Internal server error", code: "INTERNAL_ERROR" });
+		expect(json).toEqual({
+			error: "Internal server error",
+			code: "INTERNAL_ERROR",
+		});
 	});
 
 	it("handles object error without message", async () => {
@@ -268,7 +283,10 @@ describe("errorResponse", () => {
 		expect(response.status).toBe(500);
 
 		const json = await response.json();
-		expect(json).toEqual({ error: "Internal server error", code: "INTERNAL_ERROR" });
+		expect(json).toEqual({
+			error: "Internal server error",
+			code: "INTERNAL_ERROR",
+		});
 	});
 
 	it("handles AuthError-like objects", async () => {

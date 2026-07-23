@@ -95,7 +95,11 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 			hasher,
 		);
 
-		const user = await (client as any).findUserByIdentifier({
+		const user = await (
+			client as unknown as {
+				findUserByIdentifier: (id: any) => Promise<AuthUser | null>;
+			}
+		).findUserByIdentifier({
 			username: undefined,
 			email: "test@example.com",
 		});
@@ -119,7 +123,11 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 			hasher,
 		);
 
-		const user = await (client as any).findUserByIdentifier({
+		const user = await (
+			client as unknown as {
+				findUserByIdentifier: (id: any) => Promise<AuthUser | null>;
+			}
+		).findUserByIdentifier({
 			username: undefined,
 			email: undefined,
 		});
@@ -133,7 +141,7 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 
 		const client = new CredentialsClient(
 			{
-				strategy: "unknown-strategy" as any,
+				strategy: "unknown-strategy" as AuthStrategy,
 				secret: "test-secret",
 				expiresIn: "7d",
 				cookieName: "test-session",
@@ -142,7 +150,11 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 			hasher,
 		);
 
-		const user = await (client as any).findUserByIdentifier({
+		const user = await (
+			client as unknown as {
+				findUserByIdentifier: (id: any) => Promise<AuthUser | null>;
+			}
+		).findUserByIdentifier({
 			username: "testuser",
 			email: "test@example.com",
 		});
@@ -172,7 +184,11 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 			hasher,
 		);
 
-		const user = await (client as any).findUserByIdentifier({
+		const user = await (
+			client as unknown as {
+				findUserByIdentifier: (id: any) => Promise<AuthUser | null>;
+			}
+		).findUserByIdentifier({
 			username: "usernameonly",
 			email: undefined,
 		});
@@ -203,7 +219,11 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 			hasher,
 		);
 
-		const user = await (client as any).findUserByIdentifier({
+		const user = await (
+			client as unknown as {
+				findUserByIdentifier: (id: any) => Promise<AuthUser | null>;
+			}
+		).findUserByIdentifier({
 			username: undefined,
 			email: "emailonly@example.com",
 		});
@@ -227,7 +247,11 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 			hasher,
 		);
 
-		const user = await (client as any).findUserByIdentifier({
+		const user = await (
+			client as unknown as {
+				findUserByIdentifier: (id: any) => Promise<AuthUser | null>;
+			}
+		).findUserByIdentifier({
 			username: undefined,
 			email: "test@example.com",
 		});
@@ -250,7 +274,11 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 			hasher,
 		);
 
-		const user = await (client as any).findUserByIdentifier({
+		const user = await (
+			client as unknown as {
+				findUserByIdentifier: (id: any) => Promise<AuthUser | null>;
+			}
+		).findUserByIdentifier({
 			username: "testuser",
 			email: undefined,
 		});

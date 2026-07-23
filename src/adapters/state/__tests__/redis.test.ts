@@ -1,4 +1,4 @@
-import { describe, expect, test, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { RedisStateStore, ResilientRedisStateStore } from "../redis";
 
 let mockRedisClient: any;
@@ -90,10 +90,12 @@ describe("RedisStateStore", () => {
 	test("should handle connection errors gracefully", async () => {
 		const connectError = new Error("Connection refused");
 		mockRedisClient.connect.mockRejectedValue(connectError);
-		
+
 		const failingStore = new RedisStateStore({ url: "redis://invalid:6379" });
-		
-		await expect(failingStore.has("test")).rejects.toThrow("Connection refused");
+
+		await expect(failingStore.has("test")).rejects.toThrow(
+			"Connection refused",
+		);
 	});
 
 	test("should reuse existing connection", async () => {
@@ -128,9 +130,9 @@ describe("ResilientRedisStateStore", () => {
 	test("should use fallback when Redis fails", async () => {
 		const redisError = new Error("Redis down");
 		mockRedisClient.has = vi.fn().mockRejectedValue(redisError);
-		
+
 		const result = await resilientStore.has("test-id");
-		
+
 		expect(result).toBe(false);
 		expect(mockFallback.has).toHaveBeenCalledWith("test-id");
 	});
@@ -138,22 +140,23 @@ describe("ResilientRedisStateStore", () => {
 	test("should open circuit breaker on failure", async () => {
 		const redisError = new Error("Redis down");
 		mockRedisClient.set = vi.fn().mockRejectedValue(redisError);
-		
+
 		await resilientStore.set("test-id", 300000);
-		
+
 		expect(mockFallback.set).toHaveBeenCalled();
 		expect((resilientStore as any).circuitOpen).toBe(true);
 	});
 
 	test("should retry failed operations with exponential backoff", async () => {
 		const tempError = new Error("Temporary error");
-		mockRedisClient.set = vi.fn()
+		mockRedisClient.set = vi
+			.fn()
 			.mockRejectedValueOnce(tempError)
 			.mockRejectedValueOnce(tempError)
 			.mockResolvedValueOnce("OK");
-		
+
 		await resilientStore.set("test-id", 300000);
-		
+
 		expect(mockRedisClient.set).toHaveBeenCalledTimes(3);
 	});
 
@@ -161,40 +164,39 @@ describe("ResilientRedisStateStore", () => {
 		vi.useFakeTimers();
 		const redisError = new Error("Redis down");
 		mockRedisClient.set = vi.fn().mockRejectedValue(redisError);
-		
+
 		await resilientStore.set("test-id", 300000);
 		expect((resilientStore as any).circuitOpen).toBe(true);
-		
+
 		vi.advanceTimersByTime(30000);
 		expect((resilientStore as any).circuitOpen).toBe(false);
-		
+
 		vi.useRealTimers();
 	});
 
 	test("should use fallback when circuit is open", async () => {
 		(resilientStore as any).circuitOpen = true;
-		
+
 		await resilientStore.setIfAbsent("test-id", 300000);
-		
+
 		expect(mockFallback.setIfAbsent).toHaveBeenCalledWith("test-id", 300000);
 		expect(mockRedisClient.eval).not.toHaveBeenCalled();
 	});
 
 	test("should attempt to reconnect after circuit timeout", async () => {
 		vi.useFakeTimers();
-		
+
 		const redisError = new Error("Redis down");
-		mockRedisClient.set = vi.fn()
-			.mockRejectedValueOnce(redisError);
+		mockRedisClient.set = vi.fn().mockRejectedValueOnce(redisError);
 		await resilientStore.set("test-id", 300000);
-		
+
 		vi.advanceTimersByTime(30000);
-		
+
 		mockRedisClient.set = vi.fn().mockResolvedValue("OK");
 		await resilientStore.set("test-id-2", 300000);
-		
+
 		expect(mockRedisClient.set).toHaveBeenCalledTimes(2);
-		
+
 		vi.useRealTimers();
 	});
 });

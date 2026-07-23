@@ -180,6 +180,8 @@ export function passwordReset(config: PasswordResetConfig) {
 			);
 		}
 
+		await forgotPasswordLimiter.recordAttempt(ip, false);
+
 		try {
 			const { emailOrUsername } = (await request.json()) as {
 				emailOrUsername: string;
@@ -187,8 +189,6 @@ export function passwordReset(config: PasswordResetConfig) {
 
 			const userData = await resolveUser(emailOrUsername);
 			await createTokenAndNotify(userData);
-
-			await forgotPasswordLimiter.recordAttempt(ip, true);
 
 			return new Response(JSON.stringify({ success: true }), {
 				status: 200,
@@ -201,7 +201,6 @@ export function passwordReset(config: PasswordResetConfig) {
 					headers: { "Content-Type": "application/json" },
 				});
 			}
-			await forgotPasswordLimiter.recordAttempt(ip, false);
 			throw error;
 		}
 	}

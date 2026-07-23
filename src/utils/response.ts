@@ -7,21 +7,58 @@
  * @module utils/response
  */
 
+export interface SecurityHeadersOptions {
+	contentSecurityPolicy?: string;
+	customHeaders?: Record<string, string>;
+}
+
+const DEFAULT_SECURITY_HEADERS: Record<string, string> = {
+	"X-Content-Type-Options": "nosniff",
+	"X-Frame-Options": "DENY",
+	"X-XSS-Protection": "1; mode=block",
+	"Referrer-Policy": "strict-origin-when-cross-origin",
+	"Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+};
+
+function addSecurityHeaders(
+	headers: Headers,
+	options?: SecurityHeadersOptions,
+): void {
+	for (const [key, value] of Object.entries(DEFAULT_SECURITY_HEADERS)) {
+		if (!headers.has(key)) {
+			headers.set(key, value);
+		}
+	}
+
+	if (options?.contentSecurityPolicy) {
+		headers.set("Content-Security-Policy", options.contentSecurityPolicy);
+	}
+
+	if (options?.customHeaders) {
+		for (const [key, value] of Object.entries(options.customHeaders)) {
+			headers.set(key, value);
+		}
+	}
+}
+
 /**
- * Creates a JSON response with optional cookies
+ * Creates a JSON response with optional cookies and security headers
  * @param data - Response body (will be JSON.stringify'd)
  * @param status - HTTP status code (default: 200)
  * @param cookies - Optional Set-Cookie headers
- * @returns Response object with JSON body
+ * @param options - Optional security headers configuration
+ * @returns Response object with JSON body and security headers
  */
 export function jsonResponse(
 	data: unknown,
 	status = 200,
 	cookies?: string[],
+	options?: SecurityHeadersOptions,
 ): Response {
 	const headers = new Headers({
 		"Content-Type": "application/json; charset=utf-8",
 	});
+	addSecurityHeaders(headers, options);
 	if (cookies) {
 		for (const c of cookies) headers.append("Set-Cookie", c);
 	}

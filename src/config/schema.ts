@@ -1,8 +1,55 @@
 import { z } from "zod";
 
+export function validateSecretEntropy(secret: string): void {
+	if (secret.length < 32) {
+		throw new Error(
+			`JWT secret must be at least 32 characters (got ${secret.length}). Use a cryptographically secure random string.`,
+		);
+	}
+
+	const uniqueChars = new Set(secret.split(""));
+	const entropy = uniqueChars.size / secret.length;
+
+	if (entropy < 0.3 && process.env.NODE_ENV === "production") {
+		throw new Error(
+			"JWT secret has low entropy. Use a cryptographically secure random string with varied characters.",
+		);
+	}
+
+	const hasUpper = /[A-Z]/.test(secret);
+	const hasLower = /[a-z]/.test(secret);
+	const hasNumber = /[0-9]/.test(secret);
+	const hasSpecial = /[^A-Za-z0-9]/.test(secret);
+	const varietyCount = [hasUpper, hasLower, hasNumber, hasSpecial].filter(
+		Boolean,
+	).length;
+
+	if (varietyCount < 3 && process.env.NODE_ENV === "production") {
+		throw new Error(
+			"JWT secret lacks character variety. Use uppercase, lowercase, numbers, and special characters.",
+		);
+	}
+}
+
 export const SessionConfigSchema = z.object({
 	type: z.enum(["jwt", "server"]).optional(),
-	secret: z.string().min(1),
+	secret: z
+		.string()
+		.min(1)
+		.refine(
+			(secret) => {
+				try {
+					validateSecretEntropy(secret);
+					return true;
+				} catch {
+					return false;
+				}
+			},
+			{
+				message:
+					"JWT secret must be at least 32 characters with high entropy (mix of uppercase, lowercase, numbers, and special characters)",
+			},
+		),
 	expiresIn: z.union([z.string(), z.number()]).optional(),
 	cookieName: z.string().optional(),
 	cookiePath: z.string().optional(),

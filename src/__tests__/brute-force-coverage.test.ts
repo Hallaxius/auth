@@ -1,5 +1,16 @@
 import { describe, expect, test } from "vitest";
 import { MemoryBruteForceStorage } from "../credentials";
+import type { AuthUserStorage, PasswordHasher } from "../types";
+
+interface AuthUser {
+	id: string;
+	username: string | null;
+	email: string | null;
+	passwordHash: string;
+	roles: string[];
+	createdAt: Date;
+	updatedAt: Date;
+}
 
 describe("MemoryBruteForceStorage - full coverage", () => {
 	test("increment returns existing count when within window", async () => {
@@ -104,7 +115,7 @@ describe("BruteForceProtection - blocked scenario", () => {
 				return this.users.get(id) ?? null;
 			}
 
-			async create(data: any) {
+			async create(data: Omit<AuthUser, "id" | "createdAt" | "updatedAt">) {
 				const id = `user-${++this.idCounter}`;
 				const now = new Date();
 				const user = { ...data, id, createdAt: now, updatedAt: now };
@@ -127,8 +138,8 @@ describe("BruteForceProtection - blocked scenario", () => {
 			}
 		}
 
-		const storage = new InMemoryUserStorage() as any;
-		const hasher = new TestHasher() as any;
+		const storage = new InMemoryUserStorage() as unknown as AuthUserStorage;
+		const hasher = new TestHasher() as unknown as PasswordHasher;
 
 		await storage.create({
 			username: "blockeduser",

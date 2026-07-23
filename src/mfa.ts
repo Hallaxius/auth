@@ -173,6 +173,50 @@ function errorResponse(code: string, message: string, status = 400): Response {
  */
 export function mfa(config: MfaFactoryConfig) {
 	const issuer = config.issuer ?? "AuthApp";
+	const totpAttempts = new Map<string, { count: number; resetAt: number }>();
+	const backupCodeAttempts = new Map<
+		string,
+		{ count: number; resetAt: number }
+	>();
+
+	const MAX_TOTP_ATTEMPTS = 5;
+	const MAX_BACKUP_CODE_ATTEMPTS = 10;
+	const WINDOW_MS = 60 * 60 * 1000;
+
+	function checkRateLimit(
+		key: string,
+		attemptsMap: Map<string, { count: number; resetAt: number }>,
+		maxAttempts: number,
+	): boolean {
+		const now = Date.now();
+		const entry = attemptsMap.get(key);
+
+		if (!entry || now >= entry.resetAt) {
+			attemptsMap.set(key, { count: 0, resetAt: now + WINDOW_MS });
+			return true;
+		}
+
+		if (entry.count >= maxAttempts) {
+			return false;
+		}
+
+		entry.count++;
+		return true;
+	}
+
+	function recordAttempt(
+		key: string,
+		attemptsMap: Map<string, { count: number; resetAt: number }>,
+	): void {
+		const now = Date.now();
+		const entry = attemptsMap.get(key);
+
+		if (!entry || now >= entry.resetAt) {
+			attemptsMap.set(key, { count: 1, resetAt: now + WINDOW_MS });
+		} else {
+			entry.count++;
+		}
+	}
 
 	return {
 		setup,
@@ -229,6 +273,16 @@ export function mfa(config: MfaFactoryConfig) {
 				},
 			);
 		}
+
+		const totpKey = `totp:${userId}`;
+		if (!checkRateLimit(totpKey, totpAttempts, MAX_TOTP_ATTEMPTS)) {
+			throw new AuthError(
+				ErrorCodes.RATE_LIMITED,
+				"Too many TOTP attempts. Please try again later.",
+				{ statusCode: 429 },
+			);
+		}
+
 		const encryptedSecret = await config.storage.getSecret(userId);
 		if (!encryptedSecret) {
 			throw new AuthError(ErrorCodes.MFA_NOT_SETUP, "MFA not configured", {
@@ -263,12 +317,16 @@ export function mfa(config: MfaFactoryConfig) {
 
 		if (valid) {
 			await config.storage.setLastUsedCounter(userId, usedCounter);
+			totpAttempts.delete(totpKey);
 			return { success: true };
 		}
+
+		recordAttempt(totpKey, totpAttempts);
 
 		const backupResult = await verifyBackupCode(userId, code);
 		if (backupResult) {
 			const codes = await config.storage.getBackupCodes(userId);
+			backupCodeAttempts.delete(`backup:${userId}`);
 			return { success: true, backupCodes: codes ?? undefined };
 		}
 
@@ -320,6 +378,13 @@ export function mfa(config: MfaFactoryConfig) {
 		userId: string,
 		code: string,
 	): Promise<boolean> {
+		const backupKey = `backup:${userId}`;
+		if (
+			!checkRateLimit(backupKey, backupCodeAttempts, MAX_BACKUP_CODE_ATTEMPTS)
+		) {
+			return false;
+		}
+
 		const codes = await config.storage.getBackupCodes(userId);
 		if (!codes || codes.length === 0) {
 			return false;
@@ -335,9 +400,11 @@ export function mfa(config: MfaFactoryConfig) {
 			}
 		}
 		if (foundIndex === -1) {
+			recordAttempt(backupKey, backupCodeAttempts);
 			return false;
 		}
 		await config.storage.consumeBackupCode(userId, foundIndex);
+		backupCodeAttempts.delete(backupKey);
 		return true;
 	}
 

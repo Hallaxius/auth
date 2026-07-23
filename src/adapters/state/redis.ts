@@ -1,3 +1,4 @@
+import type { RedisClientType } from "redis";
 import type { StateStore } from "../../internal/state";
 
 export interface RedisStateStoreOptions {
@@ -7,35 +8,37 @@ export interface RedisStateStoreOptions {
 }
 
 export class RedisStateStore implements StateStore {
-	private client: any;
+	private client: RedisClientType;
 	private keyPrefix: string;
 	private connected: boolean = false;
 	private connectPromise: Promise<void> | null = null;
 
 	constructor(options: RedisStateStoreOptions = {}) {
 		this.keyPrefix = options.keyPrefix ?? "auth:state:";
-		
+
 		try {
-			const redisUrl = options.url ?? process.env.REDIS_URL ?? "redis://localhost:6379";
+			const redisUrl =
+				options.url ?? process.env.REDIS_URL ?? "redis://localhost:6379";
 			const { createClient } = require("redis");
 			this.client = createClient({ url: redisUrl });
-			
+
 			this.client.on("error", (err: Error) => {
 				console.error("[RedisStateStore] Redis client error:", err);
 			});
-			
+
 			this.connectPromise = this.connect();
 		} catch (error) {
-			console.error("[RedisStateStore] Failed to initialize Redis client:", error);
-			throw new Error(
-				"Redis package not installed. Run: bun add redis",
+			console.error(
+				"[RedisStateStore] Failed to initialize Redis client:",
+				error,
 			);
+			throw new Error("Redis package not installed. Run: bun add redis");
 		}
 	}
 
 	private async connect(): Promise<void> {
 		if (this.connected) return;
-		
+
 		try {
 			await this.client.connect();
 			this.connected = true;
@@ -58,7 +61,7 @@ export class RedisStateStore implements StateStore {
 	async has(id: string): Promise<boolean> {
 		await this.ensureConnected();
 		const key = `${this.keyPrefix}${id}`;
-		return await this.client.exists(key) === 1;
+		return (await this.client.exists(key)) === 1;
 	}
 
 	async set(id: string, ttlMs: number): Promise<void> {
@@ -70,7 +73,7 @@ export class RedisStateStore implements StateStore {
 	async setIfAbsent(id: string, ttlMs: number): Promise<boolean> {
 		await this.ensureConnected();
 		const key = `${this.keyPrefix}${id}`;
-		
+
 		const script = `
 			if redis.call('EXISTS', KEYS[1]) == 0 then
 				return redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2], 'NX')
@@ -78,12 +81,12 @@ export class RedisStateStore implements StateStore {
 				return nil
 			end
 		`;
-		
+
 		const result = await this.client.eval(script, {
 			keys: [key],
-			values: ["1", ttlMs.toString()],
+			arguments: ["1", ttlMs.toString()],
 		});
-		
+
 		return result === "OK";
 	}
 
@@ -103,16 +106,20 @@ export class RedisStateStore implements StateStore {
 
 export class ResilientRedisStateStore implements StateStore {
 	private primary: RedisStateStore;
-	private fallback: any;
+	private fallback: StateStore;
 	private circuitOpen = false;
 	private circuitTimer: NodeJS.Timeout | null = null;
 	private readonly CIRCUIT_TIMEOUT = 30000;
 	private readonly MAX_RETRIES = 3;
 	private readonly BASE_DELAY = 100;
 
-	constructor(options: RedisStateStoreOptions = {}, fallbackStore?: any) {
+	constructor(
+		options: RedisStateStoreOptions = {},
+		fallbackStore?: StateStore,
+	) {
 		this.primary = new RedisStateStore(options);
-		this.fallback = fallbackStore ?? new (require("../../internal/state").MemoryStateStore)();
+		this.fallback =
+			fallbackStore ?? new (require("../../internal/state").MemoryStateStore)();
 	}
 
 	private async withRetry<T>(
@@ -120,18 +127,18 @@ export class ResilientRedisStateStore implements StateStore {
 		operationName: string,
 	): Promise<T> {
 		let lastError: Error | null = null;
-		
+
 		for (let attempt = 0; attempt <= this.MAX_RETRIES; attempt++) {
 			try {
 				return await operation();
 			} catch (error) {
 				lastError = error as Error;
-				
+
 				if (attempt === this.MAX_RETRIES) {
 					break;
 				}
-				
-				const delay = this.BASE_DELAY * Math.pow(2, attempt) + Math.random() * 100;
+
+				const delay = this.BASE_DELAY * 2 ** attempt + Math.random() * 100;
 				console.warn(
 					`[ResilientRedisStateStore] Retry ${attempt + 1}/${this.MAX_RETRIES} for ${operationName}:`,
 					error,
@@ -139,7 +146,7 @@ export class ResilientRedisStateStore implements StateStore {
 				await new Promise((resolve) => setTimeout(resolve, delay));
 			}
 		}
-		
+
 		throw lastError;
 	}
 
@@ -148,7 +155,9 @@ export class ResilientRedisStateStore implements StateStore {
 		if (this.circuitTimer) clearTimeout(this.circuitTimer);
 		this.circuitTimer = setTimeout(() => {
 			this.circuitOpen = false;
-			console.info("[ResilientRedisStateStore] Circuit breaker closed, retrying Redis");
+			console.info(
+				"[ResilientRedisStateStore] Circuit breaker closed, retrying Redis",
+			);
 		}, this.CIRCUIT_TIMEOUT);
 	}
 
@@ -158,12 +167,12 @@ export class ResilientRedisStateStore implements StateStore {
 		}
 
 		try {
-			return await this.withRetry(
-				() => this.primary.has(id),
-				`has(${id})`,
-			);
+			return await this.withRetry(() => this.primary.has(id), `has(${id})`);
 		} catch (error) {
-			console.error("[ResilientRedisStateStore] Redis failed, using fallback:", error);
+			console.error(
+				"[ResilientRedisStateStore] Redis failed, using fallback:",
+				error,
+			);
 			this.openCircuit();
 			return await this.fallback.has(id);
 		}
@@ -176,12 +185,12 @@ export class ResilientRedisStateStore implements StateStore {
 		}
 
 		try {
-			await this.withRetry(
-				() => this.primary.set(id, ttlMs),
-				`set(${id})`,
-			);
+			await this.withRetry(() => this.primary.set(id, ttlMs), `set(${id})`);
 		} catch (error) {
-			console.error("[ResilientRedisStateStore] Redis failed, using fallback:", error);
+			console.error(
+				"[ResilientRedisStateStore] Redis failed, using fallback:",
+				error,
+			);
 			this.openCircuit();
 			await this.fallback.set(id, ttlMs);
 		}
@@ -198,7 +207,10 @@ export class ResilientRedisStateStore implements StateStore {
 				`setIfAbsent(${id})`,
 			);
 		} catch (error) {
-			console.error("[ResilientRedisStateStore] Redis failed, using fallback:", error);
+			console.error(
+				"[ResilientRedisStateStore] Redis failed, using fallback:",
+				error,
+			);
 			this.openCircuit();
 			return await this.fallback.setIfAbsent(id, ttlMs);
 		}
@@ -211,12 +223,12 @@ export class ResilientRedisStateStore implements StateStore {
 		}
 
 		try {
-			await this.withRetry(
-				() => this.primary.delete(id),
-				`delete(${id})`,
-			);
+			await this.withRetry(() => this.primary.delete(id), `delete(${id})`);
 		} catch (error) {
-			console.error("[ResilientRedisStateStore] Redis failed, using fallback:", error);
+			console.error(
+				"[ResilientRedisStateStore] Redis failed, using fallback:",
+				error,
+			);
 			this.openCircuit();
 			await this.fallback.delete(id);
 		}

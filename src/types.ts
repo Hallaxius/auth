@@ -632,3 +632,15 @@ export interface RateLimitResult {
 	resetAt: number;
 	retryAfter?: number;
 }
+
+export interface TokenRevocationStorage {
+	isRevoked(jti: string): Promise<boolean>;
+	revoke(jti: string, ttlSeconds: number): Promise<void>;
+}
+
+export interface SecurityLogger {
+	debug(message: string, context?: Record<string, unknown>): void;
+	info(message: string, context?: Record<string, unknown>): void;
+	warn(message: string, context?: Record<string, unknown>): void;
+	error(message: string, context?: Record<string, unknown>): void;
+}

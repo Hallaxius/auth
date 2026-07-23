@@ -17,6 +17,12 @@ export {
 	Pbkdf2Hasher,
 } from "./password";
 export {
+	errorResponse,
+	htmlResponse,
+	jsonResponse,
+	redirectResponse,
+} from "./response";
+export {
 	hasAnyRole,
 	hasMember,
 	hasRole,
@@ -26,9 +32,3 @@ export {
 	sync,
 	validate,
 } from "./utils";
-export {
-	jsonResponse,
-	errorResponse,
-	htmlResponse,
-	redirectResponse,
-} from "./response";
