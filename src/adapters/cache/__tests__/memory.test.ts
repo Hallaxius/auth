@@ -8,6 +8,7 @@ describe("MemoryCacheAdapter", () => {
 	let cache: MemoryCacheAdapter;
 
 	beforeEach(() => {
+		vi.clearAllMocks();
 		cache = new MemoryCacheAdapter();
 	});
 

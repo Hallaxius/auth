@@ -291,7 +291,10 @@ describe("errorResponse", () => {
 
 	it("handles AuthError-like objects", async () => {
 		const authError = new Error("Auth failed");
-		(authError as any).code = "INVALID_CREDENTIALS";
+		Object.defineProperty(authError, "code", {
+			value: "INVALID_CREDENTIALS",
+			writable: true,
+		});
 		const response = errorResponse(authError, 401);
 
 		expect(response.status).toBe(401);

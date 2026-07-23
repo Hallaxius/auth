@@ -1,14 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DiscordClient } from "../client";
 
 describe("DiscordClient - coverage gaps", () => {
 	let client: DiscordClient;
 	const mockClientId = "test-client-id";
 	const mockClientSecret = "test-client-secret";
+	const originalFetch = global.fetch;
 
 	beforeEach(() => {
-		client = new DiscordClient(mockClientId, mockClientSecret);
+		client = new DiscordClient({ clientId: mockClientId, clientSecret: mockClientSecret });
 		vi.clearAllMocks();
+		global.fetch = vi.fn<typeof fetch>();
+	});
+
+	afterEach(() => {
+		global.fetch = originalFetch;
+		vi.restoreAllMocks();
 	});
 
 	describe("getConnections - line 367-368", () => {
@@ -19,13 +26,11 @@ describe("DiscordClient - coverage gaps", () => {
 					statusText: "Internal Server Error",
 				});
 			});
-			vi.stubGlobal("fetch", mockFetch);
+			global.fetch = mockFetch;
 
 			await expect(client.getUserConnections("valid-token")).rejects.toThrow(
 				"Discord API request failed: 500",
 			);
-
-			vi.unstubAllGlobals();
 		});
 
 		it("throws error when rate limit is hit", async () => {
@@ -35,13 +40,11 @@ describe("DiscordClient - coverage gaps", () => {
 					statusText: "Too Many Requests",
 				});
 			});
-			vi.stubGlobal("fetch", mockFetch);
+			global.fetch = mockFetch;
 
 			await expect(client.getUserConnections("valid-token")).rejects.toThrow(
 				"Discord API rate limit exceeded",
 			);
-
-			vi.unstubAllGlobals();
 		});
 	});
 
@@ -53,13 +56,11 @@ describe("DiscordClient - coverage gaps", () => {
 					statusText: "Not Found",
 				});
 			});
-			vi.stubGlobal("fetch", mockFetch);
+			global.fetch = mockFetch;
 
 			await expect(
 				client.getGuildMember("guild-123", "user-456", "bot-token"),
 			).rejects.toThrow("Discord API request failed: 404");
-
-			vi.unstubAllGlobals();
 		});
 
 		it("throws error with empty response body", async () => {
@@ -69,13 +70,11 @@ describe("DiscordClient - coverage gaps", () => {
 					statusText: "Bad Gateway",
 				});
 			});
-			vi.stubGlobal("fetch", mockFetch);
+			global.fetch = mockFetch;
 
 			await expect(
 				client.getGuildMember("guild-123", "user-456", "bot-token"),
 			).rejects.toThrow("Discord API request failed: 502");
-
-			vi.unstubAllGlobals();
 		});
 	});
 });

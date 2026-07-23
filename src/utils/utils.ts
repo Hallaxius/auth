@@ -89,7 +89,7 @@ export async function hasRole(
 	clientId: string,
 	clientSecret: string,
 ): Promise<boolean> {
-	const client = new DiscordClient(clientId, clientSecret);
+	const client = new DiscordClient({ clientId, clientSecret });
 
 	try {
 		const member = await client.getGuildMember(guildId, userId, botToken);
@@ -107,7 +107,7 @@ export async function hasAnyRole(
 	clientId: string,
 	clientSecret: string,
 ): Promise<boolean> {
-	const client = new DiscordClient(clientId, clientSecret);
+	const client = new DiscordClient({ clientId, clientSecret });
 
 	try {
 		const member = await client.getGuildMember(guildId, userId, botToken);
@@ -124,7 +124,7 @@ export async function hasMember(
 	clientId: string,
 	clientSecret: string,
 ): Promise<boolean> {
-	const client = new DiscordClient(clientId, clientSecret);
+	const client = new DiscordClient({ clientId, clientSecret });
 
 	try {
 		await client.getGuildMember(guildId, userId, botToken);
@@ -142,7 +142,7 @@ export async function sync(
 	clientId: string,
 	clientSecret: string,
 ): Promise<string[]> {
-	const client = new DiscordClient(clientId, clientSecret);
+	const client = new DiscordClient({ clientId, clientSecret });
 
 	try {
 		const user = await storage.findByDiscordId(discordId);
@@ -179,7 +179,7 @@ export async function join(params: {
 	clientId: string;
 	clientSecret: string;
 }): Promise<void> {
-	const client = new DiscordClient(params.clientId, params.clientSecret);
+	const client = new DiscordClient({ clientId: params.clientId, clientSecret: params.clientSecret });
 
 	try {
 		await client.addMember({
@@ -204,7 +204,7 @@ export async function revoke(
 	clientId: string,
 	clientSecret: string,
 ): Promise<void> {
-	const client = new DiscordClient(clientId, clientSecret);
+	const client = new DiscordClient({ clientId, clientSecret });
 
 	try {
 		const user = await storage.findByDiscordId(discordId);

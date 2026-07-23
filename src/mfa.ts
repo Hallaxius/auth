@@ -10,7 +10,8 @@ import type {
 	TotpSetupResult,
 } from "./types";
 import { constantTimeCompare } from "./utils/constant-time";
-import { sha256Hex } from "./utils/ip";
+import { getRequestIP, sha256Hex } from "./utils/ip";
+import { LruCache } from "./utils/lru";
 
 const TOTP_STEP = 30;
 const TOTP_DIGITS = 6;
@@ -110,16 +111,6 @@ function generateBackupCodes(): string[] {
 	return codes;
 }
 
-function generatePendingToken(): string {
-	const bytes = new Uint8Array(32);
-	crypto.getRandomValues(bytes);
-	let hex = "";
-	for (let i = 0; i < bytes.length; i++) {
-		hex += (bytes[i] as number).toString(16).padStart(2, "0");
-	}
-	return hex;
-}
-
 function jsonResponse(data: unknown, status = 200): Response {
 	return new Response(JSON.stringify(data), {
 		status,
@@ -173,26 +164,33 @@ function errorResponse(code: string, message: string, status = 400): Response {
  */
 export function mfa(config: MfaFactoryConfig) {
 	const issuer = config.issuer ?? "AuthApp";
-	const totpAttempts = new Map<string, { count: number; resetAt: number }>();
-	const backupCodeAttempts = new Map<
+	const totpAttempts = new LruCache<string, { count: number; resetAt: number }>(
+		10_000,
+	);
+	const backupCodeAttempts = new LruCache<
 		string,
 		{ count: number; resetAt: number }
-	>();
+	>(10_000);
+	const globalBackupCodeAttempts = new LruCache<
+		string,
+		{ count: number; resetAt: number }
+	>(10_000);
 
 	const MAX_TOTP_ATTEMPTS = 5;
 	const MAX_BACKUP_CODE_ATTEMPTS = 10;
+	const MAX_GLOBAL_BACKUP_CODE_ATTEMPTS = 20;
 	const WINDOW_MS = 60 * 60 * 1000;
 
 	function checkRateLimit(
 		key: string,
-		attemptsMap: Map<string, { count: number; resetAt: number }>,
+		attemptsCache: LruCache<string, { count: number; resetAt: number }>,
 		maxAttempts: number,
 	): boolean {
 		const now = Date.now();
-		const entry = attemptsMap.get(key);
+		const entry = attemptsCache.get(key);
 
 		if (!entry || now >= entry.resetAt) {
-			attemptsMap.set(key, { count: 0, resetAt: now + WINDOW_MS });
+			attemptsCache.set(key, { count: 0, resetAt: now + WINDOW_MS }, WINDOW_MS);
 			return true;
 		}
 
@@ -206,16 +204,49 @@ export function mfa(config: MfaFactoryConfig) {
 
 	function recordAttempt(
 		key: string,
-		attemptsMap: Map<string, { count: number; resetAt: number }>,
+		attemptsCache: LruCache<string, { count: number; resetAt: number }>,
 	): void {
 		const now = Date.now();
-		const entry = attemptsMap.get(key);
+		const entry = attemptsCache.get(key);
 
 		if (!entry || now >= entry.resetAt) {
-			attemptsMap.set(key, { count: 1, resetAt: now + WINDOW_MS });
+			attemptsCache.set(key, { count: 1, resetAt: now + WINDOW_MS }, WINDOW_MS);
 		} else {
 			entry.count++;
 		}
+	}
+
+	async function generatePendingToken(userId: string): Promise<string> {
+		const bytes = new Uint8Array(32);
+		crypto.getRandomValues(bytes);
+		let hex = "";
+		for (let i = 0; i < bytes.length; i++) {
+			hex += (bytes[i] as number).toString(16).padStart(2, "0");
+		}
+		const data = `${userId}:${hex}`;
+		const encoder = new TextEncoder().encode(data);
+		const keyData = new TextEncoder().encode(config.secret);
+		const key = await crypto.subtle.importKey(
+			"raw",
+			keyData,
+			{ name: "HMAC", hash: "SHA-256" },
+			false,
+			["sign"],
+		);
+		const sig = await crypto.subtle.sign("HMAC", key, encoder);
+		const sigHex = Array.from(new Uint8Array(sig))
+			.map((b) => b.toString(16).padStart(2, "0"))
+			.join("");
+		const token = `${hex}:${sigHex}`;
+		
+		const pendingTokenEntry: import("./types").PendingTokenEntry = {
+			token,
+			createdAt: Date.now(),
+			expiresAt: Date.now() + (5 * 60 * 1000)
+		};
+		await config.storage.setPendingToken(userId, pendingTokenEntry);
+		
+		return token;
 	}
 
 	return {
@@ -246,7 +277,19 @@ export function mfa(config: MfaFactoryConfig) {
 		crypto.getRandomValues(secretBytes);
 		const secretKey = base32Encode(secretBytes);
 		const encryptedSecret = await encrypt(secretKey, config.secret);
-		await config.storage.setSecret(userId, encryptedSecret);
+		
+		const created = await config.storage.setSecretIfAbsent?.(userId, encryptedSecret);
+		if (created === false) {
+			throw new AuthError(
+				ErrorCodes.MFA_ALREADY_SETUP,
+				"MFA is already configured. Disable it first to reconfigure.",
+				{ statusCode: 400 },
+			);
+		}
+		
+		if (created === undefined) {
+			await config.storage.setSecret(userId, encryptedSecret);
+		}
 
 		const backupCodes = generateBackupCodes();
 		const hashedBackupCodes = await Promise.all(
@@ -255,7 +298,7 @@ export function mfa(config: MfaFactoryConfig) {
 		await config.storage.setBackupCodes(userId, hashedBackupCodes);
 
 		const uri = `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(userId)}?secret=${secretKey}&issuer=${encodeURIComponent(issuer)}`;
-		const pendingToken = generatePendingToken();
+		const pendingToken = await generatePendingToken(userId);
 
 		return { secret: secretKey, uri, backupCodes, pendingToken };
 	}
@@ -263,6 +306,7 @@ export function mfa(config: MfaFactoryConfig) {
 	async function verify(
 		userId: string,
 		code: string,
+		request?: Request,
 	): Promise<MfaVerifyResult> {
 		if (code?.length !== 6 || !/^\d{6}$/.test(code)) {
 			throw new AuthError(
@@ -323,7 +367,7 @@ export function mfa(config: MfaFactoryConfig) {
 
 		recordAttempt(totpKey, totpAttempts);
 
-		const backupResult = await verifyBackupCode(userId, code);
+		const backupResult = await verifyBackupCode(userId, code, request);
 		if (backupResult) {
 			const codes = await config.storage.getBackupCodes(userId);
 			backupCodeAttempts.delete(`backup:${userId}`);
@@ -377,12 +421,27 @@ export function mfa(config: MfaFactoryConfig) {
 	async function verifyBackupCode(
 		userId: string,
 		code: string,
+		request?: Request,
 	): Promise<boolean> {
 		const backupKey = `backup:${userId}`;
 		if (
 			!checkRateLimit(backupKey, backupCodeAttempts, MAX_BACKUP_CODE_ATTEMPTS)
 		) {
 			return false;
+		}
+
+		if (request) {
+			const ip = await getRequestIP(request);
+			const globalKey = `backup:global:${ip}`;
+			if (
+				!checkRateLimit(
+					globalKey,
+					globalBackupCodeAttempts,
+					MAX_GLOBAL_BACKUP_CODE_ATTEMPTS,
+				)
+			) {
+				return false;
+			}
 		}
 
 		const codes = await config.storage.getBackupCodes(userId);
@@ -401,6 +460,11 @@ export function mfa(config: MfaFactoryConfig) {
 		}
 		if (foundIndex === -1) {
 			recordAttempt(backupKey, backupCodeAttempts);
+			if (request) {
+				const ip = await getRequestIP(request);
+				const globalKey = `backup:global:${ip}`;
+				recordAttempt(globalKey, globalBackupCodeAttempts);
+			}
 			return false;
 		}
 		await config.storage.consumeBackupCode(userId, foundIndex);

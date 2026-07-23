@@ -87,36 +87,23 @@ export class BruteForceProtection {
 		return this.config.maxAttempts;
 	}
 
-	async recordAttempt(key: string, success: boolean): Promise<void> {
-		if (!this.config.enabled) return;
-
-		if (success) {
-			await this.storage.reset(key);
-			return;
-		}
-
+	async recordAttempt(identifier: string): Promise<{ allowed: boolean; retryAfter?: number }> {
+		const key = this.getKey(identifier);
 		const count = await this.storage.increment(key, this.config.windowMs);
+		
 		if (count >= this.config.maxAttempts) {
 			await this.storage.block(key, this.config.blockDurationMs);
+			return {
+				allowed: false,
+				retryAfter: this.config.blockDurationMs
+			};
 		}
+		
+		return { allowed: true };
 	}
 
-	async recordAttemptAndGetCount(
-		key: string,
-		success: boolean,
-	): Promise<number> {
-		if (!this.config.enabled) return 0;
-
-		if (success) {
-			await this.storage.reset(key);
-			return 0;
-		}
-
-		const count = await this.storage.increment(key, this.config.windowMs);
-		if (count >= this.config.maxAttempts) {
-			await this.storage.block(key, this.config.blockDurationMs);
-		}
-		return count;
+	private getKey(identifier: string): string {
+		return `bruteforce:${identifier}`;
 	}
 
 	async isBlocked(key: string): Promise<boolean> {
@@ -145,8 +132,11 @@ export class BruteForceProtection {
 		await this.storage.reset(key);
 	}
 
-	static extractKey(request: Request, strategy?: AuthStrategy): string {
-		const ip = getRequestIP(request);
+	static async extractKey(
+		request: Request,
+		strategy?: AuthStrategy,
+	): Promise<string> {
+		const ip = await getRequestIP(request);
 		const userAgent =
 			request.headers.get("user-agent")?.slice(0, 50) ?? "unknown";
 		const strategyPart = strategy ?? "unknown";
@@ -170,7 +160,7 @@ export class CredentialsClient {
 		this.config = {
 			strategy: config.strategy,
 			secret: config.secret,
-			expiresIn: config.expiresIn ?? "7d",
+			expiresIn: config.expiresIn ?? "15m",
 			cookieName: config.cookieName ?? "credentials-session",
 			cookiePath: config.cookiePath ?? "/",
 			httpOnly: config.httpOnly ?? true,
@@ -226,7 +216,7 @@ export class CredentialsClient {
 		password: string,
 		request?: Request,
 	): Promise<CredentialsAuthResult> {
-		const bruteForceKey = this.getBruteForceKey(identifier, request);
+		const bruteForceKey = await this.getBruteForceKey(identifier, request);
 		if (bruteForceKey) {
 			const blocked = await this.bruteForce.isBlocked(bruteForceKey);
 			if (blocked) {
@@ -253,12 +243,9 @@ export class CredentialsClient {
 
 		if (!passwordValid) {
 			if (bruteForceKey) {
-				const count = await this.bruteForce.recordAttemptAndGetCount(
-					bruteForceKey,
-					false,
-				);
-				if (count >= this.bruteForce.maxAttempts) {
-					const retryAfter = await this.bruteForce.getRetryAfter(bruteForceKey);
+				const result = await this.bruteForce.recordAttempt(bruteForceKey);
+				if (!result.allowed) {
+					const retryAfter = result.retryAfter ?? await this.bruteForce.getRetryAfter(bruteForceKey);
 					throw new AuthError(
 						ErrorCodes.BRUTE_FORCE_BLOCKED,
 						`Account temporarily locked. Try again later.`,
@@ -280,7 +267,7 @@ export class CredentialsClient {
 		}
 
 		if (bruteForceKey) {
-			await this.bruteForce.recordAttempt(bruteForceKey, true);
+			await this.bruteForce.recordAttempt(bruteForceKey);
 		}
 
 		const token = await this.createSessionToken(user);
@@ -320,10 +307,9 @@ export class CredentialsClient {
 		}
 
 		if (data.email) {
-			const emailRegex =
-				/^(?:"?[^"@\s\\]+\.?_?[^"@\s\\]*"?|"[^"\\]*(?:\\.[^"\\]*)*")@(?:(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}|(?:\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)|\[[a-fA-F0-9:]+\])])$/;
+			const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 			if (!emailRegex.test(data.email)) {
-				errors.push("Email format is invalid (RFC 5322 compliant)");
+				errors.push("Email format is invalid");
 			}
 		}
 
@@ -426,12 +412,12 @@ export class CredentialsClient {
 		return signToken(payload, this.config.secret, this.config.expiresIn);
 	}
 
-	private getBruteForceKey(
+	private async getBruteForceKey(
 		_identifier: AuthUserIdentifier,
 		request?: Request,
-	): string | null {
+	): Promise<string | null> {
 		const strategy = this.config.strategy;
-		const ip = request ? getRequestIP(request) : "unknown";
+		const ip = request ? await getRequestIP(request, { trustProxy: false }) : "unknown";
 		return `credentials-login:${strategy}:${ip}`;
 	}
 }
@@ -528,6 +514,14 @@ function createCredentialsHandlers(ctx: CredentialsHandlerContext) {
 			return jsonResponse({ error: "Method not allowed" }, 405);
 		}
 
+		const contentType = request.headers.get("content-type");
+		if (!contentType?.includes("application/json")) {
+			return jsonResponse(
+				{ error: "Content-Type must be application/json" },
+				415,
+			);
+		}
+
 		let body: Record<string, unknown>;
 		try {
 			body = await request.json();
@@ -569,6 +563,14 @@ function createCredentialsHandlers(ctx: CredentialsHandlerContext) {
 	async function handleLogin(request: Request): Promise<Response> {
 		if (request.method !== "POST") {
 			return jsonResponse({ error: "Method not allowed" }, 405);
+		}
+
+		const contentType = request.headers.get("content-type");
+		if (!contentType?.includes("application/json")) {
+			return jsonResponse(
+				{ error: "Content-Type must be application/json" },
+				415,
+			);
 		}
 
 		let body: Record<string, unknown>;

@@ -97,7 +97,9 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 
 		const user = await (
 			client as unknown as {
-				findUserByIdentifier: (id: any) => Promise<AuthUser | null>;
+				findUserByIdentifier: (
+					id: AuthUserIdentifier,
+				) => Promise<AuthUser | null>;
 			}
 		).findUserByIdentifier({
 			username: undefined,
@@ -125,11 +127,13 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 
 		const user = await (
 			client as unknown as {
-				findUserByIdentifier: (id: any) => Promise<AuthUser | null>;
+				findUserByIdentifier: (
+					id: AuthUserIdentifier,
+				) => Promise<AuthUser | null>;
 			}
 		).findUserByIdentifier({
 			username: undefined,
-			email: undefined,
+			email: "test@example.com",
 		});
 
 		expect(user).toBeNull();
@@ -152,7 +156,9 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 
 		const user = await (
 			client as unknown as {
-				findUserByIdentifier: (id: any) => Promise<AuthUser | null>;
+				findUserByIdentifier: (
+					id: AuthUserIdentifier,
+				) => Promise<AuthUser | null>;
 			}
 		).findUserByIdentifier({
 			username: "testuser",
@@ -186,7 +192,9 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 
 		const user = await (
 			client as unknown as {
-				findUserByIdentifier: (id: any) => Promise<AuthUser | null>;
+				findUserByIdentifier: (
+					id: AuthUserIdentifier,
+				) => Promise<AuthUser | null>;
 			}
 		).findUserByIdentifier({
 			username: "usernameonly",
@@ -221,7 +229,9 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 
 		const user = await (
 			client as unknown as {
-				findUserByIdentifier: (id: any) => Promise<AuthUser | null>;
+				findUserByIdentifier: (
+					id: AuthUserIdentifier,
+				) => Promise<AuthUser | null>;
 			}
 		).findUserByIdentifier({
 			username: undefined,
@@ -249,7 +259,9 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 
 		const user = await (
 			client as unknown as {
-				findUserByIdentifier: (id: any) => Promise<AuthUser | null>;
+				findUserByIdentifier: (
+					id: AuthUserIdentifier,
+				) => Promise<AuthUser | null>;
 			}
 		).findUserByIdentifier({
 			username: undefined,
@@ -276,10 +288,12 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 
 		const user = await (
 			client as unknown as {
-				findUserByIdentifier: (id: any) => Promise<AuthUser | null>;
+				findUserByIdentifier: (
+					id: AuthUserIdentifier,
+				) => Promise<AuthUser | null>;
 			}
 		).findUserByIdentifier({
-			username: "testuser",
+			username: undefined,
 			email: undefined,
 		});
 

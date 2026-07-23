@@ -90,7 +90,7 @@ function createCredentialsConfig(
 		storage: overrides.storage ?? new InMemoryUserStorage(),
 		hasher: overrides.hasher ?? new TestHasher(),
 		session: {
-			secret: "test-session-secret-32-chars-long!!",
+			secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 			expiresIn: "7d",
 			cookieName: "credentials-session",
 		},
@@ -418,7 +418,10 @@ describe("credentials - brute force edge cases", () => {
 			},
 		});
 
-		const key = BruteForceProtection.extractKey(req, AuthStrategy.UsernameOnly);
+		const key = await BruteForceProtection.extractKey(
+			req,
+			AuthStrategy.UsernameOnly,
+		);
 		expect(key).toContain("username-only");
 		expect(key).toContain("192.168.1.50");
 		expect(key).toContain("TestBrowser/1.0");

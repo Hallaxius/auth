@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { validateSecretEntropy } from "../config/schema";
+import { validateSecretEntropy } from "../schema";
 
 describe("JWT Secret Validation", () => {
 	it("should accept a strong secret with 32+ characters", () => {
@@ -16,17 +16,29 @@ describe("JWT Secret Validation", () => {
 	});
 
 	it("should reject a secret with low entropy", () => {
-		const lowEntropySecret = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-		expect(() => validateSecretEntropy(lowEntropySecret)).toThrow(
-			"JWT secret has low entropy",
-		);
+		const originalEnv = process.env.NODE_ENV;
+		process.env.NODE_ENV = "production";
+		try {
+			const lowEntropySecret = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+			expect(() => validateSecretEntropy(lowEntropySecret)).toThrow(
+				"JWT secret has low entropy",
+			);
+		} finally {
+			process.env.NODE_ENV = originalEnv;
+		}
 	});
 
 	it("should reject a secret lacking character variety", () => {
-		const noSpecialChars = "OnlyLettersAndNumbers1234567890";
-		expect(() => validateSecretEntropy(noSpecialChars)).toThrow(
-			"JWT secret lacks character variety",
-		);
+		const originalEnv = process.env.NODE_ENV;
+		process.env.NODE_ENV = "production";
+		try {
+			const noSpecialChars = "OnlyLettersAndNumbers12345678901";
+			expect(() => validateSecretEntropy(noSpecialChars)).toThrow(
+				"JWT secret lacks character variety",
+			);
+		} finally {
+			process.env.NODE_ENV = originalEnv;
+		}
 	});
 
 	it("should accept a secret with mixed characters", () => {

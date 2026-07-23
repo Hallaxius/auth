@@ -6,7 +6,7 @@ import type {
 	PasswordResetConfig,
 	RequestResetResult,
 } from "./types";
-import { isIPv6, maskIPv6To64, sanitizeIP } from "./utils/ip";
+import { isIPv6, maskIPv6To64, sanitizeIP, sha256Hex } from "./utils/ip";
 
 export function passwordReset(config: PasswordResetConfig) {
 	const minPasswordLength = config.minPasswordLength ?? 8;
@@ -35,7 +35,7 @@ export function passwordReset(config: PasswordResetConfig) {
 		config.resetPasswordRateLimit?.storage,
 	);
 
-	function getRequestIP(request: Request): string {
+	async function getRequestIP(request: Request): Promise<string> {
 		const forwarded = request.headers.get("x-forwarded-for");
 		if (forwarded) {
 			const ip = sanitizeIP(forwarded);
@@ -60,7 +60,9 @@ export function passwordReset(config: PasswordResetConfig) {
 			}
 			return ip;
 		}
-		return "unknown";
+		const ua = request.headers.get("user-agent") || "unknown";
+		const fingerprint = await sha256Hex(ua);
+		return `fp:${fingerprint.slice(0, 16)}`;
 	}
 
 	async function resolveUser(emailOrUsername: string): Promise<{
@@ -135,28 +137,28 @@ export function passwordReset(config: PasswordResetConfig) {
 			username: string;
 		} | null,
 	): Promise<void> {
+		if (!userData) {
+			return;
+		}
+
+		await config.storage.deleteAllUserTokens?.(userData.userId);
+
 		const { selector, validator } = generateResetToken();
 		const validatorHash = await hashValidator(validator);
 		const expiry = Date.now() + tokenExpirationSeconds * 1000;
-
-		const resolvedUserData = userData ?? {
-			userId: `unknown-${selector}`,
-			email: "unknown@example.com",
-			username: "unknown",
-		};
 
 		await config.storage.create({
 			selector,
 			validatorHash,
 			expiry,
-			...resolvedUserData,
+			...userData,
 		});
 
 		await config.notifier.send(
 			{ selector, validator },
-			resolvedUserData.userId,
-			resolvedUserData.email,
-			resolvedUserData.username,
+			userData.userId,
+			userData.email,
+			userData.username,
 		);
 	}
 
@@ -170,7 +172,7 @@ export function passwordReset(config: PasswordResetConfig) {
 			});
 		}
 
-		const ip = getRequestIP(request);
+		const ip = await getRequestIP(request);
 		const blocked = await forgotPasswordLimiter.isBlocked(ip);
 		if (blocked) {
 			throw new AuthError(
@@ -180,7 +182,7 @@ export function passwordReset(config: PasswordResetConfig) {
 			);
 		}
 
-		await forgotPasswordLimiter.recordAttempt(ip, false);
+		await forgotPasswordLimiter.recordAttempt(ip);
 
 		try {
 			const { emailOrUsername } = (await request.json()) as {
@@ -215,7 +217,7 @@ export function passwordReset(config: PasswordResetConfig) {
 			});
 		}
 
-		const ip = getRequestIP(request);
+		const ip = await getRequestIP(request);
 		const blocked = await resetPasswordLimiter.isBlocked(ip);
 		if (blocked) {
 			throw new AuthError(
@@ -276,7 +278,7 @@ export function passwordReset(config: PasswordResetConfig) {
 
 			await config.storage.delete(selector);
 
-			await resetPasswordLimiter.recordAttempt(ip, true);
+			await resetPasswordLimiter.recordAttempt(ip);
 
 			return new Response(JSON.stringify({ success: true }), {
 				status: 200,
@@ -292,7 +294,7 @@ export function passwordReset(config: PasswordResetConfig) {
 			if (error instanceof AuthError) {
 				throw error;
 			}
-			await resetPasswordLimiter.recordAttempt(ip, false);
+			await resetPasswordLimiter.recordAttempt(ip);
 			throw error;
 		}
 	}

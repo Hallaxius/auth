@@ -155,7 +155,7 @@ describe("BruteForceProtection - blocked scenario", () => {
 		const client = new CredentialsClient(
 			{
 				strategy: AuthStrategy.UsernameEmail,
-				secret: "test-secret",
+				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 				expiresIn: "7d",
 				cookieName: "test-session",
 			},

@@ -14,7 +14,7 @@ import {
 
 describe("SessionConfigSchema", () => {
 	it("validates minimal config", () => {
-		const config = { secret: "my-secret-key" };
+		const config = { secret: "test-secret-key-minimum-32-chars" };
 		const result = SessionConfigSchema.safeParse(config);
 		expect(result.success).toBe(true);
 	});
@@ -22,7 +22,7 @@ describe("SessionConfigSchema", () => {
 	it("validates full config", () => {
 		const config = {
 			type: "jwt" as const,
-			secret: "my-secret-key",
+			secret: "test-secret-key-minimum-32-chars",
 			expiresIn: "1h",
 			cookieName: "session",
 			cookiePath: "/",
@@ -46,40 +46,61 @@ describe("SessionConfigSchema", () => {
 		expect(result.success).toBe(false);
 	});
 
+	it("rejects short secret", () => {
+		const config = { secret: "short" };
+		const result = SessionConfigSchema.safeParse(config);
+		expect(result.success).toBe(false);
+	});
+
 	it("accepts server session type", () => {
-		const config = { type: "server" as const, secret: "my-secret" };
+		const config = {
+			type: "server" as const,
+			secret: "test-secret-key-minimum-32-chars",
+		};
 		const result = SessionConfigSchema.safeParse(config);
 		expect(result.success).toBe(true);
 	});
 
 	it("rejects invalid session type", () => {
-		const config = { type: "invalid" as any, secret: "my-secret" };
+		const config = {
+			type: "invalid",
+			secret: "test-secret-key-minimum-32-chars",
+		};
 		const result = SessionConfigSchema.safeParse(config);
 		expect(result.success).toBe(false);
 	});
 
 	it("accepts number expiresIn", () => {
-		const config = { secret: "my-secret", expiresIn: 3600 };
+		const config = {
+			secret: "test-secret-key-minimum-32-chars",
+			expiresIn: 3600,
+		};
 		const result = SessionConfigSchema.safeParse(config);
 		expect(result.success).toBe(true);
 	});
 
 	it("accepts string expiresIn", () => {
-		const config = { secret: "my-secret", expiresIn: "1h" };
+		const config = {
+			secret: "test-secret-key-minimum-32-chars",
+			expiresIn: "1h",
+		};
 		const result = SessionConfigSchema.safeParse(config);
 		expect(result.success).toBe(true);
 	});
 
 	it("accepts valid sameSite values", () => {
 		(["lax", "strict", "none"] as const).forEach((sameSite) => {
-			const config = { secret: "my-secret", sameSite };
+			const config = { secret: "test-secret-key-minimum-32-chars", sameSite };
 			const result = SessionConfigSchema.safeParse(config);
 			expect(result.success).toBe(true);
 		});
 	});
 
 	it("rejects invalid sameSite value", () => {
-		const config = { secret: "my-secret", sameSite: "invalid" as any };
+		const config = {
+			secret: "test-secret-key-minimum-32-chars",
+			sameSite: "invalid",
+		};
 		const result = SessionConfigSchema.safeParse(config);
 		expect(result.success).toBe(false);
 	});
@@ -195,7 +216,7 @@ describe("DiscordAuthConfigSchema", () => {
 		const config = {
 			clientId: "123456789",
 			clientSecret: "secret",
-			secret: "state-secret",
+			secret: "test-secret-key-minimum-32-chars",
 			callbackUrl: "https://example.com/callback",
 		};
 		const result = DiscordAuthConfigSchema.safeParse(config);
@@ -206,7 +227,7 @@ describe("DiscordAuthConfigSchema", () => {
 		const config = {
 			clientId: "123456789",
 			clientSecret: "secret",
-			secret: "state-secret",
+			secret: "test-secret-key-minimum-32-chars",
 			callbackUrl: "https://example.com/callback",
 			scopes: ["identify", "email"],
 			prompt: "consent" as const,
@@ -258,9 +279,9 @@ describe("DiscordAuthConfigSchema", () => {
 				onSuccess: () => {},
 				onError: () => {},
 			},
-			stateSecret: "state-secret-2",
+			stateSecret: "test-secret-key-minimum-32-chars-2",
 			session: {
-				secret: "session-secret",
+				secret: "test-secret-key-minimum-32-chars-3",
 			},
 			meRoute: "/me",
 		};
@@ -271,7 +292,7 @@ describe("DiscordAuthConfigSchema", () => {
 	it("rejects missing clientId", () => {
 		const config = {
 			clientSecret: "secret",
-			secret: "state-secret",
+			secret: "test-secret-key-minimum-32-chars",
 			callbackUrl: "https://example.com/callback",
 		};
 		const result = DiscordAuthConfigSchema.safeParse(config);
@@ -282,7 +303,7 @@ describe("DiscordAuthConfigSchema", () => {
 		const config = {
 			clientId: "",
 			clientSecret: "secret",
-			secret: "state-secret",
+			secret: "test-secret-key-minimum-32-chars",
 			callbackUrl: "https://example.com/callback",
 		};
 		const result = DiscordAuthConfigSchema.safeParse(config);
@@ -293,7 +314,7 @@ describe("DiscordAuthConfigSchema", () => {
 		const config = {
 			clientId: "123",
 			clientSecret: "secret",
-			secret: "state-secret",
+			secret: "test-secret-key-minimum-32-chars",
 			callbackUrl: "not-a-url",
 		};
 		const result = DiscordAuthConfigSchema.safeParse(config);
@@ -304,7 +325,7 @@ describe("DiscordAuthConfigSchema", () => {
 		const config = {
 			clientId: "123",
 			clientSecret: "secret",
-			secret: "state-secret",
+			secret: "test-secret-key-minimum-32-chars",
 			callbackUrl: "https://example.com/callback",
 			redirectUri: "not-a-url",
 		};
@@ -316,7 +337,7 @@ describe("DiscordAuthConfigSchema", () => {
 		const config = {
 			clientId: "123",
 			clientSecret: "secret",
-			secret: "state-secret",
+			secret: "test-secret-key-minimum-32-chars",
 			callbackUrl: "https://example.com/callback",
 			prompt: "none" as const,
 		};
@@ -328,9 +349,9 @@ describe("DiscordAuthConfigSchema", () => {
 		const config = {
 			clientId: "123",
 			clientSecret: "secret",
-			secret: "state-secret",
+			secret: "test-secret-key-minimum-32-chars",
 			callbackUrl: "https://example.com/callback",
-			prompt: "invalid" as any,
+			prompt: "invalid",
 		};
 		const result = DiscordAuthConfigSchema.safeParse(config);
 		expect(result.success).toBe(false);
@@ -341,7 +362,7 @@ describe("CredentialsClientConfigSchema", () => {
 	it("validates minimal config", () => {
 		const config = {
 			strategy: "username-only" as const,
-			secret: "my-secret",
+			secret: "test-secret-key-minimum-32-chars",
 		};
 		const result = CredentialsClientConfigSchema.safeParse(config);
 		expect(result.success).toBe(true);
@@ -354,14 +375,17 @@ describe("CredentialsClientConfigSchema", () => {
 			"username-email",
 		] as const;
 		strategies.forEach((strategy) => {
-			const config = { strategy, secret: "my-secret" };
+			const config = { strategy, secret: "test-secret-key-minimum-32-chars" };
 			const result = CredentialsClientConfigSchema.safeParse(config);
 			expect(result.success).toBe(true);
 		});
 	});
 
 	it("rejects invalid strategy", () => {
-		const config = { strategy: "invalid" as any, secret: "my-secret" };
+		const config = {
+			strategy: "invalid",
+			secret: "test-secret-key-minimum-32-chars",
+		};
 		const result = CredentialsClientConfigSchema.safeParse(config);
 		expect(result.success).toBe(false);
 	});
@@ -369,7 +393,7 @@ describe("CredentialsClientConfigSchema", () => {
 	it("accepts defaultRoles", () => {
 		const config = {
 			strategy: "username-only" as const,
-			secret: "my-secret",
+			secret: "test-secret-key-minimum-32-chars",
 			defaultRoles: ["user", "admin"],
 		};
 		const result = CredentialsClientConfigSchema.safeParse(config);
@@ -379,7 +403,7 @@ describe("CredentialsClientConfigSchema", () => {
 	it("accepts minPasswordLength", () => {
 		const config = {
 			strategy: "username-only" as const,
-			secret: "my-secret",
+			secret: "test-secret-key-minimum-32-chars",
 			minPasswordLength: 12,
 		};
 		const result = CredentialsClientConfigSchema.safeParse(config);
@@ -389,7 +413,7 @@ describe("CredentialsClientConfigSchema", () => {
 	it("rejects zero minPasswordLength", () => {
 		const config = {
 			strategy: "username-only" as const,
-			secret: "my-secret",
+			secret: "test-secret-key-minimum-32-chars",
 			minPasswordLength: 0,
 		};
 		const result = CredentialsClientConfigSchema.safeParse(config);
@@ -399,7 +423,7 @@ describe("CredentialsClientConfigSchema", () => {
 	it("rejects negative minPasswordLength", () => {
 		const config = {
 			strategy: "username-only" as const,
-			secret: "my-secret",
+			secret: "test-secret-key-minimum-32-chars",
 			minPasswordLength: -1,
 		};
 		const result = CredentialsClientConfigSchema.safeParse(config);
@@ -470,7 +494,7 @@ describe("validateDiscordAuthConfig", () => {
 		const config = {
 			clientId: "123",
 			clientSecret: "secret",
-			secret: "state-secret",
+			secret: "test-secret-key-minimum-32-chars",
 			callbackUrl: "https://example.com/callback",
 		};
 		const result = validateDiscordAuthConfig(config);
@@ -498,21 +522,21 @@ describe("validateCredentialsConfig", () => {
 	it("returns parsed config for valid input", () => {
 		const config = {
 			strategy: "username-only" as const,
-			secret: "my-secret",
+			secret: "test-secret-key-minimum-32-chars",
 		};
 		const result = validateCredentialsConfig(config);
 		expect(result).toEqual(config);
 	});
 
 	it("throws error for invalid config", () => {
-		const config = { strategy: "invalid" as any };
+		const config = { strategy: "invalid" };
 		expect(() => validateCredentialsConfig(config)).toThrow(
 			/Invalid CredentialsConfig/,
 		);
 	});
 
 	it("includes error messages in thrown error", () => {
-		const config = { strategy: "invalid" as any };
+		const config = { strategy: "invalid" };
 		try {
 			validateCredentialsConfig(config);
 		} catch (error) {

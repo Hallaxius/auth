@@ -82,7 +82,7 @@ describe("credentials - handleMe coverage", () => {
 			storage,
 			hasher,
 			session: {
-				secret: "test-session-secret-32-chars-long!!",
+				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 				expiresIn: "7d",
 				cookieName: "credentials-session",
 			},
@@ -128,7 +128,7 @@ describe("credentials - handleMe coverage", () => {
 			storage,
 			hasher,
 			session: {
-				secret: "test-session-secret-32-chars-long!!",
+				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 				expiresIn: "7d",
 				cookieName: "credentials-session",
 			},
@@ -157,7 +157,7 @@ describe("credentials - handleMe coverage", () => {
 			storage,
 			hasher,
 			session: {
-				secret: "test-session-secret-32-chars-long!!",
+				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 				expiresIn: "7d",
 				cookieName: "credentials-session",
 			},
@@ -189,7 +189,7 @@ describe("credentials - handleMe coverage", () => {
 			storage,
 			hasher,
 			session: {
-				secret: "test-session-secret-32-chars-long!!",
+				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 				expiresIn: "7d",
 				cookieName: "credentials-session",
 			},
@@ -236,7 +236,7 @@ describe("credentials - handleMe coverage", () => {
 			storage,
 			hasher,
 			session: {
-				secret: "test-session-secret-32-chars-long!!",
+				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 				expiresIn: "7d",
 				cookieName: "credentials-session",
 			},
@@ -270,7 +270,7 @@ describe("credentials - handleLogout coverage", () => {
 			storage,
 			hasher,
 			session: {
-				secret: "test-session-secret-32-chars-long!!",
+				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 				expiresIn: "7d",
 				cookieName: "credentials-session",
 			},
@@ -302,7 +302,7 @@ describe("credentials - handleLogout coverage", () => {
 			storage,
 			hasher,
 			session: {
-				secret: "test-session-secret-32-chars-long!!",
+				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 				expiresIn: "7d",
 				cookieName: "credentials-session",
 			},

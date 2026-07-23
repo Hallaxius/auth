@@ -1,7 +1,19 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import type { StateStore } from "../../internal/state";
 import { RedisStateStore, ResilientRedisStateStore } from "../redis";
 
-let mockRedisClient: any;
+interface MockRedisClient {
+	connect: ReturnType<typeof vi.fn>;
+	quit: ReturnType<typeof vi.fn>;
+	exists: ReturnType<typeof vi.fn>;
+	set: ReturnType<typeof vi.fn>;
+	eval: ReturnType<typeof vi.fn>;
+	del: ReturnType<typeof vi.fn>;
+	on: ReturnType<typeof vi.fn>;
+	has?: ReturnType<typeof vi.fn>;
+}
+
+let mockRedisClient: MockRedisClient;
 
 beforeEach(() => {
 	mockRedisClient = {
@@ -107,7 +119,7 @@ describe("RedisStateStore", () => {
 
 describe("ResilientRedisStateStore", () => {
 	let resilientStore: ResilientRedisStateStore;
-	let mockFallback: any;
+	let mockFallback: StateStore;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -144,7 +156,9 @@ describe("ResilientRedisStateStore", () => {
 		await resilientStore.set("test-id", 300000);
 
 		expect(mockFallback.set).toHaveBeenCalled();
-		expect((resilientStore as any).circuitOpen).toBe(true);
+		expect(
+			(resilientStore as unknown as { circuitOpen: boolean }).circuitOpen,
+		).toBe(true);
 	});
 
 	test("should retry failed operations with exponential backoff", async () => {
@@ -166,16 +180,20 @@ describe("ResilientRedisStateStore", () => {
 		mockRedisClient.set = vi.fn().mockRejectedValue(redisError);
 
 		await resilientStore.set("test-id", 300000);
-		expect((resilientStore as any).circuitOpen).toBe(true);
+		expect(
+			(resilientStore as unknown as { circuitOpen: boolean }).circuitOpen,
+		).toBe(true);
 
 		vi.advanceTimersByTime(30000);
-		expect((resilientStore as any).circuitOpen).toBe(false);
+		expect(
+			(resilientStore as unknown as { circuitOpen: boolean }).circuitOpen,
+		).toBe(false);
 
 		vi.useRealTimers();
 	});
 
 	test("should use fallback when circuit is open", async () => {
-		(resilientStore as any).circuitOpen = true;
+		(resilientStore as unknown as { circuitOpen: boolean }).circuitOpen = true;
 
 		await resilientStore.setIfAbsent("test-id", 300000);
 

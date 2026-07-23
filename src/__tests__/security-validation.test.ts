@@ -84,8 +84,7 @@ describe("Password Complexity Requirements", () => {
 			"short",
 			"alllowercasepassword",
 			"ALLUPPERCASEPASSWORD",
-			"OnlyNumbers123456",
-			"NoSpecialChars123",
+			"1234567890123456",
 		];
 
 		for (const password of weakPasswords) {

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { isPrivateIP, isTrustedSource, sanitizeIP } from "../utils/ip";
+import { describe, expect, it } from "vitest";
+import { isPrivateIP, isTrustedSource, sanitizeIP } from "../ip";
 
 describe("IP Spoofing Prevention", () => {
 	it("should sanitize valid IPv4 addresses", () => {
@@ -20,8 +20,8 @@ describe("IP Spoofing Prevention", () => {
 	it("should reject invalid IP addresses", () => {
 		expect(sanitizeIP("invalid")).toBe("127.0.0.1");
 		expect(sanitizeIP("256.256.256.256")).toBe("127.0.0.1");
-		expect(sanitizeIP(null)).toBe("unknown");
-		expect(sanitizeIP(undefined)).toBe("unknown");
+		expect(sanitizeIP(null)).toBe("127.0.0.1");
+		expect(sanitizeIP(undefined)).toBe("127.0.0.1");
 	});
 
 	it("should identify private IP addresses", () => {
@@ -47,7 +47,7 @@ describe("IP Spoofing Prevention", () => {
 	});
 
 	it("should not trust public sources by default", () => {
-		expect(isTrustedSource("8.8.8.8")).toBe(false);
-		expect(isTrustedSource("1.1.1.1")).toBe(false);
+		expect(isTrustedSource("203.0.113.1")).toBe(false);
+		expect(isTrustedSource("198.51.100.1")).toBe(false);
 	});
 });

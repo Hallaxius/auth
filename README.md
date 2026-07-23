@@ -8,7 +8,7 @@
 
 ## Features
 
-> **Status:** Production Ready ✅ | **Version:** v5.0.0 | **Redis Support:** Available (optional)
+> **Status:** Production Ready ✅ | **Version:** v5.3.0 | **Redis Support:** Available (optional)
 
 - **Discord OAuth2** — Authorization code flow with PKCE (S256), CSRF protection (HMAC-SHA256)
 - **Credentials Auth** — Username/password or email/password with bcrypt/argon2, JWT sessions, role-based access
@@ -1617,6 +1617,26 @@ export const { handleLogin, handleCallback, handleLogout, handleMe } = await dis
 #### "Invalid client ID or client secret"
 
 **Solution:** Copy Client ID and Client Secret from Discord Portal → OAuth2 section. Regenerate secret if compromised.
+
+---
+
+## Recent Changes (v5.3.0)
+
+### What's New
+
+- **Modular Architecture**: Code reorganized into focused modules (credentials/, mfa/, rate-limit/)
+- **Enhanced Security**: Audit logging, security headers, improved environment validation
+- **Better DX**: Improved TypeScript types, enhanced error messages, comprehensive JSDoc
+- **Production Ready**: Complete deployment guides, monitoring setup, disaster recovery plan
+
+### Documentation
+
+- [Deployment Guide](docs/DEPLOYMENT.md) - Complete production deployment checklist
+- [Monitoring Guide](docs/MONITORING.md) - Metrics, alerting, and observability
+- [Rollback Procedures](docs/ROLLBACK.md) - Step-by-step rollback instructions
+- [Disaster Recovery](docs/DISASTER_RECOVERY.md) - Business continuity planning
+
+See [CHANGELOG.md](CHANGELOG.md) for full details.
 
 ---
 

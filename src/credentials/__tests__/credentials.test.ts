@@ -86,7 +86,7 @@ function createCredentialsConfig(
 		storage: overrides.storage ?? new InMemoryUserStorage(),
 		hasher: overrides.hasher ?? new TestHasher(),
 		session: {
-			secret: "test-session-secret-32-chars-long!!",
+			secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 			expiresIn: "7d",
 			cookieName: "credentials-session",
 		},
@@ -108,6 +108,7 @@ describe("credentials - integration flow", () => {
 	let handlers: ReturnType<typeof credentials>;
 
 	beforeEach(() => {
+		vi.clearAllMocks();
 		config = createCredentialsConfig();
 		handlers = credentials(config);
 	});
@@ -504,7 +505,7 @@ describe("BruteForceProtection - additional methods", () => {
 				"user-agent": "TestAgent/1.0",
 			},
 		});
-		const key = BruteForceProtection.extractKey(req);
+		const key = await BruteForceProtection.extractKey(req);
 		expect(key).toContain("10.0.0.1");
 		expect(key).toContain("TestAgent/1.0");
 	});
@@ -517,14 +518,14 @@ describe("BruteForceProtection - additional methods", () => {
 				"user-agent": "Agent",
 			},
 		});
-		const key = BruteForceProtection.extractKey(req);
+		const key = await BruteForceProtection.extractKey(req);
 		expect(key).toContain("10.0.0.5");
 	});
 
 	test("extractKey handles missing headers", async () => {
 		const { BruteForceProtection } = await import("../credentials");
 		const req = new Request("http://localhost");
-		const key = BruteForceProtection.extractKey(req);
+		const key = await BruteForceProtection.extractKey(req);
 		expect(key).toContain("unknown");
 	});
 

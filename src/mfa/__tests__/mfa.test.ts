@@ -68,7 +68,7 @@ function createMfaConfig(
 ) {
 	return {
 		storage: overrides.storage ?? new InMemoryMfaTestStorage(),
-		secret: overrides.secret ?? "test-mfa-secret-key-32-chars-long!",
+		secret: overrides.secret ?? process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 		issuer: overrides.issuer ?? "TestApp",
 		allowedMethods: overrides.allowedMethods ?? ["totp", "backup_codes"],
 		verifyPassword: overrides.verifyPassword,
@@ -137,6 +137,7 @@ describe("mfa - setup, verify, backup codes, disable", () => {
 	}
 
 	beforeEach(() => {
+		vi.clearAllMocks();
 		config = createMfaConfig();
 		mfaHandler = mfa(config);
 		userIdCounter = 0;

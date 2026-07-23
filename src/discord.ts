@@ -1,4 +1,5 @@
 import { MemoryCacheAdapter } from "./adapters/cache/memory";
+import { RedisStateStore } from "./adapters/state/redis";
 import { deriveStateSecret, pkce, processConfig } from "./config";
 import {
 	AuthError,
@@ -23,6 +24,7 @@ import {
 	consumeState,
 	generateState,
 	MemoryStateStore,
+	type StateStore,
 	type ValidatedState,
 	validateState,
 } from "./internal/state";
@@ -44,6 +46,7 @@ import type {
 	StoredUser,
 	UserStorage,
 } from "./types";
+import { isProduction, requireRedisStorage } from "./utils/env";
 import { GuildRoleSync } from "./utils/guild";
 
 const globalCacheAdapter = new MemoryCacheAdapter();
@@ -230,10 +233,22 @@ async function getSessionFromRequest(
  */
 function isSafeRedirect(target: string, allowedOrigins?: string[]): boolean {
 	if (typeof target !== "string" || target.length === 0) return false;
-	if (target.startsWith("//")) return false;
+
+	if (target.startsWith("/") && !target.startsWith("//")) {
+		try {
+			const parsed = new URL(target, "http://localhost");
+			return !!parsed.pathname && parsed.hostname === "localhost";
+		} catch {
+			return false;
+		}
+	}
+
 	if (/^[a-z][a-z0-9+.-]*:/i.test(target)) {
 		try {
 			const url = new URL(target);
+			if (url.protocol !== "https:") {
+				return false;
+			}
 			if (allowedOrigins && allowedOrigins.length > 0) {
 				return allowedOrigins.some((origin) => {
 					const allowedUrl = new URL(origin);
@@ -248,9 +263,8 @@ function isSafeRedirect(target: string, allowedOrigins?: string[]): boolean {
 			return false;
 		}
 	}
-	if (!target.startsWith("/")) return false;
-	if (target.includes("\\")) return false;
-	return true;
+
+	return false;
 }
 
 function sanitizeRedirect(
@@ -269,7 +283,16 @@ interface HandlerContext {
 
 function createHandlers(ctx: HandlerContext) {
 	const { config, client, storage } = ctx;
-	const stateStore = new MemoryStateStore();
+
+	const isProd = isProduction();
+	requireRedisStorage(
+		config.csrf.enabled ? undefined : undefined,
+		"Discord OAuth State Store",
+	);
+
+	const stateStore: StateStore = isProd
+		? new RedisStateStore()
+		: new MemoryStateStore();
 	const cookieName = config.session.cookieName ?? "discord-auth-session";
 	const cookiePath = config.session.cookiePath ?? "/";
 	const sameSite = config.session.sameSite ?? defaultSameSite();
@@ -470,7 +493,7 @@ function createHandlers(ctx: HandlerContext) {
 		const sessionToken = await signToken(
 			sessionPayload,
 			config.session.secret,
-			config.session.expiresIn ?? "7d",
+			config.session.expiresIn ?? "15m",
 		);
 
 		const cookie = createSessionCookie(
@@ -565,7 +588,7 @@ function createHandlers(ctx: HandlerContext) {
 		handleCallback,
 		handleLogout,
 		handleMe,
-		dispose: () => stateStore.dispose(),
+		dispose: () => stateStore.dispose?.(),
 	};
 }
 
@@ -638,7 +661,7 @@ export async function discord(
 		throw new Error("discord() requires a secret");
 	}
 
-	const client = new DiscordClient(clientId, clientSecret);
+	const client = new DiscordClient({ clientId, clientSecret });
 
 	const derivedStateSecret = stateSecret ?? (await deriveStateSecret(secret));
 

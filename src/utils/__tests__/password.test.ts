@@ -1,6 +1,5 @@
 import { describe, expect, test } from "vitest";
 import {
-	BcryptHasher,
 	benchmarkPasswordHasher,
 	createPasswordHasher,
 	Pbkdf2Hasher,
@@ -65,41 +64,6 @@ describe("Pbkdf2Hasher", () => {
 	});
 });
 
-describe("BcryptHasher", () => {
-	test("should hash a password", async () => {
-		const hasher = new BcryptHasher();
-		const hash = await hasher.hash("test-password");
-
-		expect(hash).toBeDefined();
-		expect(hash).toContain("$bcrypt$");
-	});
-
-	test("should verify a correct password", async () => {
-		const hasher = new BcryptHasher();
-		const password = "test-password";
-		const hash = await hasher.hash(password);
-
-		const valid = await hasher.verify(password, hash);
-		expect(valid).toBe(true);
-	});
-
-	test("should reject an incorrect password", async () => {
-		const hasher = new BcryptHasher();
-		const password = "test-password";
-		const hash = await hasher.hash(password);
-
-		const valid = await hasher.verify("wrong-password", hash);
-		expect(valid).toBe(false);
-	});
-
-	test("should use custom salt rounds", async () => {
-		const hasher = new BcryptHasher({ saltRounds: 8 });
-		const hash = await hasher.hash("test-password");
-
-		expect(hash).toContain("$bcrypt$8$");
-	});
-});
-
 describe("benchmarkPasswordHasher", () => {
 	test("should benchmark PBKDF2 hasher", async () => {
 		const hasher = new Pbkdf2Hasher({ iterations: 10000 });
@@ -133,10 +97,5 @@ describe("createPasswordHasher", () => {
 	test("should create PBKDF2 hasher explicitly", () => {
 		const hasher = createPasswordHasher("pbkdf2");
 		expect(hasher).toBeInstanceOf(Pbkdf2Hasher);
-	});
-
-	test("should create Bcrypt hasher", () => {
-		const hasher = createPasswordHasher("bcrypt");
-		expect(hasher).toBeInstanceOf(BcryptHasher);
 	});
 });

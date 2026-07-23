@@ -87,6 +87,7 @@ describe("passwordReset", () => {
 	let config: PasswordResetConfig;
 
 	beforeEach(() => {
+		vi.clearAllMocks();
 		config = makeConfig();
 		manager = passwordReset(config);
 	});
@@ -149,11 +150,19 @@ describe("passwordReset", () => {
 						capturedToken = `${selector}.${validator}`;
 					},
 				},
+				userLookup: async () => ({
+					userId: "user-1",
+					email: "test@example.com",
+					username: "testuser",
+				}),
 			});
 			manager = passwordReset(config);
 			await manager.requestReset("user@example.com");
+			expect(capturedToken).toBeTruthy();
 			await manager.consumeResetToken(capturedToken);
-			await expect(manager.consumeResetToken(capturedToken)).rejects.toThrow();
+			await expect(manager.consumeResetToken(capturedToken)).rejects.toThrow(
+				"Invalid or expired reset token",
+			);
 		});
 	});
 

@@ -549,6 +549,9 @@ describe("revoke", () => {
 	});
 
 	it("handles token revocation failure gracefully", async () => {
+		const consoleWarnSpy = vi
+			.spyOn(console, "warn")
+			.mockImplementation(() => {});
 		mockStorage.findByDiscordId.mockResolvedValue({
 			discordId: "user-id",
 			username: "testuser",
@@ -564,6 +567,8 @@ describe("revoke", () => {
 			revoke("user-id", mockStorage, "client-id", "client-secret"),
 		).resolves.toBeUndefined();
 		expect(mockStorage.delete).toHaveBeenCalledWith("user-id");
+		expect(consoleWarnSpy).toHaveBeenCalled();
+		consoleWarnSpy.mockRestore();
 	});
 
 	it("throws AuthError on storage read failure", async () => {

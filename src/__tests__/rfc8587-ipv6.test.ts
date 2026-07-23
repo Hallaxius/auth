@@ -76,7 +76,7 @@ describe("IPv6 Support", () => {
 		const ipv4 = "192.168.1.1";
 		const normalized = normalizeIpForRateLimit(ipv4);
 
-		expect(normalized).toBe("192.168.1.1");
+		expect(normalized).toBe("192.168.1.0/24");
 	});
 
 	test("should handle full IPv6 address", () => {
@@ -117,54 +117,55 @@ describe("IPv6 Support", () => {
 });
 
 describe("extractIpFromRequest", () => {
-	test("should extract IP from x-forwarded-for", () => {
+	test("should extract IP from x-forwarded-for", async () => {
 		const request = new Request("http://example.com", {
 			headers: {
 				"x-forwarded-for": "192.168.1.1, 10.0.0.1",
 			},
 		});
 
-		const ip = extractIpFromRequest(request);
+		const ip = await extractIpFromRequest(request);
 		expect(ip).toBe("192.168.1.1");
 	});
 
-	test("should extract IP from x-real-ip", () => {
+	test("should extract IP from x-real-ip", async () => {
 		const request = new Request("http://example.com", {
 			headers: {
 				"x-real-ip": "192.168.1.1",
 			},
 		});
 
-		const ip = extractIpFromRequest(request);
+		const ip = await extractIpFromRequest(request);
 		expect(ip).toBe("192.168.1.1");
 	});
 
-	test("should extract IP from cf-connecting-ip", () => {
+	test("should extract IP from cf-connecting-ip", async () => {
 		const request = new Request("http://example.com", {
 			headers: {
-				"cf-connecting-ip": "192.168.1.1",
+				"cf-connecting-ip": "104.16.0.1",
+				"cf-ray": "test-ray-id",
 			},
 		});
 
-		const ip = extractIpFromRequest(request);
-		expect(ip).toBe("192.168.1.1");
+		const ip = await extractIpFromRequest(request);
+		expect(ip).toBe("104.16.0.1");
 	});
 
-	test("should return unknown if no IP headers", () => {
+	test("should return fingerprint if no IP headers", async () => {
 		const request = new Request("http://example.com");
 
-		const ip = extractIpFromRequest(request);
-		expect(ip).toBe("unknown");
+		const ip = await extractIpFromRequest(request);
+		expect(ip).toMatch(/^fp:[a-f0-9]{16}$/);
 	});
 
-	test("should handle IPv6 in x-forwarded-for", () => {
+	test("should handle IPv6 in x-forwarded-for", async () => {
 		const request = new Request("http://example.com", {
 			headers: {
 				"x-forwarded-for": "2001:db8::1, 10.0.0.1",
 			},
 		});
 
-		const ip = extractIpFromRequest(request);
+		const ip = await extractIpFromRequest(request);
 		expect(ip).toBe("2001:db8::1");
 	});
 });

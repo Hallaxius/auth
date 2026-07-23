@@ -17,13 +17,18 @@ const DISCORD_API = "https://discord.com/api/v10";
 const DISCORD_AUTH = "https://discord.com/oauth2/authorize";
 const DEFAULT_TIMEOUT = 5000;
 
-export class DiscordClient {
-	private clientId: string;
-	private clientSecret: string;
+export interface DiscordClientConfig {
+	clientId: string;
+	clientSecret: string;
+	apiBaseUrl?: string;
+	timeout?: number;
+}
 
-	constructor(clientId: string, clientSecret: string) {
-		this.clientId = clientId;
-		this.clientSecret = clientSecret;
+export class DiscordClient {
+	private config: DiscordClientConfig;
+
+	constructor(config: DiscordClientConfig) {
+		this.config = config;
 	}
 
 	generateAuthUrl(
@@ -32,7 +37,7 @@ export class DiscordClient {
 			codeChallengeMethod?: string;
 		},
 	): string {
-		const url = new URL(DISCORD_AUTH);
+		const url = new URL(this.config.apiBaseUrl ?? DISCORD_AUTH);
 		url.searchParams.set("client_id", params.clientId);
 		url.searchParams.set("redirect_uri", params.redirectUri);
 		url.searchParams.set("response_type", params.responseType ?? "code");
@@ -52,8 +57,8 @@ export class DiscordClient {
 		params: TokenRequestParams,
 	): Promise<DiscordTokenResponse> {
 		const body = new URLSearchParams({
-			client_id: params.clientId,
-			client_secret: params.clientSecret,
+			client_id: this.config.clientId,
+			client_secret: this.config.clientSecret,
 			grant_type: params.grantType ?? "authorization_code",
 			code: params.code,
 			redirect_uri: params.redirectUri,
@@ -85,7 +90,7 @@ export class DiscordClient {
 		try {
 			res = await fetch(input, {
 				...init,
-				signal: AbortSignal.timeout(DEFAULT_TIMEOUT),
+				signal: AbortSignal.timeout(this.config.timeout ?? DEFAULT_TIMEOUT),
 			});
 		} catch (error) {
 			if (error instanceof Error && error.name === "AbortError") {
@@ -155,8 +160,8 @@ export class DiscordClient {
 		params: RefreshTokenParams,
 	): Promise<DiscordTokenResponse> {
 		const body = new URLSearchParams({
-			client_id: params.clientId,
-			client_secret: params.clientSecret,
+			client_id: this.config.clientId,
+			client_secret: this.config.clientSecret,
 			grant_type: "refresh_token",
 			refresh_token: params.refreshToken,
 		});
@@ -205,8 +210,8 @@ export class DiscordClient {
 				if ((status === 401 || status === 403) && isExpired) {
 					try {
 						const newTokens = await this.refreshToken({
-							clientId: this.clientId,
-							clientSecret: this.clientSecret,
+							clientId: this.config.clientId,
+							clientSecret: this.config.clientSecret,
 							refreshToken: currentRefreshToken,
 						});
 						currentAccessToken = newTokens.access_token;
@@ -270,8 +275,8 @@ export class DiscordClient {
 
 	async revokeToken(params: RevokeTokenParams): Promise<void> {
 		const body = new URLSearchParams({
-			client_id: params.clientId,
-			client_secret: params.clientSecret,
+			client_id: this.config.clientId,
+			client_secret: this.config.clientSecret,
 			token: params.accessToken,
 		});
 		const res = await this.fetchWithRateLimitHandling(

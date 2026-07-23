@@ -1,22 +1,10 @@
+import { hexEncode, hexDecode } from "../utils/hex";
+
 const ALGORITHM = "AES-GCM";
 const IV_LENGTH = 16;
 const SALT_LENGTH = 16;
 const PBKDF2_ITERATIONS = 100_000;
 const KEY_LENGTH = 256;
-
-function hexEncode(bytes: Uint8Array): string {
-	return Array.from(bytes)
-		.map((b) => b.toString(16).padStart(2, "0"))
-		.join("");
-}
-
-function hexDecode(hex: string): Uint8Array {
-	const bytes = new Uint8Array(hex.length / 2);
-	for (let i = 0; i < hex.length; i += 2) {
-		bytes[i / 2] = Number.parseInt(hex.slice(i, i + 2), 16);
-	}
-	return bytes;
-}
 
 async function deriveKey(secret: string, salt: Uint8Array): Promise<CryptoKey> {
 	const encoder = new TextEncoder();

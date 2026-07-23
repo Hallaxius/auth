@@ -272,7 +272,7 @@ function createMockConfig(
 	return {
 		clientId: "test-client-id",
 		clientSecret: "test-client-secret",
-		secret: "test-secret-key-32-chars-long!!",
+		secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 		redirectUri: "http://localhost:3000/auth/callback",
 		scopes: ["identify", "email"],
 		pkce: true,
@@ -293,6 +293,7 @@ describe("discord - OAuth2 flow integration", () => {
 	let handlers: Awaited<ReturnType<typeof discord>>;
 
 	beforeEach(() => {
+		vi.clearAllMocks();
 		storage = new MockStorage();
 		config = createMockConfig({ storage });
 		mockDiscordFetch(createMockDiscordClient());

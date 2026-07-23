@@ -97,7 +97,7 @@ describe("middleware - session", () => {
 	test("returns null for missing cookie", async () => {
 		const request = new Request("http://localhost/");
 		const result = await session(request, {
-			secret: "test-secret",
+			secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 			cookieName: "auth-session",
 		});
 		expect(result).toBeNull();
@@ -108,7 +108,7 @@ describe("middleware - session", () => {
 			headers: { Cookie: "auth-session=invalid-token" },
 		});
 		const result = await session(request, {
-			secret: "test-secret",
+			secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 			cookieName: "auth-session",
 		});
 		expect(result).toBeNull();
@@ -118,7 +118,9 @@ describe("middleware - session", () => {
 describe("middleware - auth", () => {
 	test("allows access to public paths", async () => {
 		const middleware = auth({
-			cookies: [{ name: "auth-session", secret: "test-secret" }],
+			cookies: [
+				{ name: "auth-session", secret: (process.env.TEST_SECRET || "fallback-32-char-secret-key!!") },
+			],
 			publicPaths: ["/login", "/register", "/public/*"],
 			loginUrl: "/login",
 		});
@@ -130,7 +132,9 @@ describe("middleware - auth", () => {
 
 	test("redirects to login for protected paths without session", async () => {
 		const middleware = auth({
-			cookies: [{ name: "auth-session", secret: "test-secret" }],
+			cookies: [
+				{ name: "auth-session", secret: (process.env.TEST_SECRET || "fallback-32-char-secret-key!!") },
+			],
 			publicPaths: ["/login"],
 			loginUrl: "/login",
 		});
@@ -146,8 +150,11 @@ describe("middleware - auth", () => {
 	test("allows access with valid session from first cookie", async () => {
 		const middleware = auth({
 			cookies: [
-				{ name: "auth-session", secret: "secret1" },
-				{ name: "backup-session", secret: "secret2" },
+				{ name: "auth-session", secret: (process.env.TEST_SECRET || "fallback-32-char-secret-key!!-1") },
+				{
+					name: "backup-session",
+					secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!-2",
+				},
 			],
 			publicPaths: ["/login"],
 			loginUrl: "/login",
@@ -158,7 +165,7 @@ describe("middleware - auth", () => {
 			.setProtectedHeader({ alg: "HS256" })
 			.setIssuedAt()
 			.setExpirationTime("1h")
-			.sign(new TextEncoder().encode("secret1"));
+			.sign(new TextEncoder().encode((process.env.TEST_SECRET || "fallback-32-char-secret-key!!-1")));
 
 		const req = new Request("http://localhost/dashboard", {
 			headers: { Cookie: `auth-session=${token}` },
@@ -170,8 +177,11 @@ describe("middleware - auth", () => {
 	test("allows access with valid session from second cookie", async () => {
 		const middleware = auth({
 			cookies: [
-				{ name: "auth-session", secret: "secret1" },
-				{ name: "backup-session", secret: "secret2" },
+				{ name: "auth-session", secret: (process.env.TEST_SECRET || "fallback-32-char-secret-key!!-1") },
+				{
+					name: "backup-session",
+					secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!-2",
+				},
 			],
 			publicPaths: ["/login"],
 			loginUrl: "/login",
@@ -182,7 +192,7 @@ describe("middleware - auth", () => {
 			.setProtectedHeader({ alg: "HS256" })
 			.setIssuedAt()
 			.setExpirationTime("1h")
-			.sign(new TextEncoder().encode("secret2"));
+			.sign(new TextEncoder().encode("test-secret-key-minimum-32-chars-2"));
 
 		const req = new Request("http://localhost/dashboard", {
 			headers: { Cookie: `backup-session=${token}` },
@@ -193,7 +203,9 @@ describe("middleware - auth", () => {
 
 	test("redirects with encoded redirect parameter", async () => {
 		const middleware = auth({
-			cookies: [{ name: "auth-session", secret: "test-secret" }],
+			cookies: [
+				{ name: "auth-session", secret: (process.env.TEST_SECRET || "fallback-32-char-secret-key!!") },
+			],
 			publicPaths: ["/login"],
 			loginUrl: "/login",
 		});
@@ -211,7 +223,7 @@ describe("middleware - auth", () => {
 describe("middleware - role", () => {
 	test("allows access when user has required role", async () => {
 		const middleware = role({
-			secret: "test-secret",
+			secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 			cookieName: "auth-session",
 			roles: {
 				"/admin/*": ["admin"],
@@ -229,7 +241,7 @@ describe("middleware - role", () => {
 			.setProtectedHeader({ alg: "HS256" })
 			.setIssuedAt()
 			.setExpirationTime("1h")
-			.sign(new TextEncoder().encode("test-secret"));
+			.sign(new TextEncoder().encode((process.env.TEST_SECRET || "fallback-32-char-secret-key!!")));
 
 		const req = new Request("http://localhost/admin/dashboard", {
 			headers: { Cookie: `auth-session=${token}` },
@@ -240,7 +252,7 @@ describe("middleware - role", () => {
 
 	test("denies access when user lacks required role", async () => {
 		const middleware = role({
-			secret: "test-secret",
+			secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 			cookieName: "auth-session",
 			roles: {
 				"/admin/*": ["admin"],
@@ -257,7 +269,7 @@ describe("middleware - role", () => {
 			.setProtectedHeader({ alg: "HS256" })
 			.setIssuedAt()
 			.setExpirationTime("1h")
-			.sign(new TextEncoder().encode("test-secret"));
+			.sign(new TextEncoder().encode((process.env.TEST_SECRET || "fallback-32-char-secret-key!!")));
 
 		const req = new Request("http://localhost/admin/dashboard", {
 			headers: { Cookie: `auth-session=${token}` },
@@ -273,7 +285,7 @@ describe("middleware - role", () => {
 
 	test("redirects to login when no session", async () => {
 		const middleware = role({
-			secret: "test-secret",
+			secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 			cookieName: "auth-session",
 			roles: { "/admin/*": ["admin"] },
 			loginUrl: "/login",
@@ -288,7 +300,7 @@ describe("middleware - role", () => {
 
 	test("allows access when path has no role requirements", async () => {
 		const middleware = role({
-			secret: "test-secret",
+			secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 			cookieName: "auth-session",
 			roles: { "/admin/*": ["admin"] },
 			loginUrl: "/login",
@@ -303,7 +315,7 @@ describe("middleware - role", () => {
 			.setProtectedHeader({ alg: "HS256" })
 			.setIssuedAt()
 			.setExpirationTime("1h")
-			.sign(new TextEncoder().encode("test-secret"));
+			.sign(new TextEncoder().encode((process.env.TEST_SECRET || "fallback-32-char-secret-key!!")));
 
 		const req = new Request("http://localhost/public", {
 			headers: { Cookie: `auth-session=${token}` },
@@ -363,13 +375,15 @@ describe("middleware - combine", () => {
 
 	test("works with auth and role middleware combination", async () => {
 		const authMiddleware = auth({
-			cookies: [{ name: "auth-session", secret: "test-secret" }],
+			cookies: [
+				{ name: "auth-session", secret: (process.env.TEST_SECRET || "fallback-32-char-secret-key!!") },
+			],
 			publicPaths: ["/login"],
 			loginUrl: "/login",
 		});
 
 		const roleMiddleware = role({
-			secret: "test-secret",
+			secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
 			cookieName: "auth-session",
 			roles: { "/admin/*": ["admin"] },
 			loginUrl: "/login",

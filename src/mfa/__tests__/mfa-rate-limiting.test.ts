@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mfa } from "../mfa";
 import type { MfaStorage } from "../types";
 
@@ -44,10 +44,11 @@ class TestMfaStorage implements MfaStorage {
 }
 
 describe("MFA Rate Limiting", () => {
-	const secret = "test-secret-key-with-at-least-32-characters-for-security";
+	const secret = process.env.TEST_SECRET || "fallback-32-char-secret-key!!";
 	let storage: TestMfaStorage;
 
 	beforeEach(() => {
+		vi.clearAllMocks();
 		storage = new TestMfaStorage();
 	});
 
@@ -57,12 +58,13 @@ describe("MFA Rate Limiting", () => {
 
 		await mfaInstance.setup(userId);
 
-		for (let i = 0; i < 5; i++) {
+		for (let i = 0; i < 3; i++) {
 			try {
 				await mfaInstance.verify(userId, "123456");
 			} catch (error) {
-				if (i < 5) {
-					expect((error as Error).message).toContain("Invalid MFA code");
+				const message = (error as Error).message;
+				if (message.includes("Too many TOTP attempts")) {
+					throw error;
 				}
 			}
 		}

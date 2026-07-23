@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "./pbkdf2";
 
 export function constantTimeCompare(a: Uint8Array, b: Uint8Array): boolean {
 	if (a.length !== b.length) {

@@ -7,13 +7,13 @@ describe("DiscordClient", () => {
 	const mockClientSecret = "test-client-secret";
 
 	beforeEach(() => {
-		client = new DiscordClient(mockClientId, mockClientSecret);
+		client = new DiscordClient({ clientId: mockClientId, clientSecret: mockClientSecret });
 		vi.clearAllMocks();
 	});
 
 	describe("constructor", () => {
 		it("creates client with credentials", () => {
-			const testClient = new DiscordClient("id123", "secret456");
+			const testClient = new DiscordClient({ clientId: "id123", clientSecret: "secret456" });
 			expect(testClient).toBeInstanceOf(DiscordClient);
 		});
 	});
@@ -117,17 +117,37 @@ describe("DiscordClient", () => {
 			const error2 = { code: "token_expired" };
 			const error3 = { code: "Expired" };
 
-			expect((client as any).isExpiredError(error1)).toBe(true);
-			expect((client as any).isExpiredError(error2)).toBe(true);
-			expect((client as any).isExpiredError(error3)).toBe(true);
+			expect(
+				(
+					client as unknown as { isExpiredError: (e: unknown) => boolean }
+				).isExpiredError(error1),
+			).toBe(true);
+			expect(
+				(
+					client as unknown as { isExpiredError: (e: unknown) => boolean }
+				).isExpiredError(error2),
+			).toBe(true);
+			expect(
+				(
+					client as unknown as { isExpiredError: (e: unknown) => boolean }
+				).isExpiredError(error3),
+			).toBe(true);
 		});
 
 		it("detects expired error from message", () => {
 			const error1 = { message: "Token has expired" };
 			const error2 = { message: "token EXPIRED" };
 
-			expect((client as any).isExpiredError(error1)).toBe(true);
-			expect((client as any).isExpiredError(error2)).toBe(true);
+			expect(
+				(
+					client as unknown as { isExpiredError: (e: unknown) => boolean }
+				).isExpiredError(error1),
+			).toBe(true);
+			expect(
+				(
+					client as unknown as { isExpiredError: (e: unknown) => boolean }
+				).isExpiredError(error2),
+			).toBe(true);
 		});
 
 		it("returns false for non-expired errors", () => {
@@ -137,11 +157,47 @@ describe("DiscordClient", () => {
 			const error4 = undefined;
 			const error5 = "string error";
 
-			expect((client as any).isExpiredError(error1)).toBe(false);
-			expect((client as any).isExpiredError(error2)).toBe(false);
-			expect((client as any).isExpiredError(error3)).toBe(false);
-			expect((client as any).isExpiredError(error4)).toBe(false);
-			expect((client as any).isExpiredError(error5)).toBe(false);
+			expect(
+				(
+					client as unknown as { isExpiredError: (e: unknown) => boolean }
+				).isExpiredError(error1),
+			).toBe(false);
+			expect(
+				(
+					client as unknown as { isExpiredError: (e: unknown) => boolean }
+				).isExpiredError(error2),
+			).toBe(false);
+			expect(
+				(
+					client as unknown as { isExpiredError: (e: unknown) => boolean }
+				).isExpiredError(error3),
+			).toBe(false);
+			expect(
+				(
+					client as unknown as { isExpiredError: (e: unknown) => boolean }
+				).isExpiredError(error4),
+			).toBe(false);
+			expect(
+				(
+					client as unknown as { isExpiredError: (e: unknown) => boolean }
+				).isExpiredError(error5),
+			).toBe(false);
+		});
+
+		it("handles error objects without code or message", () => {
+			const error1 = { status: 401 };
+			const error2 = { foo: "bar" };
+
+			expect(
+				(
+					client as unknown as { isExpiredError: (e: unknown) => boolean }
+				).isExpiredError(error1),
+			).toBe(false);
+			expect(
+				(
+					client as unknown as { isExpiredError: (e: unknown) => boolean }
+				).isExpiredError(error2),
+			).toBe(false);
 		});
 	});
 
@@ -153,11 +209,41 @@ describe("DiscordClient", () => {
 			const error4 = {};
 			const error5 = null;
 
-			expect((client as any).getErrorStatus(error1)).toBe(401);
-			expect((client as any).getErrorStatus(error2)).toBe(403);
-			expect((client as any).getErrorStatus(error3)).toBeUndefined();
-			expect((client as any).getErrorStatus(error4)).toBeUndefined();
-			expect((client as any).getErrorStatus(error5)).toBeUndefined();
+			expect(
+				(
+					client as unknown as {
+						getErrorStatus: (e: unknown) => number | undefined;
+					}
+				).getErrorStatus(error1),
+			).toBe(401);
+			expect(
+				(
+					client as unknown as {
+						getErrorStatus: (e: unknown) => number | undefined;
+					}
+				).getErrorStatus(error2),
+			).toBe(403);
+			expect(
+				(
+					client as unknown as {
+						getErrorStatus: (e: unknown) => number | undefined;
+					}
+				).getErrorStatus(error3),
+			).toBeUndefined();
+			expect(
+				(
+					client as unknown as {
+						getErrorStatus: (e: unknown) => number | undefined;
+					}
+				).getErrorStatus(error4),
+			).toBeUndefined();
+			expect(
+				(
+					client as unknown as {
+						getErrorStatus: (e: unknown) => number | undefined;
+					}
+				).getErrorStatus(error5),
+			).toBeUndefined();
 		});
 	});
 });

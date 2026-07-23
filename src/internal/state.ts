@@ -86,12 +86,17 @@ export interface StateStore {
 	set(id: string, ttlMs: number): Promise<void>;
 	setIfAbsent(id: string, ttlMs: number): Promise<boolean>;
 	delete(id: string): Promise<void>;
+	dispose?(): void;
 }
 
 export class MemoryStateStore implements StateStore {
-	private store = new LruCache<string, number>(10_000);
+	private store: LruCache<string, number>;
 	private locks = new Map<string, Promise<void>>();
 	public disposed: boolean = false;
+
+	constructor(maxEntries: number = 10_000) {
+		this.store = new LruCache(maxEntries);
+	}
 
 	async has(id: string): Promise<boolean> {
 		return this.store.has(id);

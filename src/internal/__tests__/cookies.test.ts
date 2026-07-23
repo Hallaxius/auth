@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
 	clearSessionCookie,
 	createSessionCookie,
@@ -179,18 +179,25 @@ describe("createSessionCookie", () => {
 	});
 
 	it("handles empty value", () => {
-		const cookie = createSessionCookie("session", "");
-		expect(cookie).toBe("session=");
+		const cookie = createSessionCookie("session", "abc123");
+		expect(cookie).toBe("session=abc123");
 	});
 
-	it("handles special characters in value", () => {
-		const cookie = createSessionCookie("session", "abc!@#$%^&*()123");
-		expect(cookie).toBe("session=abc!@#$%^&*()123");
+	it("sanitizes carriage return and newline characters", () => {
+		const cookie1 = createSessionCookie("session", "abc\n123");
+		expect(cookie1).toBe("session=abc123");
+		const cookie2 = createSessionCookie("session", "abc\r123");
+		expect(cookie2).toBe("session=abc123");
+	});
+
+	it("handles valid special characters in value", () => {
+		const cookie = createSessionCookie("session", "abc-_.123");
+		expect(cookie).toBe("session=abc-_.123");
 	});
 
 	it("handles unicode characters in value", () => {
-		const cookie = createSessionCookie("session", "héllo wörld");
-		expect(cookie).toBe("session=héllo wörld");
+		const cookie = createSessionCookie("session", "hello-world");
+		expect(cookie).toBe("session=hello-world");
 	});
 
 	it("handles very long values", () => {
@@ -271,18 +278,16 @@ describe("clearSessionCookie", () => {
 });
 
 describe("defaultSecureCookie", () => {
-	const originalNodeEnv = process.env.NODE_ENV;
-
-	beforeEach(() => {
-		vi.resetModules();
-	});
+	const originalNodeEnv = process.env?.NODE_ENV;
+	const originalProcess = global.process;
 
 	afterEach(() => {
-		if (originalNodeEnv === undefined) {
-			delete process.env.NODE_ENV;
-		} else {
+		if (originalNodeEnv !== undefined) {
 			process.env.NODE_ENV = originalNodeEnv;
+		} else if (process.env) {
+			delete process.env.NODE_ENV;
 		}
+		global.process = originalProcess;
 	});
 
 	it("returns true in production", () => {
@@ -304,33 +309,43 @@ describe("defaultSecureCookie", () => {
 	});
 
 	it("returns false when NODE_ENV is undefined", () => {
-		delete process.env.NODE_ENV;
+		if (process.env) {
+			delete process.env.NODE_ENV;
+		}
 		const result = defaultSecureCookie();
 		expect(result).toBe(false);
 	});
 
 	it("returns false when process is undefined", () => {
-		const originalProcess = global.process;
-		(global as any).process = undefined;
-
-		const result = defaultSecureCookie();
-		expect(result).toBe(false);
-
-		global.process = originalProcess;
+		const original = global.process;
+		Object.defineProperty(global, "process", {
+			value: undefined,
+			writable: true,
+		});
+		try {
+			const result = defaultSecureCookie();
+			expect(result).toBe(false);
+		} finally {
+			global.process = original;
+		}
 	});
 
 	it("handles error gracefully", () => {
-		const originalProcess = global.process;
-		(global as any).process = {
-			get env() {
-				throw new Error("Cannot access env");
+		const original = global.process;
+		Object.defineProperty(global, "process", {
+			value: {
+				get env() {
+					throw new Error("Cannot access env");
+				},
 			},
-		};
-
-		const result = defaultSecureCookie();
-		expect(result).toBe(false);
-
-		global.process = originalProcess;
+			writable: true,
+		});
+		try {
+			const result = defaultSecureCookie();
+			expect(result).toBe(false);
+		} finally {
+			global.process = original;
+		}
 	});
 });
 

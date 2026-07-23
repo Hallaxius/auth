@@ -115,7 +115,6 @@ export {
 	constantTimeCompareStrings,
 } from "./utils/constant-time";
 export {
-	BcryptHasher,
 	type BcryptOptions,
 	benchmarkPasswordHasher,
 	createPasswordHasher,
@@ -129,3 +128,21 @@ export {
 	jsonResponse,
 	redirectResponse,
 } from "./utils/response";
+export {
+	securityHeaders,
+	applySecurityHeaders,
+	defaultSecurityHeaders,
+	type SecurityHeadersConfig,
+	type CspConfig,
+	type HstsConfig,
+	type PermissionsPolicyConfig,
+} from "./utils/security-headers";
+export {
+	createAuditLogger,
+	auditLogger,
+	type AuditLogger,
+	type AuditEvent,
+	type AuditEventType,
+	type AuditLogStorage,
+	type AuditLogFilter,
+} from "./utils/audit-logger";

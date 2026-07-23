@@ -109,10 +109,10 @@ describe("rateLimit - Full Coverage", () => {
 });
 
 describe("normalizeIpForRateLimit", () => {
-	test("returns IPv4 address unchanged", () => {
-		expect(normalizeIpForRateLimit("192.168.1.1")).toBe("192.168.1.1");
-		expect(normalizeIpForRateLimit("10.0.0.1")).toBe("10.0.0.1");
-		expect(normalizeIpForRateLimit("127.0.0.1")).toBe("127.0.0.1");
+	test("masks IPv4 address to /24", () => {
+		expect(normalizeIpForRateLimit("192.168.1.1")).toBe("192.168.1.0/24");
+		expect(normalizeIpForRateLimit("10.0.0.1")).toBe("10.0.0.0/24");
+		expect(normalizeIpForRateLimit("127.0.0.1")).toBe("127.0.0.0/24");
 	});
 
 	test("masks IPv6 address to /64", () => {
@@ -133,40 +133,40 @@ describe("normalizeIpForRateLimit", () => {
 });
 
 describe("extractIpFromRequest", () => {
-	test("extracts IP from x-forwarded-for header", () => {
+	test("extracts IP from x-forwarded-for header", async () => {
 		const req = new Request("http://localhost", {
-			headers: { "x-forwarded-for": "203.0.113.195" },
+			headers: { "x-forwarded-for": "10.0.0.1" },
 		});
-		expect(extractIpFromRequest(req)).toBe("203.0.113.195");
+		expect(await extractIpFromRequest(req)).toBe("10.0.0.1");
 	});
 
-	test("extracts first IP from x-forwarded-for list", () => {
+	test("extracts first IP from x-forwarded-for list", async () => {
 		const req = new Request("http://localhost", {
 			headers: {
-				"x-forwarded-for": "203.0.113.195, 70.41.3.18, 150.172.238.178",
+				"x-forwarded-for": "10.0.0.1, 192.168.1.1, 172.16.0.1",
 			},
 		});
-		expect(extractIpFromRequest(req)).toBe("203.0.113.195");
+		expect(await extractIpFromRequest(req)).toBe("10.0.0.1");
 	});
 
-	test("extracts IP from x-real-ip header", () => {
+	test("extracts IP from x-real-ip header", async () => {
 		const req = new Request("http://localhost", {
 			headers: { "x-real-ip": "10.0.0.1" },
 		});
-		expect(extractIpFromRequest(req)).toBe("10.0.0.1");
+		expect(await extractIpFromRequest(req)).toBe("10.0.0.1");
 	});
 
-	test("falls back to socket address", () => {
+	test("falls back to socket address", async () => {
 		const req = new Request("http://localhost");
-		const ip = extractIpFromRequest(req);
+		const ip = await extractIpFromRequest(req);
 		expect(ip).toBeDefined();
 	});
 
-	test("handles IPv6 address", () => {
+	test("handles IPv6 address", async () => {
 		const req = new Request("http://localhost", {
 			headers: { "x-forwarded-for": "2001:db8::1" },
 		});
-		expect(extractIpFromRequest(req)).toBe("2001:db8::1");
+		expect(await extractIpFromRequest(req)).toBe("2001:db8::1");
 	});
 });
 

@@ -1,19 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DiscordClient } from "../client";
 
-vi.stubGlobal("fetch", vi.fn());
-
 describe("DiscordClient - Full Coverage", () => {
 	let client: DiscordClient;
 	const mockClientId = "test-client-id";
 	const mockClientSecret = "test-client-secret";
+	const originalFetch = global.fetch;
 
 	beforeEach(() => {
-		client = new DiscordClient(mockClientId, mockClientSecret);
+		client = new DiscordClient({ clientId: mockClientId, clientSecret: mockClientSecret });
 		vi.clearAllMocks();
+		global.fetch = vi.fn<typeof fetch>();
 	});
 
 	afterEach(() => {
+		global.fetch = originalFetch;
 		vi.restoreAllMocks();
 	});
 
@@ -26,7 +27,7 @@ describe("DiscordClient - Full Coverage", () => {
 				token_type: "Bearer",
 			};
 
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				json: () => Promise.resolve(mockTokenResponse),
 				headers: new Headers(),
@@ -54,7 +55,7 @@ describe("DiscordClient - Full Coverage", () => {
 				expires_in: 3600,
 			};
 
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				json: () => Promise.resolve(mockTokenResponse),
 				headers: new Headers(),
@@ -68,13 +69,13 @@ describe("DiscordClient - Full Coverage", () => {
 				codeVerifier: "verifier-abc",
 			});
 
-			const callArgs = (global.fetch as any).mock.calls[0];
+			const callArgs = global.fetch.mock.calls[0];
 			const body = callArgs[1]?.body as URLSearchParams;
 			expect(body.get("code_verifier")).toBe("verifier-abc");
 		});
 
 		it("throws error on failed exchange", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 400,
 				text: () => Promise.resolve("Invalid code"),
@@ -95,7 +96,7 @@ describe("DiscordClient - Full Coverage", () => {
 	describe("fetchWithRateLimitHandling", () => {
 		it("handles successful request", async () => {
 			const mockResponse = { data: "test" };
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				json: () => Promise.resolve(mockResponse),
 				headers: new Headers(),
@@ -110,7 +111,7 @@ describe("DiscordClient - Full Coverage", () => {
 		it("handles timeout error", async () => {
 			const abortError = new Error("Timeout");
 			abortError.name = "AbortError";
-			(global.fetch as any).mockRejectedValueOnce(abortError);
+			global.fetch.mockRejectedValueOnce(abortError);
 
 			await expect(
 				client.fetchWithRateLimitHandling("https://discord.com/api/test"),
@@ -118,7 +119,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("handles network error", async () => {
-			(global.fetch as any).mockRejectedValueOnce(new Error("Network error"));
+			global.fetch.mockRejectedValueOnce(new Error("Network error"));
 
 			await expect(
 				client.fetchWithRateLimitHandling("https://discord.com/api/test"),
@@ -126,7 +127,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("handles 429 rate limit with Retry-After header", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 429,
 				headers: new Headers({ "Retry-After": "60" }),
@@ -139,7 +140,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("handles global rate limit", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 429,
 				headers: new Headers({
@@ -155,7 +156,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("handles rate limit with X-RateLimit-Remaining = 0", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 403,
 				headers: new Headers({
@@ -172,7 +173,7 @@ describe("DiscordClient - Full Coverage", () => {
 
 		it("handles rate limit using X-RateLimit-Reset for retry time", async () => {
 			const resetTime = Math.floor(Date.now() / 1000 + 45);
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 429,
 				headers: new Headers({
@@ -187,7 +188,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("handles non-OK response with error text", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 500,
 				headers: new Headers(),
@@ -202,7 +203,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("handles non-OK response when text() fails", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 500,
 				headers: new Headers(),
@@ -223,7 +224,7 @@ describe("DiscordClient - Full Coverage", () => {
 				expires_in: 3600,
 			};
 
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				json: () => Promise.resolve(mockResponse),
 				headers: new Headers(),
@@ -239,7 +240,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("includes scopes when provided", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				json: () =>
 					Promise.resolve({
@@ -257,13 +258,13 @@ describe("DiscordClient - Full Coverage", () => {
 				scopes: ["identify", "email"],
 			});
 
-			const callArgs = (global.fetch as any).mock.calls[0];
+			const callArgs = global.fetch.mock.calls[0];
 			const body = callArgs[1]?.body as URLSearchParams;
 			expect(body.get("scope")).toBe("identify email");
 		});
 
 		it("throws error on failed refresh", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 401,
 				text: () => Promise.resolve("Invalid refresh token"),
@@ -313,7 +314,7 @@ describe("DiscordClient - Full Coverage", () => {
 
 			const mockResult = { data: "success-after-refresh" };
 
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				json: () => Promise.resolve(mockNewTokens),
 				headers: new Headers(),
@@ -343,7 +344,7 @@ describe("DiscordClient - Full Coverage", () => {
 				expires_in: 3600,
 			};
 
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				json: () => Promise.resolve(mockNewTokens),
 				headers: new Headers(),
@@ -360,7 +361,7 @@ describe("DiscordClient - Full Coverage", () => {
 				.mockResolvedValueOnce({ data: "success" });
 
 			await client.fetchWithAutoRefresh("expired", "refresh", requestFn, {
-				storage: mockStorage as any,
+				storage: mockStorage as unknown as typeof mockStorage,
 				userId: "user-123",
 			});
 
@@ -375,9 +376,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("throws TOKEN_EXPIRED after max retries exceeded", async () => {
-			(global.fetch as any).mockRejectedValueOnce(
-				new Error("Refresh token invalid"),
-			);
+			global.fetch.mockRejectedValueOnce(new Error("Refresh token invalid"));
 
 			const expiredError = { code: "TOKEN_EXPIRED", status: 401 };
 			const requestFn = vi.fn().mockRejectedValue(expiredError);
@@ -392,7 +391,7 @@ describe("DiscordClient - Full Coverage", () => {
 		it("continues on refresh failure and retries", async () => {
 			const expiredError = { code: "TOKEN_EXPIRED", status: 401 };
 
-			(global.fetch as any).mockRejectedValueOnce(new Error("Refresh failed"));
+			global.fetch.mockRejectedValueOnce(new Error("Refresh failed"));
 
 			const mockResult = { data: "success" };
 			const requestFn = vi
@@ -413,7 +412,7 @@ describe("DiscordClient - Full Coverage", () => {
 
 		it("throws original error on non-expired 401", async () => {
 			const nonExpiredError = new Error("Invalid token");
-			(nonExpiredError as any).status = 401;
+			(nonExpiredError as unknown as { status?: number }).status = 401;
 
 			const requestFn = vi.fn().mockRejectedValueOnce(nonExpiredError);
 
@@ -437,7 +436,7 @@ describe("DiscordClient - Full Coverage", () => {
 
 	describe("revokeToken", () => {
 		it("revokes token successfully", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				headers: new Headers(),
 			});
@@ -452,7 +451,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("throws error on failed revoke", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 400,
 				text: () => Promise.resolve("Invalid token"),
@@ -471,7 +470,7 @@ describe("DiscordClient - Full Coverage", () => {
 
 	describe("addMember", () => {
 		it("adds member with minimal params", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				status: 201,
 				headers: new Headers(),
@@ -488,7 +487,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("adds member with nick", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				status: 204,
 				headers: new Headers(),
@@ -502,13 +501,13 @@ describe("DiscordClient - Full Coverage", () => {
 				nick: "Cool Nickname",
 			});
 
-			const callArgs = (global.fetch as any).mock.calls[0];
+			const callArgs = global.fetch.mock.calls[0];
 			const body = JSON.parse((callArgs[1]?.body as string) || "{}");
 			expect(body.nick).toBe("Cool Nickname");
 		});
 
 		it("adds member with roles", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				status: 201,
 				headers: new Headers(),
@@ -522,13 +521,13 @@ describe("DiscordClient - Full Coverage", () => {
 				roles: ["role-1", "role-2"],
 			});
 
-			const callArgs = (global.fetch as any).mock.calls[0];
+			const callArgs = global.fetch.mock.calls[0];
 			const body = JSON.parse((callArgs[1]?.body as string) || "{}");
 			expect(body.roles).toEqual(["role-1", "role-2"]);
 		});
 
 		it("throws error on failed add member", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 403,
 				text: () => Promise.resolve("Missing permissions"),
@@ -548,7 +547,7 @@ describe("DiscordClient - Full Coverage", () => {
 
 	describe("removeMember", () => {
 		it("removes member successfully", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				status: 204,
 				headers: new Headers(),
@@ -564,7 +563,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("throws error on failed remove", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 404,
 				text: () => Promise.resolve("Member not found"),
@@ -590,7 +589,7 @@ describe("DiscordClient - Full Coverage", () => {
 				avatar: "avatar-hash",
 			};
 
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				json: () => Promise.resolve(mockUser),
 				headers: new Headers(),
@@ -601,7 +600,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("throws error on failed get user", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 401,
 				text: () => Promise.resolve("Invalid access token"),
@@ -621,7 +620,7 @@ describe("DiscordClient - Full Coverage", () => {
 				{ id: "guild-2", name: "Guild 2" },
 			];
 
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				json: () => Promise.resolve(mockGuilds),
 				headers: new Headers(),
@@ -632,7 +631,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("throws error on failed get guilds", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 401,
 				text: () => Promise.resolve("Invalid token"),
@@ -652,7 +651,7 @@ describe("DiscordClient - Full Coverage", () => {
 				{ id: "conn-2", type: "twitch", name: "Twitch" },
 			];
 
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				json: () => Promise.resolve(mockConnections),
 				headers: new Headers(),
@@ -663,7 +662,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("throws error on failed get connections", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 401,
 				text: () => Promise.resolve("Unauthorized"),
@@ -684,7 +683,7 @@ describe("DiscordClient - Full Coverage", () => {
 				nick: "Member Nick",
 			};
 
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				json: () => Promise.resolve(mockMember),
 				headers: new Headers(),
@@ -699,7 +698,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("throws error on failed get member", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 404,
 				text: () => Promise.resolve("Member not found"),
@@ -719,7 +718,7 @@ describe("DiscordClient - Full Coverage", () => {
 				roles: ["role-1", "role-2", "role-3"],
 			};
 
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: true,
 				json: () => Promise.resolve(mockMember),
 				headers: new Headers(),
@@ -734,7 +733,7 @@ describe("DiscordClient - Full Coverage", () => {
 		});
 
 		it("throws error when getGuildMember fails", async () => {
-			(global.fetch as any).mockResolvedValueOnce({
+			global.fetch.mockResolvedValueOnce({
 				ok: false,
 				status: 403,
 				text: () => Promise.resolve("Forbidden"),

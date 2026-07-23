@@ -1,7 +1,5 @@
-import { pbkdf2, randomBytes, timingSafeEqual } from "node:crypto";
-import { promisify } from "node:util";
-
-const pbkdf2Async = promisify(pbkdf2);
+import { pbkdf2, randomBytes, timingSafeEqual } from "./pbkdf2";
+import { hexEncode, hexDecode } from "./hex";
 
 export interface PasswordHasher {
 	hash(password: string): Promise<string>;
@@ -19,98 +17,35 @@ export interface Pbkdf2Options {
 	saltLength?: number;
 }
 
-const DEFAULT_BCRYPT_ROUNDS = 10;
+const _DEFAULT_BCRYPT_ROUNDS = 10;
 const DEFAULT_PBKDF2_ITERATIONS = 100000;
 const DEFAULT_PBKDF2_KEY_LENGTH = 32;
 const DEFAULT_PBKDF2_DIGEST = "sha256";
-const DEFAULT_PBKDF2_SALT_LENGTH = 16;
+const DEFAULT_PBKDF2_SALT_LENGTH = 32;
 
-export class BcryptHasher implements PasswordHasher {
-	private saltRounds: number;
-
-	constructor(options?: BcryptOptions) {
-		this.saltRounds = options?.saltRounds ?? DEFAULT_BCRYPT_ROUNDS;
-	}
-
-	async hash(password: string): Promise<string> {
-		const salt = await this.generateSalt();
-		const hash = await this.pbkdf2(password, salt, {
-			iterations: this.saltRounds * 10000,
-			keyLength: 32,
-			digest: "sha256",
-		});
-		return `$bcrypt$${this.saltRounds}$${this.bufferToHex(salt)}$${this.bufferToHex(hash)}`;
-	}
-
-	async verify(password: string, hash: string): Promise<boolean> {
-		if (!hash.startsWith("$bcrypt$")) {
-			return false;
-		}
-
-		const parts = hash.split("$");
-		if (parts.length !== 5) {
-			return false;
-		}
-
-		const saltRounds = Number.parseInt(parts[2]!, 10);
-		const salt = this.hexToBuffer(parts[3]!);
-		const expectedHash = this.hexToBuffer(parts[4]!);
-
-		const actualHash = await this.pbkdf2(password, salt, {
-			iterations: saltRounds * 10000,
-			keyLength: 32,
-			digest: "sha256",
-		});
-
-		return this.constantTimeCompare(actualHash, expectedHash);
-	}
-
-	private async generateSalt(): Promise<Uint8Array> {
-		return randomBytes(16);
-	}
-
-	private async pbkdf2(
-		password: string,
-		salt: Uint8Array,
-		options: Pbkdf2Options,
-	): Promise<Uint8Array> {
-		const keyLength = options.keyLength ?? DEFAULT_PBKDF2_KEY_LENGTH;
-		const iterations = options.iterations ?? DEFAULT_PBKDF2_ITERATIONS;
-		const digest = options.digest ?? DEFAULT_PBKDF2_DIGEST;
-
-		const derivedKey = await pbkdf2Async(
-			password,
-			salt,
-			iterations,
-			keyLength,
-			digest,
-		);
-
-		return new Uint8Array(derivedKey);
-	}
-
-	private bufferToHex(buffer: Uint8Array): string {
-		return Array.from(buffer)
-			.map((b) => b.toString(16).padStart(2, "0"))
-			.join("");
-	}
-
-	private hexToBuffer(hex: string): Uint8Array {
-		const bytes = new Uint8Array(hex.length / 2);
-		for (let i = 0; i < hex.length; i += 2) {
-			bytes[i / 2] = Number.parseInt(hex.slice(i, i + 2), 16);
-		}
-		return bytes;
-	}
-
-	private constantTimeCompare(a: Uint8Array, b: Uint8Array): boolean {
-		if (a.length !== b.length) {
-			return false;
-		}
-		return timingSafeEqual(a, b);
-	}
-}
-
+/**
+ * Password hashing utility using PBKDF2
+ *
+ * Implements secure password hashing with configurable parameters:
+ * - iterations: Number of PBKDF2 iterations (default: 100,000)
+ * - keyLength: Derived key length in bytes (default: 32)
+ * - digest: Hash digest algorithm (default: "sha256")
+ * - saltLength: Random salt length in bytes (default: 32)
+ *
+ * Hash format: $pbkdf2$<iterations>$<digest>$<salt>$<hash>
+ *
+ * @example
+ * ```typescript
+ * const hasher = new Pbkdf2Hasher({ iterations: 100000 });
+ * const hash = await hasher.hash("mySecurePassword");
+ * const isValid = await hasher.verify("mySecurePassword", hash);
+ * ```
+ *
+ * @security
+ * - Uses constant-time comparison to prevent timing attacks
+ * - Salt generated with cryptographically secure random bytes
+ * - PBKDF2 iterations should be >= 100,000 for production use
+ */
 export class Pbkdf2Hasher implements PasswordHasher {
 	private options: Required<Pbkdf2Options>;
 
@@ -126,7 +61,7 @@ export class Pbkdf2Hasher implements PasswordHasher {
 	async hash(password: string): Promise<string> {
 		const salt = await this.generateSalt();
 		const hash = await this.deriveKey(password, salt);
-		return `$pbkdf2$${this.options.iterations}$${this.options.digest}$${this.bufferToHex(salt)}$${this.bufferToHex(hash)}`;
+		return `$pbkdf2$${this.options.iterations}$${this.options.digest}$${hexEncode(salt)}$${hexEncode(hash)}`;
 	}
 
 	async verify(password: string, hash: string): Promise<boolean> {
@@ -141,8 +76,12 @@ export class Pbkdf2Hasher implements PasswordHasher {
 
 		const iterations = Number.parseInt(parts[2]!, 10);
 		const digest = parts[3] as "sha1" | "sha256" | "sha512";
-		const salt = this.hexToBuffer(parts[4]!);
-		const expectedHash = this.hexToBuffer(parts[5]!);
+		const salt = hexDecode(parts[4]!);
+		const expectedHash = hexDecode(parts[5]!);
+
+		if (!salt || !expectedHash) {
+			return false;
+		}
 
 		const actualHash = await this.deriveKey(password, salt, {
 			iterations,
@@ -165,7 +104,7 @@ export class Pbkdf2Hasher implements PasswordHasher {
 		const digest = overrideOptions?.digest ?? this.options.digest;
 		const keyLength = this.options.keyLength;
 
-		const derivedKey = await pbkdf2Async(
+		const derivedKey = await pbkdf2(
 			password,
 			salt,
 			iterations,
@@ -176,20 +115,6 @@ export class Pbkdf2Hasher implements PasswordHasher {
 		return new Uint8Array(derivedKey);
 	}
 
-	private bufferToHex(buffer: Uint8Array): string {
-		return Array.from(buffer)
-			.map((b) => b.toString(16).padStart(2, "0"))
-			.join("");
-	}
-
-	private hexToBuffer(hex: string): Uint8Array {
-		const bytes = new Uint8Array(hex.length / 2);
-		for (let i = 0; i < hex.length; i += 2) {
-			bytes[i / 2] = Number.parseInt(hex.slice(i, i + 2), 16);
-		}
-		return bytes;
-	}
-
 	private constantTimeCompare(a: Uint8Array, b: Uint8Array): boolean {
 		if (a.length !== b.length) {
 			return false;
@@ -198,6 +123,24 @@ export class Pbkdf2Hasher implements PasswordHasher {
 	}
 }
 
+/**
+ * Benchmarks a password hasher by measuring hash operation times
+ *
+ * Runs multiple hash operations and returns timing statistics.
+ * Useful for tuning PBKDF2 parameters to achieve desired performance.
+ *
+ * @param hasher - Password hasher instance to benchmark
+ * @param password - Test password to hash
+ * @param iterations - Number of iterations to run (default: 3)
+ * @returns Object with average, min, max times and individual results
+ *
+ * @example
+ * ```typescript
+ * const hasher = new Pbkdf2Hasher({ iterations: 100000 });
+ * const stats = await benchmarkPasswordHasher(hasher, "testPassword");
+ * console.log(`Average: ${stats.averageMs.toFixed(2)}ms`);
+ * ```
+ */
 export async function benchmarkPasswordHasher(
 	hasher: PasswordHasher,
 	password: string,
@@ -224,12 +167,26 @@ export async function benchmarkPasswordHasher(
 	return { averageMs, minMs, maxMs, results };
 }
 
+/**
+ * Creates a password hasher instance with the specified algorithm
+ *
+ * Currently only supports PBKDF2. Additional algorithms may be added in the future.
+ *
+ * @param type - Hash algorithm (default: "pbkdf2")
+ * @param options - Algorithm-specific options
+ * @returns Password hasher instance
+ *
+ * @example
+ * ```typescript
+ * const hasher = createPasswordHasher("pbkdf2", { iterations: 150000 });
+ * const hash = await hasher.hash("password");
+ * ```
+ */
 export function createPasswordHasher(
-	type: "bcrypt" | "pbkdf2" = "pbkdf2",
-	options?: BcryptOptions | Pbkdf2Options,
+	_type: "pbkdf2" = "pbkdf2",
+	options?: Pbkdf2Options,
 ): PasswordHasher {
-	if (type === "bcrypt") {
-		return new BcryptHasher(options as BcryptOptions);
-	}
 	return new Pbkdf2Hasher(options as Pbkdf2Options);
 }
+
+export { timingSafeEqual } from "./pbkdf2";

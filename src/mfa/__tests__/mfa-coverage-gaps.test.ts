@@ -3,6 +3,8 @@ import { mfa } from "../mfa";
 import type { MfaStorage } from "../types";
 
 describe("mfa - coverage gaps", () => {
+	const TEST_SECRET = process.env.TEST_SECRET || "fallback-32-char-secret-key!!";
+	
 	test("line 251: challenge throws MFA_INVALID_CODE for wrong totp code", async () => {
 		const mockStorage: MfaStorage = {
 			getSecret: vi.fn().mockResolvedValue("JBSWY3DPEHPK3PXP"),
@@ -18,7 +20,7 @@ describe("mfa - coverage gaps", () => {
 		const handlers = await mfa({
 			storage: mockStorage,
 			issuer: "TestApp",
-			secret: "test-secret-key-32-chars-long!!",
+			secret: TEST_SECRET,
 		});
 
 		await expect(
@@ -41,7 +43,7 @@ describe("mfa - coverage gaps", () => {
 		const handlers = await mfa({
 			storage: mockStorage,
 			issuer: "TestApp",
-			secret: "test-secret-key-32-chars-long!!",
+			secret: TEST_SECRET,
 		});
 
 		await expect(
@@ -64,7 +66,7 @@ describe("mfa - coverage gaps", () => {
 		const handlers = await mfa({
 			storage: mockStorage,
 			issuer: "TestApp",
-			secret: "test-secret-key-32-chars-long!!",
+			secret: TEST_SECRET,
 		});
 
 		await expect(
@@ -87,7 +89,7 @@ describe("mfa - coverage gaps", () => {
 		const handlers = await mfa({
 			storage: mockStorage,
 			issuer: "TestApp",
-			secret: "test-secret-key-32-chars-long!!",
+			secret: TEST_SECRET,
 		});
 
 		const result = await handlers.isEnabled("user-123");
@@ -109,7 +111,7 @@ describe("mfa - coverage gaps", () => {
 		const handlers = await mfa({
 			storage: mockStorage,
 			issuer: "TestApp",
-			secret: "test-secret-key-32-chars-long!!",
+			secret: TEST_SECRET,
 		});
 
 		await handlers.disable("user-123");
