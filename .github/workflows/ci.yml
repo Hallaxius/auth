@@ -102,41 +102,24 @@ jobs:
     name: Publish
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v1
         with:
           bun-version: 1.3.14
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
       - uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - run: bun install --frozen-lockfile
       - run: bun run build
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 18
-          registry-url: https://registry.npmjs.org/
-      - name: Verify npm token
-        run: |
-          if [ -z "$NPM_TOKEN" ]; then
-            echo "ERROR: NPM_TOKEN secret is not set in GitHub repository settings."
-            echo "Go to: Settings → Secrets and variables → Actions → New repository secret"
-            echo "Name: NPM_TOKEN, Value: <npmjs.com automation token>"
-            exit 1
-          fi
-          echo "NPM_TOKEN is set"
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Configure npm authentication
-        run: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Verify npm identity
-        run: npm whoami
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Publish dry run
-        run: npm publish --access public --dry-run
       - name: Publish to npm
-        run: npm publish --access public
+        run: npm publish --access public --provenance
