@@ -1,6 +1,6 @@
 # @hallaxius/auth
 
-**Production-ready authentication for Bun and Next.js 16+**
+**Secure authentication toolkit for Bun and Next.js 16+ with Discord OAuth2, Credentials, MFA/TOTP, password reset flows — backed by CSRF protection, rate limiting, and brute-force protection, captcha support (hCaptcha, reCAPTCHA v3, Turnstile), audit logging, and security headers.**
 
 <p align="center">
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/Bun-%E2%89%A51.0-000?logo=bun" alt="Bun"></a>
