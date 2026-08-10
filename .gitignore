@@ -1,0 +1,64 @@
+# Updated: 2026-07-20
+dist/
+*.tsbuildinfo
+
+node_modules/
+
+# Bun lockfile (versioned)
+# bun.lock is committed to ensure reproducible builds
+# bun.lock is versioned
+
+*.log
+npm-debug.log*
+security.log
+
+.env
+.env.*
+!.env.example
+
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+coverage/
+.turbo/
+
+.opencode/
+.omo/
+
+*.tmp
+*.temp
+
+# Test artifacts
+*.test.db
+test.sqlite
+tests/integration/db/*.sqlite
+tests/integration/db/*.db
+
+# Docker
+docker-compose.override.yml
+.docker/
+
+# Performance test artifacts
+tests/performance/*.json
+tests/performance/*.csv
+
+# Security scan results
+tests/security/zap/*.html
+tests/security/zap/*.md
+
+# Temporary test files
+tests/**/*.tmp
+tests/**/*.temp
+
+# Build artifacts
+build/
+
+# Type duplication check
+type-check-results.json
+
+# Plugin system
+packages/*/dist/
+packages/*/*.tsbuildinfo

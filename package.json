@@ -1,0 +1,145 @@
+{
+	"name": "@hallaxius/auth",
+	"version": "1.0.0",
+	"description": "Secure authentication toolkit for Bun and Next.js 16+ with Discord OAuth2, Credentials, MFA/TOTP, password reset flows — backed by CSRF protection, rate limiting, and brute-force defense.",
+	"author": {
+		"name": "hallaxius",
+		"url": "https://github.com/hallaxius"
+	},
+	"type": "module",
+	"main": "dist/index.cjs",
+	"types": "dist/index.d.ts",
+	"sideEffects": false,
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"require": "./dist/index.cjs",
+			"default": "./dist/index.js"
+		},
+		"./components": {
+			"types": "./dist/components.d.ts",
+			"import": "./dist/components.js",
+			"require": "./dist/components.cjs",
+			"default": "./dist/components.js"
+		}
+	},
+	"files": [
+		"dist",
+		"SECURITY.md"
+	],
+	"scripts": {
+		"clean": "rm -rf dist",
+		"prebuild": "bun run clean",
+		"build": "tsup",
+		"dev": "bun build --target=bun --outdir=dist ./src/index.ts --watch",
+		"typecheck": "tsc --noEmit",
+		"lint": "bunx --bun @biomejs/biome check --write --unsafe src/ benchmarks/",
+		"lint:check": "bunx --bun @biomejs/biome check src/",
+		"test": "bun test",
+		"test:watch": "bun test --watch",
+		"test:coverage": "bun test --coverage",
+		"test:unit": "bun test tests/unit",
+		"test:unit:coverage": "bun test --coverage tests/unit",
+		"test:unit:watch": "bun test --watch tests/unit",
+		"test:security": "bun test tests/security",
+		"test:all": "bun run scripts/runner.ts",
+		"benchmarks": "bun run benchmarks/run-all.ts",
+		"prepublishOnly": "bun run build && bun run test:unit && bun run test:security"
+	},
+	"peerDependencies": {
+		"next": ">=16.0.0",
+		"react": ">=18",
+		"react-dom": ">=18"
+	},
+	"peerDependenciesMeta": {
+		"next": {
+			"optional": true
+		},
+		"react": {
+			"optional": true
+		},
+		"react-dom": {
+			"optional": true
+		}
+	},
+	"engines": {
+		"bun": ">=1.0.0",
+		"node": ">=18.0.0"
+	},
+	"dependencies": {
+		"cookie": "^0.7.2",
+		"jose": "^6.2.4",
+		"zod": "^4.4.3"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.5",
+		"@types/bun": "^1.3.14",
+		"@types/jsdom": "^30.0.0",
+		"@types/node": "^22.10.0",
+		"@types/react": "^19.1.0",
+		"@types/react-dom": "^19.1.0",
+		"@vitest/coverage-v8": "^4.1.10",
+		"bun-types": "latest",
+		"esbuild": "^0.28.2",
+		"jsdom": "^30.0.1",
+		"mitata": "^1.0.34",
+		"react": "^19.0.0",
+		"react-dom": "^19.0.0",
+		"tsup": "^8.5.1",
+		"typescript": "^5.7.2",
+		"vitest": "^4.1.10"
+	},
+	"overrides": {
+		"esbuild": "^0.28.2"
+	},
+	"keywords": [
+		"authentication",
+		"oauth2",
+		"discord",
+		"credentials",
+		"username-password",
+		"jwt",
+		"session-management",
+		"bun",
+		"nextjs",
+		"nextjs-16",
+		"edge-runtime",
+		"csrf-protection",
+		"rate-limiting",
+		"discord-api",
+		"discord-oauth",
+		"password-reset",
+		"mfa",
+		"totp",
+		"backup-codes",
+		"lightweight",
+		"no-orm",
+		"captcha",
+		"hcaptcha",
+		"recaptcha",
+		"turnstile",
+		"compliance",
+		"gdpr",
+		"audit-logging",
+		"security-headers",
+		"csrf",
+		"hsts",
+		"content-security-policy",
+		"ip-utils",
+		"password-validation",
+		"brute-force-protection"
+	],
+	"bugs": {
+		"url": "https://github.com/hallaxius/auth/issues"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/hallaxius/auth.git"
+	},
+	"homepage": "https://github.com/hallaxius/auth"
+}

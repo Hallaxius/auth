@@ -1,0 +1,50 @@
+# Updated: 2026-07-20
+src/
+
+node_modules/
+
+*.tsbuildinfo
+
+*.log
+npm-debug.log*
+
+.env
+.env.*
+
+.git/
+.github/
+
+.gitignore
+biome.json
+tsconfig.json
+tsconfig.build.json
+bun.lock
+
+*.test.ts
+*.spec.ts
+__tests__/
+tests/
+
+.opencode/
+.omo/
+omo/
+
+coverage/
+.turbo/
+
+*.tmp
+*.temp
+
+.DS_Store
+
+# Docker
+docker-compose.yml
+Dockerfile.test
+
+# Documentation
+docs/api/
+
+# Misc
+*.md
+!README.md
+!BENCHMARK.md
