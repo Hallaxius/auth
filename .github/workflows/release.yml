@@ -6,6 +6,7 @@ on:
       - 'v*'
       - '!v*.*.*-beta.*'
       - '!v*.*.*-alpha.*'
+  workflow_dispatch:
 
 jobs:
   release:
@@ -22,12 +23,14 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - run: bun install --frozen-lockfile
       - run: bun run build
+      - run: bun run lint:check
+      - run: bun run typecheck
       - run: bun run test:unit
       - run: bun run test:security
       - uses: actions/setup-node@v4
         with:
           node-version: 18
           registry-url: https://registry.npmjs.org/
-      - run: bunx --bun npm publish --access public
+      - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
