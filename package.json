@@ -1,7 +1,7 @@
 {
 	"name": "@hallaxius/auth",
 	"version": "1.0.0",
-	"description": "Secure authentication toolkit for Bun and Next.js 16+ with Discord OAuth2, Credentials, MFA/TOTP, password reset flows — backed by CSRF protection, rate limiting, and brute-force[...]",
+	"description": "Secure authentication toolkit for Bun and Next.js 16+ with Discord OAuth2, Credentials, MFA/TOTP, password reset flows — backed by CSRF protection, rate limiting, and brute-force protection, captcha support (hCaptcha, reCAPTCHA v3, Turnstile), audit logging, and security headers.",
 	"author": {
 		"name": "hallaxius",
 		"url": "https://github.com/hallaxius"
@@ -139,9 +139,6 @@
 		"access": "public"
 	},
 	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/hallaxius/auth.git"
-	},
+	"repository": "github:Hallaxius/auth",
 	"homepage": "https://github.com/hallaxius/auth"
 }
