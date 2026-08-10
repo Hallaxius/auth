@@ -117,9 +117,26 @@ jobs:
         with:
           node-version: 18
           registry-url: https://registry.npmjs.org/
+      - name: Verify npm token
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "ERROR: NPM_TOKEN secret is not set in GitHub repository settings."
+            echo "Go to: Settings → Secrets and variables → Actions → New repository secret"
+            echo "Name: NPM_TOKEN, Value: <npmjs.com automation token>"
+            exit 1
+          fi
+          echo "NPM_TOKEN is set"
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Configure npm authentication
         run: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Verify npm identity
+        run: npm whoami
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish dry run
+        run: npm publish --access public --dry-run
       - name: Publish to npm
         run: npm publish --access public
