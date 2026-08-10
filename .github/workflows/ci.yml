@@ -102,6 +102,7 @@ jobs:
     name: Publish
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    environment: npm-publish
     permissions:
       id-token: write
       contents: read

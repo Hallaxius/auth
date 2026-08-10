@@ -12,6 +12,7 @@ jobs:
   release:
     name: Build, Test, and Publish
     runs-on: ubuntu-latest
+    environment: npm-publish
     permissions:
       id-token: write
       contents: read
