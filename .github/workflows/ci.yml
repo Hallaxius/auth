@@ -116,6 +116,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          registry-url: https://registry.npmjs.org/
       - uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
@@ -126,3 +127,5 @@ jobs:
         run: npm --version
       - name: Publish to npm
         run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
