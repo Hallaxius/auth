@@ -117,13 +117,8 @@ jobs:
         with:
           node-version: 18
           registry-url: https://registry.npmjs.org/
-      - name: Dry run publish
-        if: github.event_name == 'push'
-        run: npm publish --dry-run
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Real publish
-        if: github.event_name == 'workflow_dispatch'
+      - name: Publish to npm
+        if: always()
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
