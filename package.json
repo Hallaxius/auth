@@ -141,7 +141,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/hallaxius/auth.git"
+		"url": "https://github.com/hallaxius/auth"
 	},
 	"homepage": "https://github.com/hallaxius/auth"
 }
