@@ -1,6 +1,7 @@
 import { serialize } from "cookie";
 import type { SessionCookieOptions } from "../types";
 import { decrypt, encrypt } from "./crypto-aes";
+import { DEFAULT_SESSION_TTL_SECONDS } from "./defaults";
 
 export async function encryptCookieValue(
 	value: string,
@@ -71,7 +72,7 @@ export async function createEncryptedSessionCookie(
 ): Promise<string> {
 	const encryptedValue = await encryptCookieValue(value, secret);
 	return serialize(name, encryptedValue, {
-		maxAge: options.maxAge,
+		maxAge: options.maxAge ?? DEFAULT_SESSION_TTL_SECONDS,
 		path: options.path ?? "/",
 		httpOnly: options.httpOnly ?? true,
 		secure: options.secure ?? true,

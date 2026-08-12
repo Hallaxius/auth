@@ -31,6 +31,8 @@ export const LIMIT_CONSTANTS = {
 	RATE_LIMIT_WINDOW_MS: 60 * 1000,
 } as const;
 
+export const DEFAULT_SESSION_TTL_SECONDS = 604800;
+
 export const DEFAULT_ROUTES: Required<RoutesConfig> = {
 	prefix: "/auth/discord",
 	callback: "/auth/discord/callback",

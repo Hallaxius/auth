@@ -75,3 +75,4 @@ describe("bufferToHex / hexToBuffer aliases", () => {
 		expect(decoded).toEqual(original);
 	});
 });
+

@@ -124,6 +124,43 @@ export async function validateState(
 	}
 }
 
+const memoryStoreInstance = new Map<string, number>();
+const _isExpired = (_id: string): boolean => false;
+function getMemoryStore(): StateStore {
+	return {
+		has: async (id: string) => {
+			const expiresAt = memoryStoreInstance.get(id);
+			if (!expiresAt) return false;
+			if (Date.now() > expiresAt) {
+				memoryStoreInstance.delete(id);
+				return false;
+			}
+			return true;
+		},
+		set: async (id: string, ttlMs: number) => {
+			memoryStoreInstance.set(id, Date.now() + ttlMs);
+		},
+		setIfAbsent: async (id: string, ttlMs: number) => {
+			const expiresAt = memoryStoreInstance.get(id);
+			if (expiresAt !== undefined) {
+				if (Date.now() > expiresAt) {
+					memoryStoreInstance.set(id, Date.now() + ttlMs);
+					return true;
+				}
+				return false;
+			}
+			memoryStoreInstance.set(id, Date.now() + ttlMs);
+			return true;
+		},
+		delete: async (id: string) => {
+			memoryStoreInstance.delete(id);
+		},
+		dispose: () => {
+			memoryStoreInstance.clear();
+		},
+	};
+}
+
 export async function consumeState(
 	state: string,
 	secret: string,
@@ -183,9 +220,10 @@ export async function consumeState(
 			return { valid: false };
 		}
 
-		if (config?.singleUse && store) {
+		if (config?.singleUse) {
+			const effectiveStore = store ?? getMemoryStore();
 			const stateId = payload.id;
-			const acquired = await store.setIfAbsent(stateId, ttlMs);
+			const acquired = await effectiveStore.setIfAbsent(stateId, ttlMs);
 			if (!acquired) {
 				return { valid: false };
 			}

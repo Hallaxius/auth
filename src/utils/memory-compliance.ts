@@ -71,6 +71,19 @@ export function createMemoryComplianceStorage() {
 			if (!req) return null;
 			return { ...req };
 		},
+		async getPendingRequestByUserId(userId) {
+			for (const req of deletionStore.values()) {
+				if (
+					req.userId === userId &&
+					(req.status === "pending" ||
+						req.status === "scheduled" ||
+						req.status === "processing")
+				) {
+					return { ...req };
+				}
+			}
+			return null;
+		},
 		async updateStatus(requestId, status) {
 			const req = deletionStore.get(requestId);
 			if (req) {

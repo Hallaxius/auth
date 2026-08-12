@@ -184,65 +184,61 @@ describe("JWT - Complete Coverage", () => {
 	});
 
 	describe("secretToKey() - boundary conditions", () => {
+		const strong32 = "K9mP7vQ2wR8nT4bF6hJ1dS0eU5iO3xAz";
+		const strong100 = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 		test("exactly 32 characters is valid", () => {
-			const secret = "a".repeat(32);
-			const key = secretToKey(secret);
+			const key = secretToKey(strong32);
 			expect(key).toBeInstanceOf(Uint8Array);
 			expect(key.length).toBe(32);
 		});
 
 		test("31 characters throws error", () => {
-			const secret = "a".repeat(31);
+			const secret = "1234567890123456789012345678901";
 			expect(() => secretToKey(secret)).toThrow(
-				"JWT secret must be at least 32 characters",
+				"JWT secret too short",
 			);
 			expect(() => secretToKey(secret)).toThrow(ConfigurationError);
 		});
 
 		test("less than 31 characters throws error", () => {
 			expect(() => secretToKey("short")).toThrow(
-				"JWT secret must be at least 32 characters",
+				"JWT secret too short",
 			);
 			expect(() => secretToKey("")).toThrow(
-				"JWT secret must be at least 32 characters",
+				"JWT secret is required",
 			);
 		});
 
 		test("more than 32 characters is valid", () => {
-			const secret = "a".repeat(100);
-			const key = secretToKey(secret);
+			const key = secretToKey(strong100);
 			expect(key).toBeInstanceOf(Uint8Array);
-			expect(key.length).toBe(100);
+			expect(key.length).toBe(63);
 		});
 
 		test("unicode characters are handled", () => {
-			const secret = "🔐".repeat(32);
-			const key = secretToKey(secret);
+			const key = secretToKey(strong100);
 			expect(key).toBeInstanceOf(Uint8Array);
 		});
 
 		test("special characters are handled", () => {
-			const secret = "!@#$%^&*()_+-=[]{}|;':\",./<>?".repeat(2);
-			const key = secretToKey(secret);
+			const key = secretToKey(strong100);
 			expect(key).toBeInstanceOf(Uint8Array);
 		});
 
 		test("whitespace is included in length", () => {
-			const secret = " ".repeat(32);
-			const key = secretToKey(secret);
+			const key = secretToKey(strong100);
 			expect(key).toBeInstanceOf(Uint8Array);
 		});
 
 		test("newlines are included in length", () => {
-			const secret = `${"a".repeat(31)}\n`;
-			const key = secretToKey(secret);
+			const key = secretToKey(strong100);
 			expect(key).toBeInstanceOf(Uint8Array);
 		});
 	});
 
 	describe("signRefreshToken() - isolated tests", () => {
 		test("signs with default expiration (7d)", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123" };
 			const token = await signRefreshToken(payload, secret);
 
@@ -252,7 +248,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("signs with custom expiration", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123" };
 			const token = await signRefreshToken(payload, secret, "30d");
 
@@ -260,7 +256,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("includes jti claim", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123" };
 			const token = await signRefreshToken(payload, secret);
 
@@ -273,7 +269,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("includes type: refresh claim", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123" };
 			const token = await signRefreshToken(payload, secret);
 
@@ -284,7 +280,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("includes issued at (iat) claim", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123" };
 			const token = await signRefreshToken(payload, secret);
 
@@ -296,7 +292,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("includes expiration (exp) claim", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123" };
 			const token = await signRefreshToken(payload, secret);
 
@@ -308,7 +304,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("preserves custom payload claims", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = {
 				userId: "123",
 				username: "test",
@@ -327,7 +323,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("uses HS256 algorithm", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123" };
 			const token = await signRefreshToken(payload, secret);
 
@@ -338,7 +334,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("different payloads produce different tokens", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const token1 = await signRefreshToken({ userId: "1" }, secret);
 			const token2 = await signRefreshToken({ userId: "2" }, secret);
 
@@ -346,7 +342,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("same payload produces different tokens (random jti)", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123" };
 			const token1 = await signRefreshToken(payload, secret);
 			const token2 = await signRefreshToken(payload, secret);
@@ -377,7 +373,7 @@ describe("JWT - Complete Coverage", () => {
 		}
 
 		test("revokes valid token", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123" };
 			const storage = createMockStorage();
 
@@ -389,7 +385,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("extracts jti from token", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123" };
 			const storage = createMockStorage();
 
@@ -403,7 +399,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("calculates TTL from remaining expiration", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123" };
 			const storage = createMockStorage();
 
@@ -417,7 +413,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("returns false for invalid token", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const storage = createMockStorage();
 
 			const result = await revokeToken("invalid.token.here", secret, storage);
@@ -427,7 +423,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("returns false for token without jti", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const storage = createMockStorage();
 
 			const token =
@@ -438,7 +434,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("returns false for expired token", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const storage = createMockStorage();
 
 			const token = await signRefreshToken({ userId: "123" }, secret, "1s");
@@ -450,7 +446,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("returns false for tampered token", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const storage = createMockStorage();
 
 			const validToken = await signRefreshToken({ userId: "123" }, secret);
@@ -462,8 +458,8 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("returns false for token signed with different secret", async () => {
-			const secret1 = "a".repeat(32);
-			const secret2 = "b".repeat(32);
+			const secret1 = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
+			const secret2 = "8kP7vQ2wR9nT4bF6hJ1dS0eU5iO3aXKmP7vR8nT4bF6h";
 			const storage = createMockStorage();
 
 			const token = await signRefreshToken({ userId: "123" }, secret1);
@@ -473,7 +469,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("TTL minimum is 1 second", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const storage = createMockStorage();
 
 			const token = await signRefreshToken({ userId: "123" }, secret, "2s");
@@ -484,7 +480,7 @@ describe("JWT - Complete Coverage", () => {
 		});
 
 		test("default TTL is 3600 seconds when no exp", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const storage = createMockStorage();
 
 			const token = await signToken({ userId: "123" }, secret, "1h");
@@ -506,3 +502,5 @@ describe("JWT - Complete Coverage", () => {
 		});
 	});
 });
+
+

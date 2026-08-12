@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { decrypt, encrypt } from "../../../src/";
 
 describe("crypto-aes", () => {
-	const secret = "test-secret-key-32-chars-long!!";
+	const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 
 	test("encrypt and decrypt roundtrip", async () => {
 		const plaintext = "hello-world-secret-123";
@@ -71,7 +71,7 @@ describe("deriveKey with varied secret sizes", () => {
 
 describe("hexEncode / hexDecode round-trip (via encrypt/decrypt)", () => {
 	test("round-trip validates hex encoding/decoding internally", async () => {
-		const secret = "test-secret-key-32-chars-long!!";
+		const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 		const plaintext = "hello-world";
 		const encrypted = await encrypt(plaintext, secret);
 		const parts = encrypted.split(":");
@@ -89,7 +89,7 @@ describe("hexEncode / hexDecode round-trip (via encrypt/decrypt)", () => {
 	});
 
 	test("hex format is consistent across multiple encryptions", async () => {
-		const secret = "test-secret-key-32-chars-long!!";
+		const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 		const plaintext = "test-data";
 
 		for (let i = 0; i < 5; i++) {
@@ -105,7 +105,7 @@ describe("hexEncode / hexDecode round-trip (via encrypt/decrypt)", () => {
 });
 
 describe("encrypt / decrypt with empty inputs", () => {
-	const secret = "test-secret-key-32-chars-long!!";
+	const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 
 	test("encrypt and decrypt empty string", async () => {
 		const plaintext = "";
@@ -132,7 +132,7 @@ describe("encrypt / decrypt with empty inputs", () => {
 });
 
 describe("encrypt with same plaintext generates different ciphertext", () => {
-	const secret = "test-secret-key-32-chars-long!!";
+	const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 
 	test("same plaintext produces different ciphertext (random IV)", async () => {
 		const plaintext = "identical-text";
@@ -157,3 +157,5 @@ describe("encrypt with same plaintext generates different ciphertext", () => {
 		expect(encrypted1).not.toBe(encrypted2);
 	});
 });
+
+

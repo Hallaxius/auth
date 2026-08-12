@@ -7,7 +7,7 @@ import {
 } from "../../../src/";
 
 describe("JWT Token Revocation", () => {
-	const secret = "test-secret-key-with-at-least-32-characters-for-security";
+	const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 	let storage: MemoryTokenRevocationStorage;
 
 	beforeEach(() => {
@@ -77,3 +77,5 @@ describe("JWT Token Revocation", () => {
 		expect(isRevokedAfter).toBe(true);
 	});
 });
+
+

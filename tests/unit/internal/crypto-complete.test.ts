@@ -19,7 +19,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 		];
 
 		test.each(testCases)("$name", async ({ value }) => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const encrypted = await encrypt(value, secret);
 			const decrypted = await decrypt(encrypted, secret);
 			expect(decrypted).toBe(value);
@@ -27,7 +27,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 
 		test("different secrets produce different ciphertexts", async () => {
 			const plaintext = "test message";
-			const secret1 = "a".repeat(32);
+			const secret1 = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const secret2 = "b".repeat(32);
 
 			const encrypted1 = await encrypt(plaintext, secret1);
@@ -41,7 +41,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 
 		test("same plaintext produces different ciphertexts (random IV)", async () => {
 			const plaintext = "identical message";
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 
 			const encrypted1 = await encrypt(plaintext, secret);
 			const encrypted2 = await encrypt(plaintext, secret);
@@ -58,7 +58,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 
 	describe("IV randomness validation", () => {
 		test("IV is randomly generated for each encryption", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const plaintext = "test";
 			const iterations = 100;
 			const ciphertexts = new Set<string>();
@@ -72,7 +72,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 		}, 15000);
 
 		test("IV is 16 bytes (128 bits)", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const encrypted = await encrypt("test", secret);
 			const parts = encrypted.split(":");
 
@@ -87,7 +87,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 
 	describe("error handling", () => {
 		test("decrypt with invalid format throws", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 
 			await expect(decrypt("invalid", secret)).rejects.toThrow(
 				"Invalid encrypted format",
@@ -104,7 +104,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 		});
 
 		test("decrypt with tampered ciphertext throws", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const plaintext = "original message";
 			const encrypted = await encrypt(plaintext, secret);
 
@@ -116,7 +116,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 		});
 
 		test("decrypt with wrong tag throws", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const plaintext = "message";
 			const encrypted = await encrypt(plaintext, secret);
 
@@ -128,7 +128,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 		});
 
 		test("decrypt with corrupted salt throws", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const plaintext = "test";
 			const encrypted = await encrypt(plaintext, secret);
 
@@ -142,7 +142,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 
 	describe("key derivation edge cases", () => {
 		test("minimum length secret (32 chars)", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const plaintext = "test";
 			const encrypted = await encrypt(plaintext, secret);
 			const decrypted = await decrypt(encrypted, secret);
@@ -176,7 +176,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 
 	describe("performance benchmarks", () => {
 		test("encrypt performance (100 iterations)", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const plaintext = "test message for performance";
 			const iterations = 100;
 
@@ -192,7 +192,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 		}, 15000);
 
 		test("decrypt performance (100 iterations)", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const plaintext = "test message for performance";
 			const encrypted = await encrypt(plaintext, secret);
 			const iterations = 100;
@@ -209,7 +209,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 		}, 15000);
 
 		test("key derivation performance", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const plaintext = "test";
 			const iterations = 50;
 
@@ -227,7 +227,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 		});
 
 		test("large payload performance (100KB)", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const plaintext = "x".repeat(102400);
 
 			const start = performance.now();
@@ -249,7 +249,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 
 	describe("format validation", () => {
 		test("encrypted format is salt:iv:tag:ciphertext", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const encrypted = await encrypt("test", secret);
 			const parts = encrypted.split(":");
 
@@ -264,7 +264,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 		});
 
 		test("hex encoding is lowercase", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const encrypted = await encrypt("test", secret);
 
 			expect(encrypted).toBe(encrypted.toLowerCase());
@@ -273,7 +273,7 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 
 	describe("deterministic salt", () => {
 		test("salt is randomly generated", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const plaintext = "test";
 			const salts = new Set<string>();
 
@@ -287,3 +287,4 @@ describe("Crypto AES-GCM - Complete Coverage", () => {
 		});
 	});
 });
+

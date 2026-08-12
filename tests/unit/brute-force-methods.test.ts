@@ -208,3 +208,37 @@ describe("BruteForceProtection - isBlocked coverage", () => {
 		expect(blocked).toBe(true);
 	});
 });
+
+describe("BruteForceProtection - in-memory fallback", () => {
+	test("falls back to in-memory store when no storage provided", async () => {
+		const bf = new BruteForceProtection({
+			enabled: true,
+			maxAttempts: 2,
+			windowMs: 60000,
+			blockDurationMs: 60000,
+		});
+
+		const key = "fallback-test";
+		await bf.recordAttempt(key, false);
+		await bf.recordAttempt(key, false);
+
+		const blocked = await bf.isBlocked(key);
+		expect(blocked).toBe(true);
+
+const retryAfter = await bf.getRetryAfter(key);
+		expect(retryAfter).toBeGreaterThan(0);
+		expect(retryAfter).toBeLessThanOrEqual(60000);
+	});
+
+	test("recordAttempt does nothing when disabled, even without storage", async () => {
+		const bf = new BruteForceProtection({
+			enabled: false,
+			maxAttempts: 5,
+			windowMs: 60000,
+			blockDurationMs: 60000,
+		});
+
+		await expect(bf.recordAttempt("key", false)).resolves.toBeUndefined();
+	});
+});
+

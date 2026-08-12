@@ -142,3 +142,4 @@ describe("truncate", () => {
 		expect(truncate("hello", 10)).toBe("hello");
 	});
 });
+

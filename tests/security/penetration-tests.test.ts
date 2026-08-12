@@ -26,7 +26,7 @@ describe("Security - Penetration Tests", () => {
 			const auth = credentials({
 				emailRequired: true,
 				usernameRequired: true,
-				session: { secret: "a".repeat(32), expiresIn: "15m" },
+				session: { secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2", expiresIn: "15m" },
 				storage: mockStorage as any,
 				bruteForce: { storage: new TestBruteForceStorage() },
 			});
@@ -77,7 +77,7 @@ describe("Security - Penetration Tests", () => {
 			const auth = credentials({
 				emailRequired: true,
 				usernameRequired: true,
-				session: { secret: "a".repeat(32), expiresIn: "15m" },
+				session: { secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2", expiresIn: "15m" },
 				storage: mockStorage as any,
 				bruteForce: { storage: new TestBruteForceStorage() },
 			});
@@ -177,7 +177,7 @@ describe("Security - Penetration Tests", () => {
 			const auth = credentials({
 				emailRequired: true,
 				usernameRequired: true,
-				session: { secret: "a".repeat(32), expiresIn: "15m" },
+				session: { secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2", expiresIn: "15m" },
 				storage: mockStorage as any,
 				bruteForce: { storage: new TestBruteForceStorage() },
 			});
@@ -222,7 +222,7 @@ describe("Security - Penetration Tests", () => {
 			const auth = credentials({
 				emailRequired: true,
 				usernameRequired: true,
-				session: { secret: "a".repeat(32), expiresIn: "15m" },
+				session: { secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2", expiresIn: "15m" },
 				storage: mockStorage as any,
 				bruteForce: { storage: new TestBruteForceStorage() },
 			});
@@ -259,7 +259,7 @@ describe("Security - Penetration Tests", () => {
 			const auth = await discord({
 				clientId: "test_client_id",
 				clientSecret: "test_client_secret",
-				secret: "a".repeat(32),
+				secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				callbackUrl: "http://localhost:3000/auth/callback",
 				redirectUri: "http://localhost:3000/auth/callback",
 				storage: mockStorage as any,
@@ -290,7 +290,7 @@ describe("Security - Penetration Tests", () => {
 			const auth = await discord({
 				clientId: "test_client_id",
 				clientSecret: "test_client_secret",
-				secret: "a".repeat(32),
+				secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				callbackUrl: "http://localhost:3000/auth/callback",
 				redirectUri: "http://localhost:3000/auth/callback",
 				storage: mockStorage as any,
@@ -344,7 +344,7 @@ describe("Security - Penetration Tests", () => {
 
 			const mfaInstance = mfa({
 				storage: mockMfaStorage as any,
-				secret: "a".repeat(32),
+				secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				issuer: "TestApp",
 			});
 
@@ -389,7 +389,7 @@ describe("Security - Penetration Tests", () => {
 			const auth = credentials({
 				emailRequired: true,
 				usernameRequired: true,
-				session: { secret: "a".repeat(32), expiresIn: "15m" },
+				session: { secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2", expiresIn: "15m" },
 				storage: mockStorage as any,
 				bruteForce: {
 					enabled: true,
@@ -529,7 +529,7 @@ describe("Security - Penetration Tests", () => {
 
 			const handlers = mfa({
 				storage: mockStorage as any,
-				secret: "a".repeat(32),
+				secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				issuer: "TestApp",
 			});
 			await handlers.setup("user-1");
@@ -576,7 +576,7 @@ describe("Security - Penetration Tests", () => {
 			const auth = credentials({
 				emailRequired: true,
 				usernameRequired: true,
-				session: { secret: "a".repeat(32), expiresIn: "15m" },
+				session: { secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2", expiresIn: "15m" },
 				storage: mockStorage as any,
 				bruteForce: {
 					enabled: true,
@@ -651,7 +651,7 @@ describe("Security - Penetration Tests", () => {
 			const auth = credentials({
 				emailRequired: true,
 				usernameRequired: true,
-				session: { secret: "a".repeat(32), expiresIn: "15m" },
+				session: { secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2", expiresIn: "15m" },
 				storage: mockStorage as any,
 				bruteForce: {
 					enabled: true,
@@ -763,7 +763,7 @@ describe("Security - Penetration Tests", () => {
 			const { signToken } = await import("../../src/internal/jwt");
 			const { verifyToken } = await import("../../src/internal/jwt");
 
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123", username: "test" };
 
 			const validToken = await signToken(payload, secret);
@@ -777,7 +777,7 @@ describe("Security - Penetration Tests", () => {
 			const { signToken } = await import("../../src/internal/jwt");
 			const { verifyToken } = await import("../../src/internal/jwt");
 
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123", username: "test" };
 
 			const token = await signToken(payload, secret, "1s");
@@ -791,8 +791,8 @@ describe("Security - Penetration Tests", () => {
 			const { signToken } = await import("../../src/internal/jwt");
 			const { verifyToken } = await import("../../src/internal/jwt");
 
-			const secret1 = "a".repeat(32);
-			const secret2 = "b".repeat(32);
+			const secret1 = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
+			const secret2 = "8kP7vQ2wR9nT4bF6hJ1dS0eU5iO3aXKmP7vR8nT4bF6h";
 			const payload = { userId: "123", username: "test" };
 
 			const token = await signToken(payload, secret1);
@@ -805,7 +805,7 @@ describe("Security - Penetration Tests", () => {
 			const { signToken } = await import("../../src/internal/jwt");
 			const { verifyToken } = await import("../../src/internal/jwt");
 
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123", username: "test" };
 
 			const validToken = await signToken(payload, secret);
@@ -826,7 +826,7 @@ describe("Security - Penetration Tests", () => {
 			const { signToken } = await import("../../src/internal/jwt");
 			const { verifyToken } = await import("../../src/internal/jwt");
 
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const payload = { userId: "123", username: "test" };
 
 			const token = await signToken(payload, secret);
@@ -873,7 +873,7 @@ describe("Security - Penetration Tests", () => {
 			const auth = await discord({
 				clientId: "test_client_id",
 				clientSecret: "test_client_secret",
-				secret: "a".repeat(32),
+				secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				callbackUrl: "http://localhost:3000/auth/callback",
 				redirectUri: "http://localhost:3000/auth/callback",
 				storage: mockStorage as any,
@@ -907,3 +907,5 @@ describe("Security - Penetration Tests", () => {
 		});
 	});
 });
+
+

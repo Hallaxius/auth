@@ -116,19 +116,49 @@ describe("Middleware - Complete Coverage", () => {
 
 		test("absolute path throws error", () => {
 			expect(() => redirect("https://example.com")).toThrow(
-				"redirect url must be a relative path starting with /",
+				"redirect url must be a safe relative path starting with /",
+			);
+		});
+
+		test("protocol-relative URL throws error", () => {
+			expect(() => redirect("//evil.com")).toThrow(
+				"redirect url must be a safe relative path starting with /",
 			);
 		});
 
 		test("URL without leading slash throws error", () => {
 			expect(() => redirect("login")).toThrow(
-				"redirect url must be a relative path starting with /",
+				"redirect url must be a safe relative path starting with /",
 			);
 		});
 
 		test("empty string throws error", () => {
 			expect(() => redirect("")).toThrow(
-				"redirect url must be a relative path starting with /",
+				"redirect url must be a safe relative path starting with /",
+			);
+		});
+
+		test("backslash URLs throw error", () => {
+			expect(() => redirect("/\\evil.com")).toThrow(
+				"redirect url must be a safe relative path starting with /",
+			);
+			expect(() => redirect("\\/evil.com")).toThrow(
+				"redirect url must be a safe relative path starting with /",
+			);
+		});
+
+		test("URL-encoded backslashes throw error", () => {
+			expect(() => redirect("/%5cevil.com")).toThrow(
+				"redirect url must be a safe relative path starting with /",
+			);
+			expect(() => redirect("/%5Cevil.com")).toThrow(
+				"redirect url must be a safe relative path starting with /",
+			);
+		});
+
+		test("CRLF injection throws error", () => {
+			expect(() => redirect("/ok\r\nX-Injected: 1")).toThrow(
+				"redirect url must be a safe relative path starting with /",
 			);
 		});
 
@@ -142,6 +172,14 @@ describe("Middleware - Complete Coverage", () => {
 			const response = redirect("/api/users/123/settings");
 			expect(response.status).toBe(302);
 			expect(response.headers.get("Location")).toBe("/api/users/123/settings");
+		});
+
+		test("query strings with nested next parameters are valid", () => {
+			const response = redirect("/auth/discord?next=/dashboard?tab=1");
+			expect(response.status).toBe(302);
+			expect(response.headers.get("Location")).toBe(
+				"/auth/discord?next=/dashboard?tab=1",
+			);
 		});
 	});
 
@@ -190,7 +228,7 @@ describe("Middleware - Complete Coverage", () => {
 	});
 
 	describe("session() - extraction", () => {
-		const secret = "a".repeat(32);
+		const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 
 		test("returns null when no cookie present", async () => {
 			const request = new Request("http://example.com");
@@ -343,7 +381,7 @@ describe("Middleware - Complete Coverage", () => {
 			const { signToken } = await import("../../src/internal/jwt");
 			const token = await signToken(
 				{ discordId: "123", username: "test", locale: "en-US" },
-				`different_secret_${"a".repeat(15)}`,
+				`different_secret_${"5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2"}`,
 			);
 
 			const request = new Request("http://example.com", {
@@ -354,10 +392,44 @@ describe("Middleware - Complete Coverage", () => {
 			const result = await session(request, { secret });
 			expect(result).toBeNull();
 		});
+
+		test("rejects revoked sessions when revocationStorage is provided", async () => {
+			const { signToken } = await import("../../src/internal/jwt");
+			const {
+				MemoryTokenRevocationStorage,
+			} = await import("../../src/internal/jwt-revocation");
+			const revocationStorage = new MemoryTokenRevocationStorage();
+			const token = await signToken(
+				{ discordId: "123", username: "test", locale: "en-US" },
+				secret,
+			);
+
+			const request = new Request("http://example.com", {
+				headers: {
+					Cookie: `discord-auth-session=${token}`,
+				},
+			});
+			const result = await session(request, { secret, revocationStorage });
+			expect(result).toBeDefined();
+
+			const { verifyToken } = await import("../../src/internal/jwt");
+			const payload = await verifyToken<Record<string, unknown>>(
+				token,
+				secret,
+			);
+			expect(typeof payload?.jti).toBe("string");
+			await revocationStorage.revoke(payload!.jti as string, 3600);
+
+			const resultAfter = await session(request, {
+				secret,
+				revocationStorage,
+			});
+			expect(resultAfter).toBeNull();
+		});
 	});
 
 	describe("auth() - all scenarios", () => {
-		const secret = "a".repeat(32);
+		const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 
 		test("allows access to public paths", async () => {
 			const config: EdgeAuthConfig = {
@@ -428,7 +500,7 @@ describe("Middleware - Complete Coverage", () => {
 		});
 
 		test("supports multiple cookie configurations", async () => {
-			const secret2 = "b".repeat(32);
+			const secret2 = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const { signToken } = await import("../../src/internal/jwt");
 			const token2 = await signToken(
 				{ discordId: "123", username: "test", locale: "en-US" },
@@ -458,7 +530,7 @@ describe("Middleware - Complete Coverage", () => {
 				secret,
 				cookies: [
 					{ name: "session1", secret },
-					{ name: "session2", secret: "b".repeat(32) },
+					{ name: "session2", secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2" },
 				],
 			};
 			const middleware = auth(config);
@@ -494,7 +566,7 @@ describe("Middleware - Complete Coverage", () => {
 	});
 
 	describe("role() - validation", () => {
-		const secret = "a".repeat(32);
+		const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 
 		test("allows access when no role required for path", async () => {
 			const config: EdgeRoleConfig = {
@@ -780,7 +852,7 @@ describe("Middleware - Complete Coverage", () => {
 		});
 
 		test("chains auth and role middlewares", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const authMiddleware = auth({ secret });
 			const roleMiddleware = role({
 				secret,
@@ -809,7 +881,7 @@ describe("Middleware - Complete Coverage", () => {
 		});
 
 		test("fails fast when auth fails", async () => {
-			const secret = "a".repeat(32);
+			const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 			const authMiddleware = auth({ secret });
 			const roleMiddleware = role({
 				secret,
@@ -825,3 +897,6 @@ describe("Middleware - Complete Coverage", () => {
 		});
 	});
 });
+
+
+

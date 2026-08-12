@@ -346,42 +346,95 @@ describe("IP Validation - Complete Coverage", () => {
 					"cf-connecting-ip": "104.16.0.1",
 					"cf-ray": "abc123",
 				},
-			}) as unknown as Request & { socket?: { remoteAddress?: string } };
-			request.socket = { remoteAddress: "173.245.48.1" };
+			}) as unknown as Request & { ip?: string };
+			request.ip = "173.245.48.1";
 			const ip = await getRequestIP(request, { trustProxy: true });
 			expect(ip).toBe("104.16.0.1");
 		});
 
-		test("ignores CF-Connecting-IP when socket peer is not Cloudflare", async () => {
+		test("accepts CF-Connecting-IP on a plain Fetch Request with trustProxy", async () => {
+			const request = new Request("http://example.com", {
+				headers: {
+					"cf-connecting-ip": "203.0.113.50",
+					"cf-ray": "abc123",
+				},
+			});
+			const ip = await getRequestIP(request, { trustProxy: true });
+			expect(ip).toBe("203.0.113.50");
+		});
+
+		test("uses the NextRequest-style .ip property as peer", async () => {
+			const request = new Request("http://example.com") as unknown as Request & {
+				ip?: string;
+			};
+			request.ip = "203.0.113.9";
+			const ip = await getRequestIP(request, { trustProxy: true });
+			expect(ip).toBe("203.0.113.9");
+		});
+
+		test("uses Bun.server.requestIP when available", async () => {
+			const descriptor = Object.getOwnPropertyDescriptor(Bun, "server");
+			Object.defineProperty(Bun, "server", {
+				value: {
+					requestIP: () => ({ address: "198.51.100.42" }),
+				},
+				configurable: true,
+				writable: true,
+			});
+			try {
+				const request = new Request("http://example.com");
+				const ip = await getRequestIP(request);
+				expect(ip).toBe("198.51.100.42");
+			} finally {
+				if (descriptor) {
+					Object.defineProperty(Bun, "server", descriptor);
+				} else {
+					delete (Bun as Record<string, unknown>).server;
+				}
+			}
+		});
+
+		test("ignores CF-Connecting-IP when peer is not Cloudflare", async () => {
 			const request = new Request("http://example.com", {
 				headers: {
 					"cf-connecting-ip": "104.16.0.1",
 					"cf-ray": "abc123",
 				},
-			}) as unknown as Request & { socket?: { remoteAddress?: string } };
-			request.socket = { remoteAddress: "198.51.100.5" };
-			const ip = await getRequestIP(request);
+			}) as unknown as Request & { ip?: string };
+			request.ip = "198.51.100.5";
+			const ip = await getRequestIP(request, { trustProxy: true });
 			expect(ip).toBe("198.51.100.5");
 		});
 
-		test("extracts last entry from X-Forwarded-For with trusted proxy peer", async () => {
+		test("skips trusted proxies in X-Forwarded-For and returns the first untrusted entry", async () => {
 			const request = new Request("http://example.com", {
 				headers: {
-					"x-forwarded-for": "192.168.1.1, 10.0.0.1",
+					"x-forwarded-for": "203.0.113.7, 10.0.0.1",
 				},
-			}) as unknown as Request & { socket?: { remoteAddress?: string } };
-			request.socket = { remoteAddress: "10.0.0.1" };
+			}) as unknown as Request & { ip?: string };
+			request.ip = "10.0.0.1";
+			const ip = await getRequestIP(request, { trustProxy: true });
+			expect(ip).toBe("203.0.113.7");
+		});
+
+		test("falls back to the peer when every X-Forwarded-For entry is trusted", async () => {
+			const request = new Request("http://example.com", {
+				headers: {
+					"x-forwarded-for": "10.0.0.2, 10.0.0.1",
+				},
+			}) as unknown as Request & { ip?: string };
+			request.ip = "10.0.0.1";
 			const ip = await getRequestIP(request, { trustProxy: true });
 			expect(ip).toBe("10.0.0.1");
 		});
 
-		test("falls back to socket IP when untrusted proxy", async () => {
+		test("falls back to peer IP when untrusted proxy", async () => {
 			const request = new Request("http://example.com", {
 				headers: {
 					"x-forwarded-for": "8.8.8.8",
 				},
-			}) as unknown as Request & { socket?: { remoteAddress?: string } };
-			request.socket = { remoteAddress: "10.0.0.1" };
+			}) as unknown as Request & { ip?: string };
+			request.ip = "10.0.0.1";
 
 			const ip = await getRequestIP(request);
 			expect(ip).toBe("10.0.0.1");
@@ -398,12 +451,11 @@ describe("IP Validation - Complete Coverage", () => {
 			expect(ip).toMatch(/^fp:[0-9a-f]{16}$/);
 		});
 
-		test("returns 'unknown' when no headers available", async () => {
+		test("returns a fingerprint when no headers available", async () => {
 			const request = new Request("http://example.com");
-			const ip = await getRequestIP(
-				request as unknown as Request & { socket?: { remoteAddress?: string } },
-			);
+			const ip = await getRequestIP(request);
 			expect(ip).toMatch(/^fp:[0-9a-f]{16}$/);
 		});
 	});
 });
+

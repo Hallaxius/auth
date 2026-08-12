@@ -95,7 +95,7 @@ describe("middleware - session", () => {
 	test("returns null for missing cookie", async () => {
 		const request = new Request("http://localhost/");
 		const result = await session(request, {
-			secret: process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!",
+			secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 			cookieName: "auth-session",
 		});
 		expect(result).toBeNull();
@@ -106,7 +106,7 @@ describe("middleware - session", () => {
 			headers: { Cookie: "auth-session=invalid-token" },
 		});
 		const result = await session(request, {
-			secret: process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!",
+			secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 			cookieName: "auth-session",
 		});
 		expect(result).toBeNull();
@@ -120,7 +120,7 @@ describe("middleware - auth", () => {
 				{
 					name: "auth-session",
 					secret:
-						process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!",
+						process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				},
 			],
 			publicPaths: ["/login", "/register", "/public/*"],
@@ -138,7 +138,7 @@ describe("middleware - auth", () => {
 				{
 					name: "auth-session",
 					secret:
-						process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!",
+						process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				},
 			],
 			publicPaths: ["/login"],
@@ -159,12 +159,12 @@ describe("middleware - auth", () => {
 				{
 					name: "auth-session",
 					secret:
-						process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!1",
+						process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA21",
 				},
 				{
 					name: "backup-session",
 					secret:
-						process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!2",
+						process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA22",
 				},
 			],
 			publicPaths: ["/login"],
@@ -178,7 +178,7 @@ describe("middleware - auth", () => {
 			.setExpirationTime("1h")
 			.sign(
 				new TextEncoder().encode(
-					process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!1",
+					process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA21",
 				),
 			);
 
@@ -195,12 +195,12 @@ describe("middleware - auth", () => {
 				{
 					name: "auth-session",
 					secret:
-						process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!1",
+						process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA21",
 				},
 				{
 					name: "backup-session",
 					secret:
-						process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!2",
+						process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA22",
 				},
 			],
 			publicPaths: ["/login"],
@@ -214,7 +214,7 @@ describe("middleware - auth", () => {
 			.setExpirationTime("1h")
 			.sign(
 				new TextEncoder().encode(
-					process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!2",
+					process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA22",
 				),
 			);
 
@@ -231,7 +231,7 @@ describe("middleware - auth", () => {
 				{
 					name: "auth-session",
 					secret:
-						process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!",
+						process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				},
 			],
 			publicPaths: ["/login"],
@@ -251,7 +251,7 @@ describe("middleware - auth", () => {
 describe("middleware - role", () => {
 	test("allows access when user has required role", async () => {
 		const middleware = role({
-			secret: process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!",
+			secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 			cookieName: "auth-session",
 			roles: {
 				"/admin/*": ["admin"],
@@ -271,7 +271,7 @@ describe("middleware - role", () => {
 			.setExpirationTime("1h")
 			.sign(
 				new TextEncoder().encode(
-					process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!",
+					process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				),
 			);
 
@@ -284,7 +284,7 @@ describe("middleware - role", () => {
 
 	test("denies access when user lacks required role", async () => {
 		const middleware = role({
-			secret: process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!",
+			secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 			cookieName: "auth-session",
 			roles: {
 				"/admin/*": ["admin"],
@@ -303,7 +303,7 @@ describe("middleware - role", () => {
 			.setExpirationTime("1h")
 			.sign(
 				new TextEncoder().encode(
-					process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!",
+					process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				),
 			);
 
@@ -321,7 +321,7 @@ describe("middleware - role", () => {
 
 	test("redirects to login when no session", async () => {
 		const middleware = role({
-			secret: process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!",
+			secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 			cookieName: "auth-session",
 			roles: { "/admin/*": ["admin"] },
 			loginUrl: "/login",
@@ -336,7 +336,7 @@ describe("middleware - role", () => {
 
 	test("allows access when path has no role requirements", async () => {
 		const middleware = role({
-			secret: process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!",
+			secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 			cookieName: "auth-session",
 			roles: { "/admin/*": ["admin"] },
 			loginUrl: "/login",
@@ -353,7 +353,7 @@ describe("middleware - role", () => {
 			.setExpirationTime("1h")
 			.sign(
 				new TextEncoder().encode(
-					process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!",
+					process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				),
 			);
 
@@ -419,7 +419,7 @@ describe("middleware - combine", () => {
 				{
 					name: "auth-session",
 					secret:
-						process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!",
+						process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				},
 			],
 			publicPaths: ["/login"],
@@ -427,7 +427,7 @@ describe("middleware - combine", () => {
 		});
 
 		const roleMiddleware = role({
-			secret: process.env.TEST_SECRET || "test-secret-key-minimum-32-chars!!",
+			secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 			cookieName: "auth-session",
 			roles: { "/admin/*": ["admin"] },
 			loginUrl: "/login",
@@ -441,3 +441,5 @@ describe("middleware - combine", () => {
 		expect(result?.headers.get("Location")).toContain("/login");
 	});
 });
+
+

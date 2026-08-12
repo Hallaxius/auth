@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, test, mock } from "bun:test";
-import type { MfaStorage } from "../../../src/";
+import type { MfaStorage, PendingTokenEntry } from "../../../src/";
 import { AuthError, ErrorCodes, mfa } from "../../../src/";
 
 class InMemoryMfaTestStorage implements MfaStorage {
 	private secrets = new Map<string, string>();
 	private codes = new Map<string, string[]>();
 	private lastUsedCounters = new Map<string, number>();
+	private pendingTokens = new Map<string, PendingTokenEntry>();
 
 	async getSecret(userId: string): Promise<string | null> {
 		return this.secrets.get(userId) ?? null;
@@ -19,6 +20,7 @@ class InMemoryMfaTestStorage implements MfaStorage {
 		this.secrets.delete(userId);
 		this.codes.delete(userId);
 		this.lastUsedCounters.delete(userId);
+		this.pendingTokens.delete(userId);
 	}
 
 	async getBackupCodes(userId: string): Promise<string[] | null> {
@@ -42,6 +44,21 @@ class InMemoryMfaTestStorage implements MfaStorage {
 	async setLastUsedCounter(userId: string, counter: number): Promise<void> {
 		this.lastUsedCounters.set(userId, counter);
 	}
+
+	async getPendingToken(userId: string): Promise<PendingTokenEntry | null> {
+		return this.pendingTokens.get(userId) ?? null;
+	}
+
+	async setPendingToken(
+		userId: string,
+		entry: PendingTokenEntry,
+	): Promise<void> {
+		this.pendingTokens.set(userId, entry);
+	}
+
+	async deletePendingToken(userId: string): Promise<void> {
+		this.pendingTokens.delete(userId);
+	}
 }
 
 class MockVerifyPassword {
@@ -63,6 +80,7 @@ function createMfaConfig(
 		issuer: string;
 		allowedMethods: ("totp" | "backup_codes")[];
 		verifyPassword: (userId: string, password: string) => Promise<boolean>;
+		requirePasswordOnDisable: boolean;
 	}> = {},
 ) {
 	return {
@@ -70,10 +88,11 @@ function createMfaConfig(
 		secret:
 			overrides.secret ??
 			process.env.TEST_SECRET ??
-			"test-secret-key-that-is-at-least-32-char!",
+			"5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 		issuer: overrides.issuer ?? "TestApp",
 		allowedMethods: overrides.allowedMethods ?? ["totp", "backup_codes"],
 		verifyPassword: overrides.verifyPassword,
+		requirePasswordOnDisable: overrides.requirePasswordOnDisable,
 	};
 }
 
@@ -494,7 +513,7 @@ describe("mfa - setup, verify, backup codes, disable", () => {
 
 		test("challenges TOTP successfully", async () => {
 			const userId = nextUserId();
-			await mfaHandler.setup(userId);
+			const setup = await mfaHandler.setup(userId);
 			const secret = await config.storage.getSecret(userId);
 			expect(secret).toBeDefined();
 
@@ -503,7 +522,12 @@ describe("mfa - setup, verify, backup codes, disable", () => {
 			const req = new Request("http://localhost/mfa/challenge", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ userId, method: "totp", code: totp }),
+				body: JSON.stringify({
+					userId,
+					method: "totp",
+					code: totp,
+					pendingToken: setup.pendingToken,
+				}),
 			});
 			const res = await mfaHandler.handleMfaChallenge(req);
 			expect(res?.status).toBe(200);
@@ -524,6 +548,7 @@ describe("mfa - setup, verify, backup codes, disable", () => {
 					userId,
 					method: "backup_codes",
 					code: setup.backupCodes[0],
+					pendingToken: setup.pendingToken,
 				}),
 			});
 			const res = await mfaHandler.handleMfaChallenge(req);
@@ -532,6 +557,41 @@ describe("mfa - setup, verify, backup codes, disable", () => {
 			const body = await res?.json();
 			expect(body.success).toBe(true);
 			expect(body.method).toBe("backup_codes");
+		});
+
+		test("returns 401 without session or pending token", async () => {
+			const userId = nextUserId();
+			await mfaHandler.setup(userId);
+			const secret = await config.storage.getSecret(userId);
+			const totp = await generateTotpCode(secret!, config.secret);
+
+			const req = new Request("http://localhost/mfa/challenge", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ userId, method: "totp", code: totp }),
+			});
+			const res = await mfaHandler.handleMfaChallenge(req);
+			expect(res?.status).toBe(401);
+		});
+
+		test("returns 401 with an invalid pending token", async () => {
+			const userId = nextUserId();
+			await mfaHandler.setup(userId);
+			const secret = await config.storage.getSecret(userId);
+			const totp = await generateTotpCode(secret!, config.secret);
+
+			const req = new Request("http://localhost/mfa/challenge", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					userId,
+					method: "totp",
+					code: totp,
+					pendingToken: "wrong-token",
+				}),
+			});
+			const res = await mfaHandler.handleMfaChallenge(req);
+			expect(res?.status).toBe(401);
 		});
 	});
 
@@ -626,6 +686,11 @@ describe("mfa - setup, verify, backup codes, disable", () => {
 	describe("handleMfaChallenge error path", () => {
 		test("returns error response for AuthError", async () => {
 			const badStorage = new InMemoryMfaTestStorage();
+			await badStorage.setPendingToken("user-1", {
+				token: "valid-pending-token",
+				createdAt: Date.now(),
+				expiresAt: Date.now() + 5 * 60 * 1000,
+			});
 			badStorage.getSecret = async () => {
 				throw new AuthError(ErrorCodes.MFA_INVALID_CODE, "bad", {
 					statusCode: 400,
@@ -641,6 +706,7 @@ describe("mfa - setup, verify, backup codes, disable", () => {
 					userId: "user-1",
 					method: "totp",
 					code: "000000",
+					pendingToken: "valid-pending-token",
 				}),
 			});
 			const res = await badMfa.handleMfaChallenge(req);
@@ -708,7 +774,10 @@ describe("mfa - setup, verify, backup codes, disable", () => {
 					statusCode: 400,
 				});
 			};
-			const badConfig = createMfaConfig({ storage: badStorage });
+			const badConfig = createMfaConfig({
+				storage: badStorage,
+				verifyPassword: async () => true,
+			});
 			const badMfa = mfa(badConfig);
 			const userId = nextUserId();
 			await badMfa.setup(userId);
@@ -751,7 +820,7 @@ describe("mfa - setup, verify, backup codes, disable", () => {
 	});
 
 	describe("handleMfaDisable without verifyPassword", () => {
-		test("disables MFA without verifyPassword", async () => {
+		test("refuses to disable when verifyPassword is absent", async () => {
 			const userId = nextUserId();
 			await mfaHandler.setup(userId);
 
@@ -767,11 +836,32 @@ describe("mfa - setup, verify, backup codes, disable", () => {
 				body: JSON.stringify({ password: "any-password" }),
 			});
 			const res = await mfaHandler.handleMfaDisable(req);
+			expect(res?.status).toBe(501);
+			expect(await mfaHandler.isEnabled(userId)).toBe(true);
+		});
+
+		test("disables without password when requirePasswordOnDisable is false", async () => {
+			const mfaLegacy = mfa(createMfaConfig({ requirePasswordOnDisable: false }));
+			const userId = nextUserId();
+			await mfaLegacy.setup(userId);
+
+			const { signToken } = await import("../../../src/internal/jwt");
+			const token = await signToken({ userId }, config.secret, "7d");
+
+			const req = new Request("http://localhost/mfa/disable", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Cookie: `mfa-session=${token}`,
+				},
+				body: JSON.stringify({}),
+			});
+			const res = await mfaLegacy.handleMfaDisable(req);
 			expect(res?.status).toBe(200);
 
 			const body = await res?.json();
 			expect(body.success).toBe(true);
-			expect(await mfaHandler.isEnabled(userId)).toBe(false);
+			expect(await mfaLegacy.isEnabled(userId)).toBe(false);
 		});
 	});
 
@@ -860,6 +950,11 @@ describe("mfa - setup, verify, backup codes, disable", () => {
 	describe("handleMfaChallenge throws non-AuthError", () => {
 		test("rethrows non-AuthError", async () => {
 			const badStorage = new InMemoryMfaTestStorage();
+			await badStorage.setPendingToken("user-1", {
+				token: "valid-pending-token",
+				createdAt: Date.now(),
+				expiresAt: Date.now() + 5 * 60 * 1000,
+			});
 			badStorage.getSecret = async () => {
 				throw new Error("Raw challenge error");
 			};
@@ -872,6 +967,7 @@ describe("mfa - setup, verify, backup codes, disable", () => {
 					userId: "user-1",
 					method: "totp",
 					code: "123456",
+					pendingToken: "valid-pending-token",
 				}),
 			});
 			await expect(badMfa.handleMfaChallenge(req)).rejects.toThrow(
@@ -893,10 +989,16 @@ describe("mfa - setup, verify, backup codes, disable", () => {
 
 	describe("handleMfaDisable missing password with valid session", () => {
 		test("returns 400 when password is missing", async () => {
+			const verifyPassword = new MockVerifyPassword();
+			const configWithVerify = createMfaConfig({
+				verifyPassword: verifyPassword.verify.bind(verifyPassword),
+			});
+			const mfaWithVerify = mfa(configWithVerify);
+
 			const userId = nextUserId();
-			await mfaHandler.setup(userId);
+			await mfaWithVerify.setup(userId);
 			const { signToken } = await import("../../../src/internal/jwt");
-			const token = await signToken({ userId }, config.secret, "7d");
+			const token = await signToken({ userId }, configWithVerify.secret, "7d");
 			const req = new Request("http://localhost/mfa/disable", {
 				method: "POST",
 				headers: {
@@ -905,8 +1007,11 @@ describe("mfa - setup, verify, backup codes, disable", () => {
 				},
 				body: JSON.stringify({}),
 			});
-			const res = await mfaHandler.handleMfaDisable(req);
+			const res = await mfaWithVerify.handleMfaDisable(req);
 			expect(res?.status).toBe(400);
 		});
 	});
 });
+
+
+

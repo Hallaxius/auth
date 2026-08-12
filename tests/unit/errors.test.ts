@@ -373,3 +373,4 @@ describe("Custom constructor options", () => {
 		expect(error.message).toBe("custom token error");
 	});
 });
+

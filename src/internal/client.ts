@@ -149,7 +149,11 @@ export class DiscordClient {
 
 		if (!res.ok) {
 			const errorText = await res.text().catch(() => "Unknown error");
-			throw new Error(`Discord API request failed: ${res.status} ${errorText}`);
+			throw new AuthError(
+				ErrorCodes.INVALID_GRANT,
+				`Discord API request failed: ${res.status} ${errorText}`,
+				{ statusCode: res.status < 500 ? 401 : 500 },
+			);
 		}
 
 		return res;

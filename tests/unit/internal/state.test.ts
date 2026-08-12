@@ -341,3 +341,4 @@ describe("TestStateStore", () => {
 		expect(await store.has("test")).toBe(true);
 	});
 });
+

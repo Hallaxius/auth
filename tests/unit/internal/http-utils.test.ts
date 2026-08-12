@@ -300,3 +300,4 @@ describe("errorResponse", () => {
 		expect(json).toEqual({ error: "Auth failed", code: "INVALID_CREDENTIALS" });
 	});
 });
+

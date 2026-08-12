@@ -1,5 +1,7 @@
-import type { RateLimitStorage } from "../types";
+import type { RateLimitCheckResult, RateLimitStorage } from "../types";
 import { getRequestIP } from "../utils/ip";
+
+const MAX_USER_LIMITERS = 5_000;
 
 export interface UserTierConfig {
 	tierName: string;
@@ -38,7 +40,7 @@ export class PerUserRateLimiter implements RateLimitStorage {
 	private storage: RateLimitStorage;
 	private userLimiters = new Map<
 		string,
-		{ limiter: RateLimitStorage; tier: string }
+		{ limiter: RateLimitStorage; tier: string; lastUsedAt: number }
 	>();
 
 	constructor(config: PerUserRateLimitConfig) {
@@ -64,10 +66,10 @@ export class PerUserRateLimiter implements RateLimitStorage {
 		const tier = this.tiers.get(tierName) ?? this.defaultTier;
 		const limiterKey = `${userId}:${tierName}`;
 
-		const cached = this.userLimiters.get(limiterKey);
+		const cached = this.getLimiter(limiterKey);
 		if (!cached || cached.tier !== tierName) {
 			const limiter = this.createLimiterForTier(tier);
-			this.userLimiters.set(limiterKey, { limiter, tier: tierName });
+			this.storeLimiter(limiterKey, { limiter, tier: tierName });
 			return limiter.increment(key, tier.windowMs);
 		}
 
@@ -79,7 +81,7 @@ export class PerUserRateLimiter implements RateLimitStorage {
 	}
 
 	async check(
-		request: Request,
+		key: string | Request,
 		userId?: string,
 	): Promise<{
 		allowed: boolean;
@@ -89,24 +91,18 @@ export class PerUserRateLimiter implements RateLimitStorage {
 		limit: number;
 		tier?: string;
 	}> {
-		const key = await keyFromRequest(request);
+		const rateKey = typeof key === "string" ? key : await keyFromRequest(key);
 
 		if (!userId) {
 			const result = await (
 				this.storage as {
-					check?(key: string): Promise<{
-						allowed: boolean;
-						remaining: number;
-						resetAt: number;
-						retryAfter?: number;
-						limit: number;
-					}>;
+					check?(key: string): Promise<RateLimitCheckResult>;
 				}
-			).check?.(key);
+			).check?.(rateKey);
 			if (result) return result;
 
 			const incResult = await this.storage.increment(
-				key,
+				rateKey,
 				this.defaultTier.windowMs,
 			);
 			return {
@@ -124,37 +120,64 @@ export class PerUserRateLimiter implements RateLimitStorage {
 		const tier = this.tiers.get(tierName) ?? this.defaultTier;
 		const limiterKey = `${userId}:${tierName}`;
 
-		let cached = this.userLimiters.get(limiterKey);
+		let cached = this.getLimiter(limiterKey);
 		if (!cached || cached.tier !== tierName) {
 			const limiter = this.createLimiterForTier(tier);
-			cached = { limiter, tier: tierName };
-			this.userLimiters.set(limiterKey, cached);
+			cached = { limiter, tier: tierName, lastUsedAt: Date.now() };
+			this.storeLimiter(limiterKey, cached);
 		}
 
-		const result = await (
-			cached.limiter as {
-				check?(key: string): Promise<{
-					allowed: boolean;
-					remaining: number;
-					resetAt: number;
-					retryAfter?: number;
-					limit: number;
-				}>;
-			}
-		).check?.(key);
-		if (result) {
-			return { ...result, tier: tierName };
-		}
-
-		const incResult = await cached.limiter.increment(key, tier.windowMs);
+		const incResult = await cached.limiter.increment(
+			`user-${userId}`,
+			tier.windowMs,
+		);
+		const effectiveLimit = tier.maxRequests + (tier.burstAllowance ?? 0);
+		const allowed = incResult.count <= effectiveLimit;
 
 		return {
-			allowed: incResult.count <= tier.maxRequests,
-			remaining: Math.max(0, tier.maxRequests - incResult.count),
+			allowed,
+			remaining: Math.max(0, effectiveLimit - incResult.count),
 			resetAt: incResult.resetAt,
-			limit: tier.maxRequests,
+			retryAfter: allowed
+				? undefined
+				: Math.max(0, incResult.resetAt - Date.now()),
+			limit: effectiveLimit,
 			tier: tierName,
 		};
+	}
+
+	private getLimiter(key: string):
+		| {
+				limiter: RateLimitStorage;
+				tier: string;
+				lastUsedAt: number;
+		  }
+		| undefined {
+		const entry = this.userLimiters.get(key);
+		if (entry) {
+			entry.lastUsedAt = Date.now();
+		}
+		return entry;
+	}
+
+	private storeLimiter(
+		key: string,
+		entry: { limiter: RateLimitStorage; tier: string },
+	): void {
+		this.userLimiters.set(key, { ...entry, lastUsedAt: Date.now() });
+		if (this.userLimiters.size > MAX_USER_LIMITERS) {
+			let lruKey: string | null = null;
+			let lruTime = Number.POSITIVE_INFINITY;
+			for (const [candidateKey, candidate] of this.userLimiters) {
+				if (candidate.lastUsedAt < lruTime) {
+					lruTime = candidate.lastUsedAt;
+					lruKey = candidateKey;
+				}
+			}
+			if (lruKey) {
+				this.userLimiters.delete(lruKey);
+			}
+		}
 	}
 
 	private createLimiterForTier(tier: UserTierConfig): RateLimitStorage {
@@ -223,7 +246,7 @@ export class EndpointSpecificLimiter implements RateLimitStorage {
 		}
 	}
 
-	async check(request: Request): Promise<{
+	async check(key: string | Request): Promise<{
 		allowed: boolean;
 		remaining: number;
 		resetAt: number;
@@ -231,26 +254,21 @@ export class EndpointSpecificLimiter implements RateLimitStorage {
 		limit: number;
 		endpoint?: string;
 	}> {
-		const url = new URL(request.url);
-		const path = url.pathname;
-		const method = request.method;
+		const path = typeof key === "string" ? key : new URL(key.url).pathname;
+		const method = typeof key === "string" ? "GET" : (key.method ?? "GET");
 
 		const endpoint = this.findEndpoint(path, method);
 		const limit = endpoint ?? this.defaultLimit;
-		const key = await keyFromRequest(request);
+		const rateKey = typeof key === "string" ? key : await keyFromRequest(key);
 
 		const limiter = endpoint ? this.getOrCreateLimiter(endpoint) : this.storage;
-		const endpointKey = endpoint ? `${key}:${endpoint.pathPattern}` : key;
+		const endpointKey = endpoint
+			? `${rateKey}:${endpoint.pathPattern}`
+			: rateKey;
 
 		const result = await (
 			limiter as {
-				check?(key: string): Promise<{
-					allowed: boolean;
-					remaining: number;
-					resetAt: number;
-					retryAfter?: number;
-					limit: number;
-				}>;
+				check?(key: string): Promise<RateLimitCheckResult>;
 			}
 		).check?.(endpointKey);
 		if (result) {
@@ -323,13 +341,12 @@ class MapBasedStorage implements RateLimitStorage {
 
 		if (!entry || now >= entry.resetAt) {
 			const resetAt = now + windowMs;
-			const newEntry = { count: 1, resetAt };
-			this.store.set(key, newEntry);
-			return newEntry;
+			this.store.set(key, { count: 1, resetAt });
+			return { count: 1, resetAt };
 		}
 
 		entry.count++;
-		return entry;
+		return { count: entry.count, resetAt: entry.resetAt };
 	}
 
 	async reset(key: string): Promise<void> {
@@ -349,13 +366,16 @@ class BurstStorage implements RateLimitStorage {
 		this.windowMs = windowMs;
 	}
 
+	private get effectiveLimit(): number {
+		return this.maxRequests + this.burstAllowance;
+	}
+
 	async increment(
 		key: string,
 		_windowMs: number,
 	): Promise<{ count: number; resetAt: number }> {
 		const now = Date.now();
 		const entry = this.store.get(key);
-		const _effectiveLimit = this.maxRequests + this.burstAllowance;
 
 		if (!entry || now >= entry.resetAt) {
 			const resetAt = now + this.windowMs;
@@ -365,7 +385,25 @@ class BurstStorage implements RateLimitStorage {
 		}
 
 		entry.count++;
-		return entry;
+		return { count: entry.count, resetAt: entry.resetAt };
+	}
+
+	async check(key: string): Promise<RateLimitCheckResult> {
+		const now = Date.now();
+		const entry = this.store.get(key);
+		const active = entry && now < entry.resetAt;
+		const count = active ? entry.count : 0;
+		const limit = this.effectiveLimit;
+		const resetAt = active ? entry.resetAt : now + this.windowMs;
+		const allowed = count < limit;
+
+		return {
+			allowed,
+			remaining: Math.max(0, limit - count),
+			resetAt,
+			retryAfter: allowed ? undefined : Math.max(0, resetAt - now),
+			limit,
+		};
 	}
 
 	async reset(key: string): Promise<void> {

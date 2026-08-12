@@ -87,3 +87,4 @@ describe("isPrivateIP - edge cases", () => {
 		expect(isPrivateIP("192.169.0.0")).toBe(false);
 	});
 });
+

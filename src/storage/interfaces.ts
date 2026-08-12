@@ -52,6 +52,7 @@ export interface IStateStore {
 export interface ITokenRevocationStore {
 	isRevoked(jti: string): Promise<boolean>;
 	revoke(jti: string, ttlSeconds: number): Promise<void>;
+	revokeIfPresent?(jti: string, ttlSeconds: number): Promise<boolean>;
 	getTTL?(jti: string): Promise<number | null>;
 	dispose?(): void;
 	ping?(): Promise<boolean>;
@@ -153,7 +154,7 @@ export interface IAuthUserStore {
 		id: string;
 		username: string | null;
 		email: string | null;
-		passwordHash: string;
+		password: string;
 		roles: string[];
 		createdAt: Date;
 		updatedAt: Date;
@@ -162,7 +163,7 @@ export interface IAuthUserStore {
 		id: string;
 		username: string | null;
 		email: string | null;
-		passwordHash: string;
+		password: string;
 		roles: string[];
 		createdAt: Date;
 		updatedAt: Date;
@@ -171,7 +172,7 @@ export interface IAuthUserStore {
 		id: string;
 		username: string | null;
 		email: string | null;
-		passwordHash: string;
+		password: string;
 		roles: string[];
 		createdAt: Date;
 		updatedAt: Date;
@@ -179,13 +180,13 @@ export interface IAuthUserStore {
 	create(data: {
 		username?: string;
 		email?: string;
-		passwordHash: string;
+		password: string;
 		roles?: string[];
 	}): Promise<{
 		id: string;
 		username: string | null;
 		email: string | null;
-		passwordHash: string;
+		password: string;
 		roles: string[];
 		createdAt: Date;
 		updatedAt: Date;
@@ -197,7 +198,7 @@ export interface IAuthUserStore {
 		id: string;
 		username: string | null;
 		email: string | null;
-		passwordHash: string;
+		password: string;
 		roles: string[];
 		createdAt: Date;
 		updatedAt: Date;

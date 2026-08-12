@@ -24,4 +24,4 @@ for (const benchmark of benchmarks) {
 	}
 }
 
-console.log("\n✅ All benchmarks completed!");
+console.log("\n[OK] All benchmarks completed!");

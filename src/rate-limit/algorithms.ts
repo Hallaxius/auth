@@ -1,4 +1,4 @@
-import type { RateLimitStorage } from "../types";
+import type { RateLimitCheckResult, RateLimitStorage } from "../types";
 
 export interface SlidingWindowEntry {
 	timestamp: number;
@@ -25,14 +25,6 @@ export interface BurstConfig {
 	sustainedLimit: number;
 	sustainedWindowMs: number;
 	storage?: RateLimitStorage;
-}
-
-export interface RateLimitCheckResult {
-	allowed: boolean;
-	remaining: number;
-	resetAt: number;
-	retryAfter?: number;
-	limit: number;
 }
 
 export class SlidingWindowLog implements RateLimitStorage {

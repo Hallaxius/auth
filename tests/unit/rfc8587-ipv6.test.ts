@@ -121,21 +121,19 @@ describe("IPv6 Support", () => {
 });
 
 describe("extractIpFromRequest", () => {
-	test("should ignore x-forwarded-for header (untrusted) and use socket peer", async () => {
+	test("should ignore x-forwarded-for header (untrusted) and use peer IP", async () => {
 		const request = new Request("http://example.com", {
 			headers: {
 				"x-forwarded-for": "192.168.1.1, 10.0.0.1",
 			},
-		}) as unknown as {
-			socket: { remoteAddress?: string };
-		};
-		request.socket = { remoteAddress: "203.0.113.7" };
+		}) as unknown as Request & { ip?: string };
+		request.ip = "203.0.113.7";
 
 		const ip = await extractIpFromRequest(request);
 		expect(ip).toBe("203.0.113.7");
 	});
 
-	test("should return fingerprint when no socket peer is available", async () => {
+	test("should return fingerprint when no peer IP is available", async () => {
 		const request = new Request("http://example.com", {
 			headers: {
 				"x-real-ip": "192.168.1.1",
@@ -146,16 +144,14 @@ describe("extractIpFromRequest", () => {
 		expect(ip).toMatch(/^fp:[a-f0-9]{16}$/);
 	});
 
-	test("should ignore cf-connecting-ip header without trusted socket peer", async () => {
+	test("should ignore cf-connecting-ip header without trusted peer", async () => {
 		const request = new Request("http://example.com", {
 			headers: {
 				"cf-connecting-ip": "104.16.0.1",
 				"cf-ray": "test-ray-id",
 			},
-		}) as unknown as {
-			socket: { remoteAddress?: string };
-		};
-		request.socket = { remoteAddress: "198.51.100.2" };
+		}) as unknown as Request & { ip?: string };
+		request.ip = "198.51.100.2";
 
 		const ip = await extractIpFromRequest(request);
 		expect(ip).toBe("198.51.100.2");
@@ -168,15 +164,13 @@ describe("extractIpFromRequest", () => {
 		expect(ip).toMatch(/^fp:[a-f0-9]{16}$/);
 	});
 
-	test("should handle IPv6 socket peer", async () => {
+	test("should handle IPv6 peer IP", async () => {
 		const request = new Request("http://example.com", {
 			headers: {
 				"x-forwarded-for": "2001:db8::1, 10.0.0.1",
 			},
-		}) as unknown as {
-			socket: { remoteAddress?: string };
-		};
-		request.socket = { remoteAddress: "2001:db8::1" };
+		}) as unknown as Request & { ip?: string };
+		request.ip = "2001:db8::1";
 
 		const ip = await extractIpFromRequest(request);
 		expect(ip).toBe("2001:db8::1");

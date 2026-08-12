@@ -209,13 +209,51 @@ export interface GetRequestIPOptions {
 	trustProxy?: boolean;
 
 	proxyIPs?: string[];
+
+	peerIp?: string;
 }
 
-function getSocketIP(request: Request): string {
-	const socketIP = (
-		request as unknown as { socket?: { remoteAddress?: string } }
-	).socket?.remoteAddress;
-	return sanitizeIP(socketIP ?? "unknown");
+function getSocketIP(request: Request, peerIp?: string): string {
+	const fromPeerIp = peerIp ? sanitizeIP(peerIp) : "unknown";
+	if (fromPeerIp !== "unknown") return fromPeerIp;
+
+	try {
+		const duck = request as unknown as { ip?: unknown };
+		if (typeof duck.ip === "string") {
+			const ip = sanitizeIP(duck.ip);
+			if (ip !== "unknown") return ip;
+		}
+	} catch {
+		// ignore
+	}
+	try {
+		const bunGlobal = (
+			globalThis as {
+				Bun?: {
+					server?: {
+						requestIP?: (req: Request) => { address?: string } | null;
+					};
+				};
+			}
+		).Bun;
+		const requestIP = bunGlobal?.server?.requestIP;
+		if (typeof requestIP === "function") {
+			const ip = sanitizeIP(requestIP(request)?.address ?? "unknown");
+			if (ip !== "unknown") return ip;
+		}
+	} catch {
+		// ignore
+	}
+	try {
+		const socketIP = (
+			request as unknown as { socket?: { remoteAddress?: string } }
+		).socket?.remoteAddress;
+		const ip = sanitizeIP(socketIP ?? "unknown");
+		if (ip !== "unknown") return ip;
+	} catch {
+		// ignore
+	}
+	return "unknown";
 }
 
 function isExplicitProxy(ip: string, proxyIPs: string[]): boolean {
@@ -239,14 +277,20 @@ function isTrustedPeer(peer: string, proxyIPs?: string[]): boolean {
 	return isTrustedSource(peer) || isCloudflareIP(peer);
 }
 
-function pickForwardedIP(forwarded: string): string {
+function pickForwardedIP(
+	forwarded: string,
+	peer: string,
+	proxyIPs?: string[],
+): string {
 	const entries = forwarded.split(",").map((entry) => sanitizeIP(entry.trim()));
 	for (let i = entries.length - 1; i >= 0; i--) {
-		if (entries[i] !== "unknown") {
-			return entries[i]!;
+		const entry = entries[i]!;
+		if (entry === "unknown") continue;
+		if (!isTrustedPeer(entry, proxyIPs)) {
+			return entry;
 		}
 	}
-	return "unknown";
+	return peer;
 }
 
 function envProxyIPs(): string[] | undefined {
@@ -266,19 +310,23 @@ export async function getRequestIP(
 	const trustProxy = options?.trustProxy ?? false;
 	const proxyIPs = options?.proxyIPs ?? envProxyIPs();
 
-	const peer = getSocketIP(request);
+	const peer = getSocketIP(request, options?.peerIp);
 	const peerTrusted = trustProxy && isTrustedPeer(peer, proxyIPs);
 
 	const cfConnectingIP = request.headers.get("cf-connecting-ip");
-	if (cfConnectingIP && trustProxy && isCloudflareIP(peer)) {
+	if (
+		cfConnectingIP &&
+		trustProxy &&
+		(isCloudflareIP(peer) || peer === "unknown")
+	) {
 		const ip = sanitizeIP(cfConnectingIP);
-		if (ip !== "unknown") return ip;
+		if (ip !== "unknown" && !isPrivateIP(ip)) return ip;
 	}
 
 	if (peerTrusted) {
 		const forwarded = request.headers.get("x-forwarded-for");
 		if (forwarded) {
-			const ip = pickForwardedIP(forwarded);
+			const ip = pickForwardedIP(forwarded, peer, proxyIPs);
 			if (ip !== "unknown") return ip;
 		}
 

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, mock } from "bun:test";
+﻿import { beforeEach, describe, expect, test, mock } from "bun:test";
 import type { AuthUserStorage } from "../../../src/";
 import { credentials } from "../../../src/";
 import { TestBruteForceStorage } from "../../helpers/storage";
@@ -81,7 +81,7 @@ function createCredentialsConfig(
 		usernameRequired: overrides.usernameRequired ?? true,
 		storage: overrides.storage ?? new InMemoryUserStorage(),
 		session: {
-			secret: process.env.TEST_SECRET || "fallback-32-char-secret-key-here!!",
+			secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 			expiresIn: "7d",
 			cookieName: "credentials-session",
 		},
@@ -102,6 +102,14 @@ function createCredentialsConfig(
 describe("credentials - core flows", () => {
 	let storage: InMemoryUserStorage;
 	let handlers: ReturnType<typeof credentials>;
+
+	function extractSessionToken(res: Response): string {
+		const setCookie = res.headers.get("Set-Cookie");
+		if (!setCookie) throw new Error("Missing Set-Cookie header");
+		const match = setCookie.match(/credentials-session=([^;]+)/);
+		if (!match) throw new Error("Missing session cookie in Set-Cookie");
+		return match[1] as string;
+	}
 
 	beforeEach(() => {
 		storage = new InMemoryUserStorage();
@@ -125,7 +133,8 @@ describe("credentials - core flows", () => {
 		const body = await res.json();
 		expect(body.user.username).toBe("newuser");
 		expect(body.user.email).toBe("new@example.com");
-		expect(body.token).toBeDefined();
+		expect(body.token).toBeUndefined();
+		expect(extractSessionToken(res)).toBeTruthy();
 	});
 
 	test("register validates password is provided", async () => {
@@ -244,7 +253,8 @@ describe("credentials - core flows", () => {
 		expect(res.status).toBe(200);
 
 		const body = await res.json();
-		expect(body.token).toBeDefined();
+		expect(body.token).toBeUndefined();
+		expect(extractSessionToken(res)).toBeTruthy();
 	});
 
 	test("login returns 401 with invalid credentials", async () => {
@@ -287,6 +297,75 @@ describe("credentials - core flows", () => {
 		expect(res.status).toBe(401);
 	});
 
+	test("login uses the verifyPassword hook when present", async () => {
+		class HashingStore extends InMemoryUserStorage {
+			async verifyPassword(_userId: string, password: string) {
+				return password === "hashed-value";
+			}
+		}
+		const hashingHandlers = credentials(
+			createCredentialsConfig({ storage: new HashingStore() }),
+		);
+		await hashingHandlers.handleRegister(
+			new Request("http://localhost/auth/register", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					username: "hashuser",
+					email: "hash@example.com",
+					password: "SecurePass123!",
+				}),
+			}),
+		);
+
+		const res = await hashingHandlers.handleLogin(
+			new Request("http://localhost/auth/login", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					username: "hashuser",
+					password: "hashed-value",
+				}),
+			}),
+		);
+		expect(res.status).toBe(200);
+	});
+
+	test("login rejects when verifyPassword returns false", async () => {
+		class RejectingStore extends InMemoryUserStorage {
+			async verifyPassword() {
+				return false;
+			}
+		}
+		const rejectingHandlers = credentials(
+			createCredentialsConfig({ storage: new RejectingStore() }),
+		);
+		await rejectingHandlers.handleRegister(
+			new Request("http://localhost/auth/register", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					username: "hashuser",
+					email: "hash@example.com",
+					password: "SecurePass123!",
+				}),
+			}),
+		);
+
+		const res = await rejectingHandlers.handleLogin(
+			new Request("http://localhost/auth/login", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					username: "hashuser",
+					password: "hashed-value",
+				}),
+			}),
+		);
+		expect(res.status).toBe(401);
+	});
+
+
 	test("handleMe returns user with valid token", async () => {
 		const registerRes = await handlers.handleRegister(
 			new Request("http://localhost/auth/register", {
@@ -299,7 +378,7 @@ describe("credentials - core flows", () => {
 				}),
 			}),
 		);
-		const token = (await registerRes.json()).token;
+		const token = extractSessionToken(registerRes);
 
 		const meRes = await handlers.handleMe(
 			new Request("http://localhost/auth/me", {
@@ -347,7 +426,7 @@ describe("credentials - core flows", () => {
 				}),
 			}),
 		);
-		const token = (await registerRes.json()).token;
+		const token = extractSessionToken(registerRes);
 
 		const wrapped = handlers.withAuth(async (_request, ctx) => {
 			return new Response(
@@ -365,3 +444,5 @@ describe("credentials - core flows", () => {
 		expect(await res.json()).toEqual({ ok: true, username: "authuser" });
 	});
 });
+
+

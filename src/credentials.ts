@@ -19,8 +19,14 @@ import {
 	type SessionCookieOptions,
 } from "./internal/cookies";
 import { LIMIT_CONSTANTS } from "./internal/defaults";
-import { expiresInToSeconds, signToken, verifyToken } from "./internal/jwt";
+import {
+	expiresInToSeconds,
+	revokeToken,
+	signToken,
+	verifyToken,
+} from "./internal/jwt";
 import { rateLimit } from "./rate-limit";
+import { MemoryBruteForceStore } from "./storage/factory";
 import type {
 	AuthUser,
 	AuthUserIdentifier,
@@ -33,6 +39,8 @@ import type {
 	CredentialsConfig,
 	CredentialsResult,
 	InternalCredentialsConfig,
+	SafeAuthUser,
+	TokenRevocationStorage,
 } from "./types";
 import { constantTimeCompareStrings } from "./utils/constant-time";
 import { getRequestIP } from "./utils/ip";
@@ -54,11 +62,15 @@ export class BruteForceProtection {
 		};
 		const resolvedStorage = storage ?? config.storage;
 		if (!resolvedStorage) {
-			throw new ConfigurationError(
-				"BruteForceProtection requires a storage. Provide a `storage` implementing BruteForceStorage (e.g. Redis, Database, KV).",
+			logger.warn(
+				"BruteForceProtection: no storage provided, falling back to in-memory store. " +
+					"This is NOT suitable for production, serverless, or multi-process deployments. " +
+					"Provide a `storage` implementing BruteForceStorage (e.g. Redis, Database, KV).",
 			);
+			this.storage = new MemoryBruteForceStore();
+		} else {
+			this.storage = resolvedStorage;
 		}
-		this.storage = resolvedStorage;
 	}
 
 	get maxAttempts(): number {
@@ -164,13 +176,15 @@ export class CredentialsClient {
 			cookiePath: config.cookiePath ?? "/",
 			httpOnly: config.httpOnly ?? true,
 			secure: config.secure ?? defaultSecureCookie(),
-			sameSite: config.sameSite ?? "lax",
+			sameSite: config.sameSite ?? defaultSameSite(),
 			defaultRoles: config.defaultRoles ?? ["user"],
 			minPasswordLength: config.minPasswordLength ?? 8,
-			validatePassword: config.validatePassword ?? false,
+			validatePassword: config.validatePassword ?? true,
+			sessionRevocationStorage: config.sessionRevocationStorage,
 			captcha: config.captcha
 				? (resolveCaptchaConfig(config.captcha as CaptchaConfig) ?? undefined)
 				: undefined,
+			trustProxy: config.trustProxy ?? false,
 		};
 		this.storage = storage;
 		this.bruteForce = new BruteForceProtection({
@@ -264,7 +278,9 @@ export class CredentialsClient {
 			);
 		}
 
-		const passwordMatches = constantTimeCompareStrings(user.password, password);
+		const passwordMatches = this.storage.verifyPassword
+			? await this.storage.verifyPassword(user.id, password)
+			: constantTimeCompareStrings(user.password, password);
 		if (!passwordMatches) {
 			if (bruteForceKey) {
 				const result = await this.bruteForce.recordAttempt(bruteForceKey);
@@ -305,6 +321,7 @@ export class CredentialsClient {
 		const payload = await verifyToken<Record<string, unknown>>(
 			token,
 			this.config.secret,
+			this.config.sessionRevocationStorage,
 		);
 		if (!payload) return null;
 
@@ -403,7 +420,7 @@ export class CredentialsClient {
 		request?: Request,
 	): Promise<string | null> {
 		const ip = request
-			? await getRequestIP(request, { trustProxy: true })
+			? await getRequestIP(request, { trustProxy: this.config.trustProxy })
 			: "unknown";
 		const identifierValue =
 			identifier.username ?? identifier.email ?? "unknown";
@@ -423,6 +440,8 @@ interface CredentialsHandlerContext {
 	rateLimiter?: ReturnType<typeof rateLimit>;
 	captcha?: ResolvedCaptchaConfig;
 	bruteForceMaxAttempts?: number;
+	sessionRevocationStorage?: TokenRevocationStorage;
+	sessionSecret?: string;
 }
 
 function jsonResponse(
@@ -580,11 +599,7 @@ function createCredentialsHandlers(ctx: CredentialsHandlerContext) {
 				cookieOptions(),
 			);
 
-			return jsonResponse(
-				{ user: getSafeUser(result.user), token: result.token },
-				201,
-				[cookie],
-			);
+			return jsonResponse({ user: getSafeUser(result.user) }, 201, [cookie]);
 		} catch (error) {
 			return errorResponse(error, bruteForceMaxAttempts);
 		}
@@ -632,11 +647,7 @@ function createCredentialsHandlers(ctx: CredentialsHandlerContext) {
 				cookieOptions(),
 			);
 
-			return jsonResponse(
-				{ user: getSafeUser(result.user), token: result.token },
-				200,
-				[cookie],
-			);
+			return jsonResponse({ user: getSafeUser(result.user) }, 200, [cookie]);
 		} catch (error) {
 			return errorResponse(error, bruteForceMaxAttempts);
 		}
@@ -645,6 +656,15 @@ function createCredentialsHandlers(ctx: CredentialsHandlerContext) {
 	async function handleLogout(request: Request): Promise<Response> {
 		if (request.method !== "POST") {
 			return jsonResponse({ error: "Method not allowed" }, 405);
+		}
+		const cookies = parseCookies(request);
+		const sessionToken = cookies[cookieName];
+		if (sessionToken && ctx.sessionRevocationStorage && ctx.sessionSecret) {
+			await revokeToken(
+				sessionToken,
+				ctx.sessionSecret,
+				ctx.sessionRevocationStorage,
+			);
 		}
 		const clearCookie = clearSessionCookie(cookieName, cookieOptions());
 		return jsonResponse({ ok: true }, 200, [clearCookie]);
@@ -710,6 +730,7 @@ export function credentials(config: CredentialsConfig): CredentialsResult {
 			expiresIn: config.session.expiresIn,
 			cookieName,
 			validatePassword: config.validatePassword,
+			sessionRevocationStorage: config.sessionRevocationStorage,
 			captcha: config.captcha,
 		},
 		config.storage,
@@ -745,9 +766,11 @@ export function credentials(config: CredentialsConfig): CredentialsResult {
 			config.bruteForce?.maxAttempts ??
 			LIMIT_CONSTANTS.BRUTE_FORCE_MAX_ATTEMPTS,
 		captcha: resolvedCaptcha ?? undefined,
+		sessionRevocationStorage: config.sessionRevocationStorage,
+		sessionSecret: config.session.secret,
 	});
 
-	async function getSession(request: Request): Promise<AuthUser | null> {
+	async function getSession(request: Request): Promise<SafeAuthUser | null> {
 		const cookies = parseCookies(request);
 		const token = cookies[cookieName];
 		if (!token) return null;
@@ -755,6 +778,7 @@ export function credentials(config: CredentialsConfig): CredentialsResult {
 		const payload = await verifyToken<Record<string, unknown>>(
 			token,
 			config.session.secret,
+			config.sessionRevocationStorage,
 		);
 		if (!payload) return null;
 
@@ -762,13 +786,16 @@ export function credentials(config: CredentialsConfig): CredentialsResult {
 		if (!userId) return null;
 
 		const user = await config.storage.findById(userId);
-		return user ?? null;
+		if (!user) return null;
+
+		const { password: _password, ...safeUser } = user;
+		return safeUser;
 	}
 
 	function withAuth<
 		T extends (
 			request: Request,
-			ctx: { user: AuthUser },
+			ctx: { user: SafeAuthUser },
 		) => Promise<Response> | Response,
 	>(handler: T): (request: Request) => Promise<Response> {
 		return async (request: Request): Promise<Response> => {

@@ -48,7 +48,7 @@ export interface AnomalyConfig {
 	credentialStuffingThreshold?: number;
 
 	onAnomaly?: "log" | "challenge_mfa" | "block" | "notify";
-	defaultAction?: "log";
+	defaultAction?: "log" | "challenge_mfa" | "block" | "notify";
 
 	storage?: LoginHistoryStore;
 
@@ -177,9 +177,10 @@ export class AnomalyDetector {
 		if (recentUAs.length === 0) return null;
 
 		const userAgentFingerprint = await this.sha256(userAgent);
-		const known = recentUAs.some((ua: string) =>
-			this.sha256(ua).then((h) => h === userAgentFingerprint),
+		const hashes = await Promise.all(
+			recentUAs.map((ua: string) => this.sha256(ua)),
 		);
+		const known = hashes.includes(userAgentFingerprint);
 
 		if (!known) {
 			return {

@@ -14,7 +14,7 @@ import { TestStateStore } from "../helpers/storage";
 const MINIMAL_CONFIG: DiscordAuthConfig = {
 	clientId: "test-client-id",
 	clientSecret: "test-client-secret",
-	secret: process.env.TEST_SECRET || "fallback-32-char-secret-key!!",
+	secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 	callbackUrl: "/auth/callback",
 	redirectUri: "http://localhost:3000/auth/callback",
 	csrf: { storage: new TestStateStore() },
@@ -296,3 +296,5 @@ describe("pkce namespace", () => {
 		expect(pkce.create).toBe(create);
 	});
 });
+
+

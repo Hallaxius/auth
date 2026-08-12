@@ -1,3 +1,5 @@
+import { constantTimeCompareStrings } from "./constant-time";
+
 export interface DataExportRequest {
 	userId: string;
 	email: string;
@@ -262,7 +264,13 @@ export class ComplianceManager {
 		confirmationCode: string,
 	): Promise<void> {
 		const request = await this.deletionStorage.getRequest(requestId);
-		if (!request || request.confirmationCode !== confirmationCode) {
+		if (
+			!request ||
+			!constantTimeCompareStrings(
+				request.confirmationCode ?? "",
+				confirmationCode,
+			)
+		) {
 			throw new Error("Invalid deletion request or confirmation code");
 		}
 
@@ -406,16 +414,29 @@ export class ComplianceManager {
 		return result;
 	}
 
-	getPrivacySettings(userId: string): PrivacySettings {
+	async getPrivacySettings(userId: string): Promise<PrivacySettings> {
+		const [consents, deletionRequest] = await Promise.all([
+			this.consentStorage.getConsents(userId),
+			this.deletionStorage.getPendingRequestByUserId?.(userId) ??
+				Promise.resolve(null),
+		]);
+
+		const consentMap = new Map(consents.map((c) => [c.consentType, c.granted]));
+
+		const updatedAt = consents.reduce(
+			(latest, c) => Math.max(latest, c.grantedAt.getTime()),
+			deletionRequest?.requestedAt ?? 0,
+		);
+
 		return {
 			userId,
-			dataProcessingConsent: true,
-			marketingConsent: false,
-			analyticsConsent: true,
-			thirdPartySharingConsent: false,
-			dataPortabilityEnabled: true,
-			deletionRequested: false,
-			updatedAt: new Date(),
+			dataProcessingConsent: consentMap.get("data_processing") ?? false,
+			marketingConsent: consentMap.get("marketing") ?? false,
+			analyticsConsent: consentMap.get("analytics") ?? false,
+			thirdPartySharingConsent: consentMap.get("third_party_sharing") ?? false,
+			dataPortabilityEnabled: consentMap.get("data_portability") ?? false,
+			deletionRequested: deletionRequest !== null,
+			updatedAt: new Date(updatedAt || Date.now()),
 		};
 	}
 }
@@ -435,6 +456,9 @@ export interface DataExportStorage {
 export interface DeletionStorage {
 	saveRequest(request: DataDeletionRequest): Promise<void>;
 	getRequest(requestId: string): Promise<DataDeletionRequest | null>;
+	getPendingRequestByUserId?(
+		userId: string,
+	): Promise<DataDeletionRequest | null>;
 	updateStatus(
 		requestId: string,
 		status: DataDeletionRequest["status"],

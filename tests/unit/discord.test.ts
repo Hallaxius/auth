@@ -273,7 +273,7 @@ function createMockConfig(
 			clientId: "test-client-id",
 			clientSecret: "test-client-secret",
 			secret:
-				process.env.TEST_SECRET || "test-secret-key-that-is-at-least-32-char!",
+				process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 			callbackUrl: "http://localhost:3000/auth/callback",
 			redirectUri: "http://localhost:3000/auth/callback",
 			storage: defaultStorage,
@@ -578,7 +578,7 @@ describe("discord - OAuth2 flow integration", () => {
 		expect(response.status).toBe(405);
 	});
 
-	test("callback propagates non-AuthError (exchangeCode throws)", async () => {
+	test("callback maps exchange failure to 401 (AuthError)", async () => {
 		handlers = await discord(config);
 
 		const loginResponse = await handlers.handleLogin(
@@ -594,7 +594,7 @@ describe("discord - OAuth2 flow integration", () => {
 		);
 		const callbackResponse = await handlers.handleCallback(callbackRequest);
 
-		expect(callbackResponse.status).toBe(500);
+		expect(callbackResponse.status).toBe(401);
 	});
 
 	test("callback with onSuccess redirect", async () => {
@@ -794,3 +794,5 @@ describe("discord - OAuth2 flow integration", () => {
 		expect(callbackResponse.status).toBe(302);
 	});
 });
+
+

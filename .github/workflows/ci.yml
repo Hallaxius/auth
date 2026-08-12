@@ -83,6 +83,22 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run test:security
 
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: 1.3.14
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run test:integration
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest

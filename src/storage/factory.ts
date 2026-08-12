@@ -43,8 +43,11 @@ export function createStorageAdapters(
 
 export { isMemoryBacked };
 
-class MemoryBruteForceStore implements IBruteForceStore {
-	private store = new Map<string, { count: number; blockedUntil?: number }>();
+export class MemoryBruteForceStore implements IBruteForceStore {
+	private store = new Map<
+		string,
+		{ count: number; blockedUntil?: number; expiresAt?: number }
+	>();
 	private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 	constructor() {
@@ -55,7 +58,11 @@ class MemoryBruteForceStore implements IBruteForceStore {
 		this.cleanupInterval = setInterval(() => {
 			const now = Date.now();
 			for (const [key, data] of this.store.entries()) {
-				if (data.blockedUntil && data.blockedUntil < now) {
+				const blockExpired =
+					data.blockedUntil !== undefined && data.blockedUntil < now;
+				const windowExpired =
+					data.expiresAt !== undefined && data.expiresAt < now;
+				if (blockExpired || windowExpired) {
 					this.store.delete(key);
 				}
 			}
@@ -72,11 +79,16 @@ class MemoryBruteForceStore implements IBruteForceStore {
 		}
 	}
 
-	async increment(key: string, _windowMs: number): Promise<number> {
+	async increment(key: string, windowMs: number): Promise<number> {
 		const now = Date.now();
 		const entry = this.store.get(key);
-		if (!entry || now > entry.blockedUntil!) {
-			this.store.set(key, { count: 1 });
+		const windowExpired = !entry?.expiresAt || now >= entry.expiresAt;
+		if (!entry || windowExpired) {
+			this.store.set(key, {
+				count: 1,
+				expiresAt: now + windowMs,
+				blockedUntil: entry?.blockedUntil,
+			});
 			return 1;
 		}
 		entry.count++;
@@ -95,6 +107,7 @@ class MemoryBruteForceStore implements IBruteForceStore {
 	async block(key: string, durationMs: number): Promise<void> {
 		const entry = this.store.get(key) || { count: 0 };
 		entry.blockedUntil = Date.now() + durationMs;
+		if (!entry.expiresAt) entry.expiresAt = entry.blockedUntil;
 		this.store.set(key, entry);
 	}
 
@@ -114,7 +127,7 @@ class MemoryBruteForceStore implements IBruteForceStore {
 	}
 }
 
-class MemoryRateLimitStore implements IRateLimitStore {
+export class MemoryRateLimitStore implements IRateLimitStore {
 	private store = new Map<string, { count: number; resetAt: number }>();
 	private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -363,7 +376,7 @@ class MemoryAuthUserStore implements IAuthUserStore {
 			id: string;
 			username: string | null;
 			email: string | null;
-			passwordHash: string;
+			password: string;
 			roles: string[];
 			createdAt: Date;
 			updatedAt: Date;
@@ -376,7 +389,7 @@ class MemoryAuthUserStore implements IAuthUserStore {
 		id: string;
 		username: string | null;
 		email: string | null;
-		passwordHash: string;
+		password: string;
 		roles: string[];
 		createdAt: Date;
 		updatedAt: Date;
@@ -388,7 +401,7 @@ class MemoryAuthUserStore implements IAuthUserStore {
 		id: string;
 		username: string | null;
 		email: string | null;
-		passwordHash: string;
+		password: string;
 		roles: string[];
 		createdAt: Date;
 		updatedAt: Date;
@@ -402,7 +415,7 @@ class MemoryAuthUserStore implements IAuthUserStore {
 		id: string;
 		username: string | null;
 		email: string | null;
-		passwordHash: string;
+		password: string;
 		roles: string[];
 		createdAt: Date;
 		updatedAt: Date;
@@ -415,13 +428,13 @@ class MemoryAuthUserStore implements IAuthUserStore {
 	async create(data: {
 		username?: string;
 		email?: string;
-		passwordHash: string;
+		password: string;
 		roles?: string[];
 	}): Promise<{
 		id: string;
 		username: string | null;
 		email: string | null;
-		passwordHash: string;
+		password: string;
 		roles: string[];
 		createdAt: Date;
 		updatedAt: Date;
@@ -431,7 +444,7 @@ class MemoryAuthUserStore implements IAuthUserStore {
 			id,
 			username: data.username ?? null,
 			email: data.email ?? null,
-			passwordHash: data.passwordHash,
+			password: data.password,
 			roles: data.roles ?? [],
 			createdAt: new Date(),
 			updatedAt: new Date(),
@@ -449,7 +462,7 @@ class MemoryAuthUserStore implements IAuthUserStore {
 		id: string;
 		username: string | null;
 		email: string | null;
-		passwordHash: string;
+		password: string;
 		roles: string[];
 		createdAt: Date;
 		updatedAt: Date;
@@ -457,6 +470,14 @@ class MemoryAuthUserStore implements IAuthUserStore {
 		const existing = await this.findById(userId);
 		if (!existing) throw new Error(`User ${userId} not found`);
 		const updated = { ...existing, ...data, updatedAt: new Date() };
+		if (data.username !== undefined && data.username !== existing.username) {
+			if (existing.username) this.usernameIndex.delete(existing.username);
+			if (updated.username) this.usernameIndex.set(updated.username, userId);
+		}
+		if (data.email !== undefined && data.email !== existing.email) {
+			if (existing.email) this.emailIndex.delete(existing.email);
+			if (updated.email) this.emailIndex.set(updated.email, userId);
+		}
 		this.store.set(userId, updated);
 		return updated;
 	}
@@ -531,6 +552,14 @@ class MemoryTokenRevocationStore implements ITokenRevocationStore {
 
 	async revoke(jti: string, ttlSeconds: number): Promise<void> {
 		this.store.set(jti, { expiresAt: Date.now() + ttlSeconds * 1000 });
+	}
+
+	async revokeIfPresent(jti: string, ttlSeconds: number): Promise<boolean> {
+		if (await this.isRevoked(jti)) {
+			return false;
+		}
+		this.store.set(jti, { expiresAt: Date.now() + ttlSeconds * 1000 });
+		return true;
 	}
 
 	async ping(): Promise<boolean> {

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bun
+#!/usr/bin/env bun
 import { $ } from "bun";
 import { readdir } from "fs/promises";
 import { join } from "path";
@@ -32,7 +32,7 @@ let passed = 0;
 let failed = 0;
 
 for (const file of testFiles) {
-	console.log(`\n📝 Testing: ${file}`);
+	console.log(`\n[TEST] Testing: ${file}`);
 	const result = await $`bun test ${file} --timeout 30000`.nothrow();
 	if (result.exitCode === 0) {
 		passed++;
@@ -42,8 +42,8 @@ for (const file of testFiles) {
 	}
 }
 
-console.log(`\n✅ Passed: ${passed}, ❌ Failed: ${failed}`);
-console.log("✅ All tests completed!");
+console.log(`\n[OK] Passed: ${passed}, [FAIL] Failed: ${failed}`);
+console.log("[OK] All tests completed!");
 
 setTimeout(() => {
 	process.exit(failed > 0 ? 1 : 0);

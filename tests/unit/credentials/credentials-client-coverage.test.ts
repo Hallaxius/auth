@@ -77,7 +77,7 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 			{
 				emailRequired: true,
 				usernameRequired: true,
-				secret: "test-secret",
+				secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				expiresIn: "7d",
 				cookieName: "test-session",
 			},
@@ -107,7 +107,7 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 			{
 				emailRequired: true,
 				usernameRequired: true,
-				secret: "test-secret",
+				secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				expiresIn: "7d",
 				cookieName: "test-session",
 			},
@@ -142,7 +142,7 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 		const client = new CredentialsClient(
 			{
 				usernameRequired: true,
-				secret: "test-secret",
+				secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				expiresIn: "7d",
 				cookieName: "test-session",
 			},
@@ -178,7 +178,7 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 		const client = new CredentialsClient(
 			{
 				emailRequired: true,
-				secret: "test-secret",
+				secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				expiresIn: "7d",
 				cookieName: "test-session",
 			},
@@ -207,7 +207,7 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 		const client = new CredentialsClient(
 			{
 				usernameRequired: true,
-				secret: "test-secret",
+				secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				expiresIn: "7d",
 				cookieName: "test-session",
 			},
@@ -235,7 +235,7 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 		const client = new CredentialsClient(
 			{
 				emailRequired: true,
-				secret: "test-secret",
+				secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				expiresIn: "7d",
 				cookieName: "test-session",
 			},
@@ -257,3 +257,5 @@ describe("CredentialsClient - findUserByIdentifier coverage", () => {
 		expect(user).toBeNull();
 	});
 });
+
+

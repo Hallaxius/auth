@@ -82,19 +82,20 @@ export class RouteLimiter {
 	}
 
 	private getMatchingRule(path: string, method: string): RouteRateLimitRule {
-		const cached = this.routeCache.get(path);
+		const cacheKey = `${method} ${path}`;
+		const cached = this.routeCache.get(cacheKey);
 		if (cached !== undefined) {
 			return cached || this.defaultRule;
 		}
 
 		for (const rule of this.config.routes) {
 			if (this.ruleMatches(rule, path, method)) {
-				this.routeCache.set(path, rule);
+				this.routeCache.set(cacheKey, rule);
 				return rule;
 			}
 		}
 
-		this.routeCache.set(path, null);
+		this.routeCache.set(cacheKey, null);
 		return this.defaultRule;
 	}
 
@@ -120,20 +121,21 @@ export class RouteLimiter {
 		const routePrefix = this.getRoutePrefix(rule.path);
 		const ip = await this.extractIP(request);
 		const keyBy = rule.keyBy || "route+ip";
+		const methodTag = rule.method ? `:m:${request.method}` : "";
 
 		switch (keyBy) {
 			case "ip":
-				return `route:${routePrefix}:ip:${ip}`;
+				return `route:${routePrefix}${methodTag}:ip:${ip}`;
 			case "user":
 				return userId
-					? `route:${routePrefix}:user:${userId}`
-					: `route:${routePrefix}:ip:${ip}`;
+					? `route:${routePrefix}${methodTag}:user:${userId}`
+					: `route:${routePrefix}${methodTag}:ip:${ip}`;
 			case "route+user":
 				return userId
-					? `route:${routePrefix}:user:${userId}`
-					: `route:${routePrefix}:ip:${ip}`;
+					? `route:${routePrefix}${methodTag}:user:${userId}`
+					: `route:${routePrefix}${methodTag}:ip:${ip}`;
 			default:
-				return `route:${routePrefix}:ip:${ip}`;
+				return `route:${routePrefix}${methodTag}:ip:${ip}`;
 		}
 	}
 

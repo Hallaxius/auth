@@ -59,7 +59,7 @@ describe("Full Auth Flow - Integration Tests", () => {
 			auth = await discord({
 				clientId: "test_client_id",
 				clientSecret: "test_client_secret",
-				secret: "a".repeat(32),
+				secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				callbackUrl: "http://localhost:3000/auth/callback",
 				redirectUri: "http://localhost:3000/auth/callback",
 				storage: mockStorage as any,
@@ -121,7 +121,7 @@ describe("Full Auth Flow - Integration Tests", () => {
 
 			expect(response.status).toBe(403);
 			const text = await response.text();
-			expect(text).toContain("State parameter");
+			expect(text).toContain("Invalid state parameter");
 		});
 
 		test("me handler returns 401 without session", async () => {
@@ -196,7 +196,7 @@ describe("Full Auth Flow - Integration Tests", () => {
 				emailRequired: true,
 				usernameRequired: true,
 				session: {
-					secret: "a".repeat(32),
+					secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 					expiresIn: "15m",
 				},
 				storage: mockStorage as any,
@@ -221,7 +221,10 @@ describe("Full Auth Flow - Integration Tests", () => {
 			const json = await response.json();
 			expect(json.user).toBeDefined();
 			expect(json.user.username).toBe("newuser");
-			expect(json.token).toBeDefined();
+			expect(json.token).toBeUndefined();
+			expect(response.headers.get("Set-Cookie")).toContain(
+				"credentials-session=",
+			);
 		});
 
 		test("register validates password length", async () => {
@@ -311,7 +314,7 @@ describe("Full Auth Flow - Integration Tests", () => {
 				emailRequired: true,
 				usernameRequired: true,
 				session: {
-					secret: "a".repeat(32),
+					secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 					expiresIn: "15m",
 				},
 				storage: freshMockStorage as any,
@@ -421,7 +424,7 @@ describe("Full Auth Flow - Integration Tests", () => {
 
 			mfaInstance = mfa({
 				storage: mockMfaStorage as any,
-				secret: "a".repeat(32),
+				secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				issuer: "TestApp",
 			});
 		});
@@ -799,3 +802,4 @@ describe("Full Auth Flow - Integration Tests", () => {
 		});
 	});
 });
+

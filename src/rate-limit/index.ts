@@ -1,3 +1,4 @@
+export type { RateLimitCheckResult } from "../types";
 export {
 	type BurstConfig,
 	BurstRateLimiter,
@@ -5,7 +6,6 @@ export {
 	createSlidingWindowCounterLimiter,
 	createSlidingWindowLimiter,
 	createTokenBucketLimiter,
-	type RateLimitCheckResult,
 	type SlidingWindowConfig,
 	SlidingWindowCounter,
 	SlidingWindowLog,

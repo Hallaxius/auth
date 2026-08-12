@@ -234,16 +234,23 @@ export interface AuditLogger {
 	cleanupOldLogs(olderThan?: Date): Promise<number>;
 }
 
+function randomSuffix(length: number): string {
+	const bytes = new Uint8Array(Math.ceil(length / 2));
+	crypto.getRandomValues(bytes);
+	return Array.from(bytes)
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("")
+		.slice(0, length);
+}
+
 function generateEventId(): string {
 	const timestamp = Date.now().toString(36);
-	const random = Math.random().toString(36).substring(2, 10);
-	return `evt_${timestamp}_${random}`;
+	return `evt_${timestamp}_${randomSuffix(8)}`;
 }
 
 function generateLogId(): string {
 	const timestamp = Date.now().toString(36);
-	const random = Math.random().toString(36).substring(2, 12);
-	return `log_${timestamp}_${random}`;
+	return `log_${timestamp}_${randomSuffix(12)}`;
 }
 
 function getSeverityForEventType(type: AuditEventType): AuditSeverity {
@@ -558,7 +565,9 @@ export function createAuditLogger(config: AuditLoggerConfig = {}): AuditLogger {
 		try {
 			await storage.store(sanitizedEvent);
 		} catch (err) {
-			console.error("Failed to store audit log:", err);
+			logger?.error("Failed to store audit log", {
+				error: err instanceof Error ? err.message : String(err),
+			});
 		}
 	}
 

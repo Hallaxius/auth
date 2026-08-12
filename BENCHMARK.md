@@ -73,7 +73,7 @@ bun run benchmarks/mfa.ts
 - Rate limiting uses external storage (Redis/KV) for distributed deployments
 - Individual checks are very fast (< 12 µs)
 - Different IP checks are 10x slower due to storage lookups but still sub-millisecond
-- Sliding window algorithm ensures accurate rate limiting across workers
+- The default rate limiter is a fixed-window counter; sliding-window and token-bucket algorithms are available for stricter guarantees
 
 ---
 

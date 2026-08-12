@@ -1,3 +1,5 @@
+import { DEFAULT_SESSION_TTL_SECONDS } from "./defaults";
+
 export interface SessionStore {
 	get(sessionId: string): Promise<Record<string, unknown> | null>;
 	set(
@@ -15,10 +17,16 @@ export class MemorySessionStore implements SessionStore {
 		{ data: Record<string, unknown>; expiresAt: number }
 	>();
 	private sweepInterval: ReturnType<typeof setInterval> | null = null;
+	private static readonly DEFAULT_SWEEP_INTERVAL_MS = 60000;
 
 	constructor(sweepIntervalMs?: number) {
-		if (sweepIntervalMs && typeof setInterval !== "undefined") {
-			this.sweepInterval = setInterval(() => this.sweep(), sweepIntervalMs);
+		const interval =
+			sweepIntervalMs ?? MemorySessionStore.DEFAULT_SWEEP_INTERVAL_MS;
+		if (typeof setInterval !== "undefined") {
+			this.sweepInterval = setInterval(() => this.sweep(), interval);
+			if (this.sweepInterval.unref) {
+				this.sweepInterval.unref();
+			}
 		}
 	}
 
@@ -46,7 +54,7 @@ export class MemorySessionStore implements SessionStore {
 		data: Record<string, unknown>,
 		ttlSeconds?: number,
 	): Promise<void> {
-		const ttl = ttlSeconds ?? 1209600;
+		const ttl = ttlSeconds ?? DEFAULT_SESSION_TTL_SECONDS;
 		this.store.set(sessionId, {
 			data,
 			expiresAt: Date.now() + ttl * 1000,

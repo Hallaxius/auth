@@ -128,3 +128,4 @@ export class TestStateStore implements StateStore {
 		this.store.clear();
 	}
 }
+

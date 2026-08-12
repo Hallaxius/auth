@@ -193,3 +193,4 @@ export function triggerScriptError(scriptId: string): void {
 		(script as HTMLScriptElement).onerror!(new Event("error"));
 	}
 }
+

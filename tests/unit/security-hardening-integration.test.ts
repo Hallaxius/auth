@@ -564,3 +564,4 @@ describe("Production Security Configurations", () => {
 		expect(permissions).toContain("geolocation=('self')");
 	});
 });
+

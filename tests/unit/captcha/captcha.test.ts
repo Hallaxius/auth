@@ -14,7 +14,7 @@ function makeConfig(
 	return {
 		provider: "hcaptcha",
 		enabled: true,
-		secretKey: "test-secret",
+		secretKey: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 		siteKey: "test-sitekey",
 		...overrides,
 	};
@@ -330,7 +330,9 @@ describe("verifyCaptcha", () => {
 			);
 			expect(call[1]?.body).toContain("remoteip=192.168.1.1");
 			expect(call[1]?.body).toContain("response=token");
-			expect(call[1]?.body).toContain("secret=test-secret");
+			expect(call[1]?.body).toContain(
+				"secret=5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
+			);
 		});
 
 		it("does not include remoteip when not provided", async () => {
@@ -472,3 +474,5 @@ describe("resolveCaptchaConfig", () => {
 		});
 	});
 });
+
+

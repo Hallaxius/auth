@@ -62,7 +62,7 @@ function createConfig(storage: AuthUserStorage): Parameters<typeof credentials>[
 		storage,
 		emailRequired: true,
 		session: {
-			secret: "opaque-password-test-secret-at-least-32-chars!!",
+			secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 			expiresIn: "1h",
 		},
 		validatePassword: false,

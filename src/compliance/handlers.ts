@@ -5,6 +5,15 @@ import type {
 	DeletionStorage,
 	UserDataExport,
 } from "../utils/compliance";
+import { createSecurityLogger } from "../utils/logger";
+
+const logger = createSecurityLogger("compliance");
+
+function logError(message: string, error: unknown): void {
+	logger.error(message, {
+		error: error instanceof Error ? error.message : String(error),
+	});
+}
 
 interface RequestLike {
 	user?: { id: string; email: string };
@@ -76,7 +85,7 @@ export function createComplianceHandlers(config: ComplianceHandlersConfig) {
 			await exportStorage.saveRequest(requestId, request);
 
 			queueExportProcessing(requestId, userDataCollector, exportStorage).catch(
-				console.error,
+				(err) => logError("Export processing failed", err),
 			);
 
 			res.status(202).json({
@@ -86,7 +95,7 @@ export function createComplianceHandlers(config: ComplianceHandlersConfig) {
 				expiresAt: request.expiresAt,
 			});
 		} catch (error) {
-			console.error("Export request error:", error);
+			logError("Export request error", error);
 			res.status(500).json({ error: "Failed to process export request" });
 		}
 	}
@@ -130,7 +139,7 @@ export function createComplianceHandlers(config: ComplianceHandlersConfig) {
 			);
 			res.json(request.exportData);
 		} catch (error) {
-			console.error("Export download error:", error);
+			logError("Export download error", error);
 			res.status(500).json({ error: "Failed to download export" });
 		}
 	}
@@ -174,7 +183,7 @@ export function createComplianceHandlers(config: ComplianceHandlersConfig) {
 				confirmationRequired: true,
 			});
 		} catch (error) {
-			console.error("Deletion request error:", error);
+			logError("Deletion request error", error);
 			res.status(500).json({ error: "Failed to process deletion request" });
 		}
 	}
@@ -201,7 +210,7 @@ export function createComplianceHandlers(config: ComplianceHandlersConfig) {
 				requestId,
 				userDataDeleter,
 				deletionStorage,
-			).catch(console.error);
+			).catch((err) => logError("Deletion processing failed", err));
 
 			res.status(200).json({
 				message:
@@ -209,7 +218,7 @@ export function createComplianceHandlers(config: ComplianceHandlersConfig) {
 				scheduledFor: request.scheduledFor,
 			});
 		} catch (error) {
-			console.error("Deletion confirm error:", error);
+			logError("Deletion confirm error", error);
 			res.status(500).json({ error: "Failed to confirm deletion" });
 		}
 	}
@@ -233,7 +242,7 @@ export function createComplianceHandlers(config: ComplianceHandlersConfig) {
 				message: "Deletion request cancelled",
 			});
 		} catch (error) {
-			console.error("Deletion cancel error:", error);
+			logError("Deletion cancel error", error);
 			res.status(500).json({ error: "Failed to cancel deletion" });
 		}
 	}
@@ -277,7 +286,7 @@ export function createComplianceHandlers(config: ComplianceHandlersConfig) {
 				version,
 			});
 		} catch (error) {
-			console.error("Consent grant error:", error);
+			logError("Consent grant error", error);
 			res.status(500).json({ error: "Failed to grant consent" });
 		}
 	}
@@ -307,7 +316,7 @@ export function createComplianceHandlers(config: ComplianceHandlersConfig) {
 				consentType,
 			});
 		} catch (error) {
-			console.error("Consent withdraw error:", error);
+			logError("Consent withdraw error", error);
 			res.status(500).json({ error: "Failed to withdraw consent" });
 		}
 	}
@@ -336,7 +345,7 @@ export function createComplianceHandlers(config: ComplianceHandlersConfig) {
 				})),
 			});
 		} catch (error) {
-			console.error("Consent list error:", error);
+			logError("Consent list error", error);
 			res.status(500).json({ error: "Failed to list consents" });
 		}
 	}
@@ -357,7 +366,7 @@ async function queueExportProcessing(
 		await storage.updateStatus(requestId, "completed");
 		await storage.setExportData(requestId, exportData);
 	} catch (error) {
-		console.error("Export processing error:", error);
+		logError("Export processing error", error);
 		await storage.updateStatus(requestId, "failed");
 	}
 }
@@ -381,7 +390,7 @@ async function queueDeletionProcessing(
 		await storage.updateStatus(requestId, "completed");
 		await storage.setCompletedAt(requestId, Date.now());
 	} catch (error) {
-		console.error("Deletion processing error:", error);
+		logError("Deletion processing error", error);
 		await storage.updateStatus(requestId, "failed");
 	}
 }

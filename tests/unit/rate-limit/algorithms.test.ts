@@ -196,3 +196,4 @@ describe("BurstRateLimiter", () => {
 		expect(result.remaining).toBeGreaterThan(0);
 	});
 });
+

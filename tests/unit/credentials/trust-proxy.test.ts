@@ -50,3 +50,4 @@ describe("credentials brute force IP resolution with trustProxy", () => {
 		expect(ip).toBe("203.0.113.50");
 	});
 });
+

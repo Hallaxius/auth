@@ -83,7 +83,7 @@ function printBenchmarkResults(name: string, results: BenchmarkResults): void {
 }
 
 async function main(): Promise<void> {
-	console.log("🚀 Starting Performance Benchmark...\n");
+	console.log("[START] Starting Performance Benchmark...\n");
 
 	const config: BenchmarkConfig = {
 		iterations: 100000,
@@ -107,7 +107,7 @@ async function main(): Promise<void> {
 		cacheWarming: true,
 	});
 
-	console.log("\n📊 Running Multi-Level Cache Benchmark...\n");
+	console.log("\n[RUN] Running Multi-Level Cache Benchmark...\n");
 	const results = await runBenchmark(cache, config);
 
 	printBenchmarkResults("Multi-Level Cache", results);
@@ -128,21 +128,21 @@ async function main(): Promise<void> {
 
 	if (results.operationsPerSecond >= targetOps) {
 		console.log(
-			`✅ OPS Target Met: ${results.operationsPerSecond.toFixed(0)} >= ${targetOps}`,
+			`[OK] OPS Target Met: ${results.operationsPerSecond.toFixed(0)} >= ${targetOps}`,
 		);
 	} else {
 		console.log(
-			`❌ OPS Target Missed: ${results.operationsPerSecond.toFixed(0)} < ${targetOps}`,
+			`[FAIL] OPS Target Missed: ${results.operationsPerSecond.toFixed(0)} < ${targetOps}`,
 		);
 	}
 
 	if (results.p99LatencyMs <= targetP99) {
 		console.log(
-			`✅ P99 Latency Target Met: ${results.p99LatencyMs.toFixed(2)}ms <= ${targetP99}ms`,
+			`[OK] P99 Latency Target Met: ${results.p99LatencyMs.toFixed(2)}ms <= ${targetP99}ms`,
 		);
 	} else {
 		console.log(
-			`❌ P99 Latency Target Missed: ${results.p99LatencyMs.toFixed(2)}ms > ${targetP99}ms`,
+			`[FAIL] P99 Latency Target Missed: ${results.p99LatencyMs.toFixed(2)}ms > ${targetP99}ms`,
 		);
 	}
 
@@ -150,3 +150,4 @@ async function main(): Promise<void> {
 }
 
 main().catch(console.error);
+

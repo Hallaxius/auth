@@ -38,7 +38,7 @@ Secure authentication toolkit for **Bun** and **Next.js 16+** with Discord OAuth
 - ✅ Flexible - Bring your own storage (Redis, Database, KV)
 - ✅ Secure - Built-in CSRF, rate limiting, brute force protection, security headers
 - ✅ Compliant - GDPR utilities, audit logging, consent management
-- ✅ Fast - Sub-100µs operations (see [BENCHMARK.md](BENCHMARK.md))
+- ✅ Fast - Sub-100µs operations (see [BENCHMARK.md](https://github.com/hallaxius/auth/blob/main/BENCHMARK.md))
 - ✅ Serverless-ready - External storage required for all stateful operations
 
 ---
@@ -57,9 +57,9 @@ Secure authentication toolkit for **Bun** and **Next.js 16+** with Discord OAuth
 
 - ✅ **JWT Sessions** - HS256 signed tokens
 - ✅ **CSRF Protection** - HMAC-SHA256 state parameter
-- ✅ **Rate Limiting** - Sliding window algorithm (default limit: 100 req/min; `/me` endpoints: 10 req/min per IP)
+- ✅ **Rate Limiting** - Fixed-window algorithm by default (sliding window, token bucket, and burst limiters also available); `/me` endpoints rate limited when `meRateLimitStorage` is configured
 - ✅ **Brute Force Protection** - Account lockout after 5 attempts
-- ✅ **Secure Cookies** - HttpOnly, Secure, SameSite (default: lax, configurable to strict/none)
+- ✅ **Secure Cookies** - HttpOnly, Secure, SameSite (default: lax in development, strict in production; configurable)
 - ✅ **Input Validation** - Zod schemas, email format, password strength
 - ✅ **Timing Attack Prevention** - Constant-time comparison
 - ✅ **Captcha Verification** - Bot protection via hCaptcha, reCAPTCHA, and Cloudflare Turnstile
@@ -198,7 +198,7 @@ export const { handleRegister, handleLogin, handleLogout, handleMe } = credentia
 })
 ```
 
-**Note:** `bruteForce.storage` is **required** — `BruteForceProtection` throws a `ConfigurationError` when no storage is provided. For development/tests use `createStorageAdapters({ type: 'memory' }).bruteForce`, or implement `BruteForceStorage` backed by Redis/KV/database in production.
+**Note:** if `bruteForce.storage` is omitted, `BruteForceProtection` falls back to an in-memory store (a warning is logged) — fine for development, but provide a shared `BruteForceStorage` (Redis/KV/database) in production so lockouts work across instances.
 
 **3. Create API Routes**
 
@@ -244,7 +244,7 @@ await discord({
   storage: UserStorage,   // Required
   scopes?: DiscordScope[],       // Default: ['identify']
   session?: SessionConfig,       // Cookie configuration
-  bruteForce?: BruteForceConfig, // Rate limiting (storage required)
+  bruteForce?: BruteForceConfig, // Brute force protection (in-memory fallback if no storage)
   mfa?: MFAConfig,               // MFA settings
 })
 ```
@@ -271,8 +271,7 @@ credentials({
   storage: AuthUserStorage,    // Required
   session: { secret: string }, // Required
   validatePassword?: boolean | PasswordValidationConfig, // Optional
-  bruteForce?: BruteForceConfig, // Default: enabled (storage required)
-  defaultRoles?: string[],     // Default: ['user']
+  bruteForce?: BruteForceConfig, // Default: enabled (in-memory fallback if no storage)
 })
 ```
 
@@ -287,36 +286,64 @@ credentials({
 #### Your responsibility: password hashing
 
 The library treats `password` as an **opaque value**. It never hashes, salts,
-or transforms it — `register` stores exactly the string you pass, and `login`
-compares it with a timing-safe constant-time comparison.
+or transforms it — `register` stores exactly the string you pass.
 
-> **You** must hash passwords. Hash before calling `register` / `login`:
->
-> ```typescript
-> import { hash, compare, argon2id } from 'argon2'
->
-> // registration
-> credentialsClient.register({
->   username: 'alice',
->   password: await hash(rawPassword, { type: argon2id }),
-> })
->
-> // login (identical pre-hashed value must be passed)
-> credentialsClient.login({ username: 'alice' }, await hash(rawPassword, { type: argon2id }))
-> ```
+**Recommended — `verifyPassword` hook.** Implement the optional
+`verifyPassword(userId, password)` method on your `AuthUserStorage` and compare
+against a hash with a memory-hard function (**Argon2id** preferred):
+
+```typescript
+import { compare, hash, argon2id } from 'argon2'
+
+const storage: AuthUserStorage = {
+  // ...
+  async create(data) {
+    return db.createUser({
+      ...data,
+      password: await hash(data.password, { type: argon2id }),
+    })
+  },
+  async verifyPassword(userId, password) {
+    const user = await db.findUserById(userId)
+    if (!user?.password) return false
+    return compare(password, user.password) // argon2id compare
+  },
+}
+
+const auth = new CredentialsClient({ secret: '...' }, storage)
+
+// register with the RAW password — your storage hashes it:
+await auth.register({ username: 'alice', password: rawPassword })
+// login with the RAW password — your storage compares against the hash:
+await auth.login({ username: 'alice' }, rawPassword)
+```
+
+When `verifyPassword` is present, `login` always uses it — you never send
+pre-hashed values back and forth.
+
+**Compat-legacy path (still supported):** if your storage does not implement
+`verifyPassword`, `login` falls back to a timing-safe constant-time comparison
+(`constantTimeCompareStrings`) of the `password` field. With this path you must
+pass the **same** pre-hashed value to both `register` and `login`:
+
+```typescript
+credentialsClient.register({
+  username: 'alice',
+  password: await hash(rawPassword, { type: argon2id }),
+})
+credentialsClient.login({ username: 'alice' }, await hash(rawPassword, { type: argon2id }))
+```
 
 Guidelines:
 
-- Hash with Argon2id (preferred), or bcrypt/scrypt, with per-user salt
-  before `register`. Do not send raw passwords through `register` in production.
-- Derive the same hash from the raw password before every `login` call; the
-  comparison is timing-safe (`constantTimeCompareStrings`), so an attacker cannot
-  recover the stored hash by timing, but a *different* hash simply won't match.
+- Hash with Argon2id (preferred), or bcrypt/scrypt, with per-user salt.
+  Prefer the `verifyPassword` hook so hashing and comparison both live in your
+  storage layer.
 - If you pass **raw** passwords (dev / non-sensitive setups), disable
   `validatePassword` (password rules would apply to the opaque value instead of
   the raw secret) and rely on your own transport/confidentiality controls.
-- Never keep the plaintext around: only ever touch the pre-hashed value in your
-  application code.
+- Never keep the plaintext around: only touch the raw password in your
+  application code and let the storage hook hash it.
 
 ---
 
@@ -389,6 +416,7 @@ export async function handler(request: Request) {
 import { mfa } from '@hallaxius/auth'
 
 const mfaHandlers = mfa({
+  secret: '...',              // Required: encryption key for TOTP secrets
   storage: MfaStorage,        // Required: TOTP secrets + backup codes
   issuer?: string,            // Default: 'AuthApp'
 })
@@ -400,7 +428,7 @@ mfaHandlers.handleMfaChallenge(request)  // Challenge step during login
 mfaHandlers.handleMfaDisable(request)    // Disable MFA for a user
 ```
 
-**TOTP defaults:** 30-second step, 6 digits, HMAC-SHA1, 10 backup codes (12 chars). Verification is rate limited (5 TOTP / 10 backup code attempts per user per hour, 20 backup code attempts per IP per hour). Uses a dedicated `mfa-session` cookie for the challenge flow.
+**TOTP defaults:** 30-second step, 6 digits, SHA-256 HMAC (configurable via `totpHash`; SHA-1 supported), 10 backup codes (12 chars). Verification is rate limited (5 TOTP / 10 backup code attempts per user per hour, 20 backup code attempts per IP per hour — the per-IP cap is enforced when a `Request` is passed to `verifyBackupCode`). Uses a dedicated `mfa-session` cookie for the challenge flow.
 
 ---
 
@@ -410,7 +438,8 @@ mfaHandlers.handleMfaDisable(request)    // Disable MFA for a user
 import { passwordReset } from '@hallaxius/auth'
 
 const handlers = passwordReset({
-  resetTokenStorage: ResetTokenStorage, // Required
+  storage: ResetTokenStorage,           // Required
+  userLookup: ...,                      // Required: resolve user by email
   notifier: ResetNotifier,              // Required: your email service
   minPasswordLength?: number,           // Default: 8
   tokenExpirationSeconds?: number,      // Default: 3600 (1 hour)
@@ -487,7 +516,7 @@ export default {
 |--------|-----------|-------------|
 | `middleware.auth(config)` | `(request) => Promise<Response \| undefined>` | Redirect unauthenticated users to login |
 | `middleware.role(config)` | `(request) => Promise<Response \| undefined>` | Enforce role-based access (403 on insufficient permissions) |
-| `middleware.session(request, { secret, cookieName? })` | `Promise<SessionData \| null>` | Read the session from the cookie |
+| `middleware.session(request, { secret, cookieName?, revocationStorage? })` | `Promise<SessionData \| null>` | Read the session from the cookie |
 | `middleware.combine(...middlewares)` | `(request) => Promise<Response \| undefined>` | Run middlewares in order, first response wins |
 | `middleware.publicPath(path, patterns)` | `boolean` | Check if a path matches a pattern (`/api/*` wildcards) |
 | `middleware.required(path, roleMap)` | `string[] \| null` | Roles required for a path (`{ '/admin/*': ['admin'] }`) |
@@ -575,11 +604,11 @@ applySecurityHeaders(response.headers, await securityHeaders(...))
 ```typescript
 import { auditLogger, createAuditLogger } from '@hallaxius/auth'
 
-await auditLogger.logEvent({
+auditLogger.log({
   type: 'auth.login',
   severity: 'MEDIUM',   // 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
   status: 'SUCCESS',    // 'SUCCESS' | 'FAILURE' | 'BLOCKED' | 'PENDING'
-  actor: { id: userId },
+  userId,               // optional actor reference
   action: 'user.login',
 })
 
@@ -645,11 +674,11 @@ import {
   parseExpiresIn, expiresInToSeconds, secretToKey,
   parseCookies, createSessionCookie, clearSessionCookie,
   generateState, validateState, consumeState,
-  base64URLEncode, base64URLDecode,
+  base64URLDecode,
 } from '@hallaxius/auth'
 
 parseExpiresIn('7d')   // ISO8601 durations: \d+[smhd] or seconds as number
-const cookie = await createSessionCookie(payload, secret, { expiresIn: '7d' })
+const cookie = createSessionCookie('auth-session', payload, { expiresIn: '7d' })
 ```
 
 **State:** `generateState()` creates a random state token; `validateState()` and `consumeState()` detect CSRF state reuse. **JWT:** HS256 via `jose`; `revokeToken()` pairs with `MemoryTokenRevocationStorage` (or your own revocation store).
@@ -680,7 +709,6 @@ Also exported: `jsonResponse`, `errorResponse`, `htmlResponse`, `redirectRespons
 | Variable | Description | Generation |
 |----------|-------------|------------|
 | `JWT_SECRET` | JWT signing secret (min 32 chars) | `openssl rand -base64 32` |
-| `NEXT_PUBLIC_SITE_URL` | Public HTTPS URL (production) | Your domain |
 
 **Required (Discord OAuth2):**
 
@@ -689,13 +717,13 @@ Also exported: `jsonResponse`, `errorResponse`, `htmlResponse`, `redirectRespons
 | `DISCORD_CLIENT_ID` | From Discord Developer Portal |
 | `DISCORD_CLIENT_SECRET` | From Discord Developer Portal |
 | `DISCORD_REDIRECT_URI` | Callback URL (must match exactly) |
-| `AUTH_SALT` | Separate secret for state HMAC |
 
 **Optional:**
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `NODE_ENV` | Environment | `development` |
+| `AUTH_SALT` | Separate secret for the OAuth state HMAC | Derived from `JWT_SECRET` when unset |
 | `TRUSTED_PROXY_IPS` | Comma-separated proxy IPs/CIDRs to trust for `X-Forwarded-For` resolution when `trustProxy` is enabled (e.g. behind Cloudflare Tunnel, Vercel, nginx) | Private ranges + Cloudflare |
 
 ---
@@ -712,7 +740,7 @@ NEXT_PUBLIC_SITE_URL=https://app.example.com
 DISCORD_REDIRECT_URI=https://app.example.com/auth/discord/callback
 ```
 
-**Why?** The library constructs absolute URLs for redirects. Behind a proxy, it needs your public URL.
+**Why?** The OAuth callback URL must match `DISCORD_REDIRECT_URI` exactly, so set it to your public HTTPS URL. The library never reads `NEXT_PUBLIC_SITE_URL` — if your app's own middleware needs the public URL (e.g. for client-side redirects), keep it as an app-level variable.
 
 For brute-force protection to work correctly behind a reverse proxy, set `TRUSTED_PROXY_IPS` so the real client IP (from `X-Forwarded-For`) is used as the rate-limit key instead of the proxy's IP.
 
@@ -884,7 +912,7 @@ const storage = {
 |---------|-----------|------------|
 | JWT Signing | HS256 | 256-bit key |
 | Session Encryption | AES-256-GCM | HKDF-SHA256, 256-bit key, 16-byte IV |
-| MFA | TOTP (RFC 6238) | SHA-1, 30s period, 6 digits |
+| MFA | TOTP (RFC 6238) | SHA-256 default, 30s period, 6 digits |
 | State Parameter | HMAC-SHA256 | OAuth 2.0 CSRF protection |
 | Password Hashing | **User Responsibility** | Argon2id preferred; bcrypt, scrypt acceptable |
 
@@ -914,15 +942,22 @@ export function middleware(request: NextRequest) {
 Session cookies use:
 - `Secure` flag in production (HTTPS only)
 - `HttpOnly` flag (no JavaScript access)
-- `SameSite` defaults to `lax` (configurable to `strict` or `none`); `Secure` in production
+- `SameSite` defaults to `lax` in development and `strict` in production (configurable to `none` with `secure`); `Secure` in production
 - `Path=/` for all cookies
 
 ### Brute Force Protection
 
 - Automatic lockout after 5 failed attempts
 - 30-minute lockout duration (configurable)
-- IP + User-Agent + Strategy tracking
+- Keyed by IP + account identifier (credentials) / IP (Discord)
 - Requires external storage for distributed deployments
+
+> **Migration note:** `trustProxy` now defaults to `false` (it was previously
+> treated as enabled for brute-force IP resolution). If you deploy behind a
+> proxy (Cloudflare, nginx, Vercel), set `trustProxy: true` explicitly on
+> `credentials()` so the real client IP is resolved from
+> `x-forwarded-for` / `x-real-ip` instead of the proxy's socket address.
+> `discord()` always resolves the client IP through trusted proxies.
 
 ---
 
@@ -941,7 +976,7 @@ Real-world performance (AMD Ryzen 5 5600, Bun 1.3.14):
 | MFA Setup | 13.68 ms | 17.24 ms | 37.42 KB |
 | MFA Verify | 27.40 ms | 30.37 ms | 24.38 KB |
 
-**See [BENCHMARK.md](BENCHMARK.md) for detailed benchmarks.**
+**See [BENCHMARK.md](https://github.com/hallaxius/auth/blob/main/BENCHMARK.md) for detailed benchmarks.**
 
 ---
 
@@ -1213,7 +1248,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## Support
 
-- **Documentation:** [README.md](README.md), [BENCHMARK.md](BENCHMARK.md), [SECURITY.md](SECURITY.md)
+- **Documentation:** [README.md](README.md), [BENCHMARK.md](https://github.com/hallaxius/auth/blob/main/BENCHMARK.md), [SECURITY.md](SECURITY.md)
 - **Issues:** [GitHub Issues](https://github.com/hallaxius/auth/issues)
 - **Email:** support@hallaxi.us
 - **Security:** Report vulnerabilities to support@hallaxi.us

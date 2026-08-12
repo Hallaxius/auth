@@ -2,7 +2,10 @@ import { AuthError, ErrorCodes } from "../errors";
 import { DiscordClient } from "../internal/client";
 import type { UserStorage } from "../types";
 import { secret as secretFn } from "./env";
+import { createSecurityLogger } from "./logger";
 import { validateConfig } from "./validation";
+
+const logger = createSecurityLogger("utils");
 
 export { secretFn as secret, validateConfig as validate, validateConfig };
 
@@ -147,10 +150,13 @@ export async function revoke(
 					accessToken: user.accessToken,
 				});
 			} catch (revokeError) {
-				console.warn(
-					`Failed to revoke Discord token for user ${discordId}:`,
-					revokeError,
-				);
+				logger.warn("Failed to revoke Discord token for user", {
+					discordId,
+					error:
+						revokeError instanceof Error
+							? revokeError.message
+							: String(revokeError),
+				});
 			}
 		}
 	} catch (error) {

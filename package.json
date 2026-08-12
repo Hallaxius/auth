@@ -1,6 +1,6 @@
 {
 	"name": "@hallaxius/auth",
-	"version": "1.0.0-beta.6",
+	"version": "1.0.0-beta.7",
 	"description": "Secure authentication toolkit for Bun and Next.js 16+ with Discord OAuth2, Credentials, MFA/TOTP, password reset flows — backed by CSRF protection, rate limiting, and brute-force protection, captcha support (hCaptcha, reCAPTCHA v3, Turnstile), audit logging, and security headers.",
 	"author": {
 		"name": "hallaxius",
@@ -8,6 +8,7 @@
 	},
 	"type": "module",
 	"main": "dist/index.cjs",
+	"module": "dist/index.js",
 	"types": "dist/index.d.ts",
 	"sideEffects": false,
 	"exports": {
@@ -40,12 +41,13 @@
 		"test:watch": "bun test --watch",
 		"test:coverage": "bun test --coverage",
 		"test:unit": "bun test tests/unit",
+		"test:integration": "bun test tests/integration",
 		"test:unit:coverage": "bun test --coverage tests/unit",
 		"test:unit:watch": "bun test --watch tests/unit",
 		"test:security": "bun test tests/security",
 		"test:all": "bun run scripts/runner.ts",
 		"benchmarks": "bun run benchmarks/run-all.ts",
-		"prepublishOnly": "bun run build && bun run test:unit && bun run test:security"
+		"prepublishOnly": "bun run typecheck && bun run lint:check && bun run build && bun run test:unit && bun run test:security"
 	},
 	"peerDependencies": {
 		"next": ">=16.0.0",
@@ -139,6 +141,6 @@
 		"access": "public"
 	},
 	"license": "MIT",
-	"repository": "github:Hallaxius/auth",
+	"repository": "github:hallaxius/auth",
 	"homepage": "https://github.com/hallaxius/auth"
 }

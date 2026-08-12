@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { applySecurityHeaders, defaultSecurityHeaders, securityHeaders } from "../../src/";
 
 describe("CSP - No unsafe-inline", () => {
@@ -69,3 +69,4 @@ describe("CSP - No unsafe-inline", () => {
 		expect(csp).not.toContain("unsafe-inline");
 	});
 });
+

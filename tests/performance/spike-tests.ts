@@ -286,9 +286,9 @@ function printSpikeResults(results: SpikeTestResults): void {
 
 	console.log("\n--- Analysis ---");
 	console.log(
-		`Overshoot Detected: ${results.overshootDetected ? "YES ⚠️" : "NO"}`,
+		`Overshoot Detected: ${results.overshootDetected ? "YES [WARN]" : "NO"}`,
 	);
-	console.log(`System Stable: ${results.systemStable ? "YES ✓" : "NO ⚠️"}`);
+	console.log(`System Stable: ${results.systemStable ? "YES [OK]" : "NO [WARN]"}`);
 	console.log("=========================\n");
 }
 
@@ -374,3 +374,4 @@ describe("Spike Tests - Sudden Traffic Surges", () => {
 		expect(results.recoveryPerformance.errorRate).toBeLessThan(5);
 	}, 90000);
 });
+

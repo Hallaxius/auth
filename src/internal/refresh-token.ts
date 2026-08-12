@@ -95,7 +95,23 @@ export class RefreshTokenManager {
 			}
 		}
 
-		await this.revocationStorage.revoke(oldJti, remainingSeconds);
+		let revoked = true;
+		try {
+			if (typeof this.revocationStorage.revokeIfPresent === "function") {
+				revoked =
+					(await this.revocationStorage.revokeIfPresent(
+						oldJti,
+						remainingSeconds,
+					)) ?? true;
+			} else {
+				await this.revocationStorage.revoke(oldJti, remainingSeconds);
+			}
+		} catch {
+			return null;
+		}
+		if (!revoked) {
+			return null;
+		}
 
 		return this.issueRefreshToken(payload.userId, payload.familyId);
 	}

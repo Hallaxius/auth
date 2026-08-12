@@ -63,22 +63,23 @@ describe("IP Spoofing Prevention - trustProxy behavior", () => {
 			headers: {
 				"x-forwarded-for": "203.0.113.50",
 			},
-		}) as unknown as Request & { socket?: { remoteAddress?: string } };
-		req.socket = { remoteAddress: "10.0.0.1" };
+		}) as unknown as Request & { ip?: string };
+		req.ip = "10.0.0.1";
 
 		const ip = await getRequestIP(req, { trustProxy: true });
 		expect(ip).toBe("203.0.113.50");
 	});
 
-	it("trustProxy: false ignores x-forwarded-for and returns socket IP", async () => {
+	it("trustProxy: false ignores x-forwarded-for and returns peer IP", async () => {
 		const req = new Request("http://localhost:3000", {
 			headers: {
 				"x-forwarded-for": "203.0.113.50",
 			},
-		}) as unknown as Request & { socket?: { remoteAddress?: string } };
-		req.socket = { remoteAddress: "10.0.0.1" };
+		}) as unknown as Request & { ip?: string };
+		req.ip = "10.0.0.1";
 
 		const ip = await getRequestIP(req, { trustProxy: false });
 		expect(ip).toBe("10.0.0.1");
 	});
 });
+

@@ -26,6 +26,11 @@ export function rateLimit(config: RateLimitConfig) {
 		const key = config.keyBy
 			? await config.keyBy(request)
 			: await getDefaultKey(request, config.trustProxy);
+
+		if (storage.check) {
+			return await storage.check(key);
+		}
+
 		const entry = await storage.increment(key, windowMs);
 
 		const allowed = entry.count <= maxRequests;
@@ -44,7 +49,7 @@ export function rateLimit(config: RateLimitConfig) {
 	async function reset(request: Request): Promise<void> {
 		const key = config.keyBy
 			? await config.keyBy(request)
-			: await getDefaultKey(request);
+			: await getDefaultKey(request, config.trustProxy);
 		await storage.reset(key);
 	}
 

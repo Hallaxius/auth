@@ -309,7 +309,78 @@ describe("ComplianceManager - Data Retention", () => {
 			Date.now() - 60 * 24 * 60 * 60 * 1000,
 		);
 
-		const result = await managerAnonymize.enforceRetentionPolicy();
+const result = await managerAnonymize.enforceRetentionPolicy();
 		expect(result.anonymized).toBe(1);
 	});
 });
+
+describe("ComplianceManager - Privacy Settings", () => {
+	let manager: ComplianceManager;
+	let storage: ReturnType<typeof createMemoryComplianceStorage>;
+
+	beforeEach(() => {
+		storage = createMemoryComplianceStorage();
+		manager = createComplianceManager({
+			exportStorage: storage.exportStorage,
+			deletionStorage: storage.deletionStorage,
+			consentStorage: storage.consentStorage,
+			retentionStorage: storage.retentionStorage,
+		});
+	});
+
+	it("should report false consents when none were granted", async () => {
+		const settings = await manager.getPrivacySettings("user123");
+
+		expect(settings.userId).toBe("user123");
+		expect(settings.dataProcessingConsent).toBe(false);
+		expect(settings.marketingConsent).toBe(false);
+		expect(settings.analyticsConsent).toBe(false);
+		expect(settings.thirdPartySharingConsent).toBe(false);
+		expect(settings.dataPortabilityEnabled).toBe(false);
+		expect(settings.deletionRequested).toBe(false);
+	});
+
+	it("should reflect granted consents", async () => {
+		await manager.grantConsent("user123", "data_processing", "1.0");
+		await manager.grantConsent("user123", "marketing", "1.0");
+
+		const settings = await manager.getPrivacySettings("user123");
+
+		expect(settings.dataProcessingConsent).toBe(true);
+		expect(settings.marketingConsent).toBe(true);
+		expect(settings.analyticsConsent).toBe(false);
+		expect(settings.thirdPartySharingConsent).toBe(false);
+		expect(settings.dataPortabilityEnabled).toBe(false);
+		expect(settings.deletionRequested).toBe(false);
+	});
+
+	it("should reflect withdrawn consents", async () => {
+		await manager.grantConsent("user123", "analytics", "1.0");
+		await manager.withdrawConsent("user123", "analytics");
+
+		const settings = await manager.getPrivacySettings("user123");
+
+		expect(settings.analyticsConsent).toBe(false);
+	});
+
+	it("should report a pending deletion request", async () => {
+		await manager.requestDeletion("user123", "user@example.com");
+
+		const settings = await manager.getPrivacySettings("user123");
+
+		expect(settings.deletionRequested).toBe(true);
+	});
+
+	it("should not report deletion after the request is cancelled", async () => {
+		const { requestId } = await manager.requestDeletion(
+			"user123",
+			"user@example.com",
+		);
+		await manager.cancelDeletion(requestId);
+
+		const settings = await manager.getPrivacySettings("user123");
+
+		expect(settings.deletionRequested).toBe(false);
+	});
+});
+

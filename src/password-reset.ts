@@ -23,6 +23,8 @@ export type PasswordResetHandlers = {
 export function passwordReset(config: PasswordResetConfig) {
 	const minPasswordLength = config.minPasswordLength ?? 8;
 	const tokenExpirationSeconds = config.tokenExpirationSeconds ?? 3600;
+	const trustProxy = config.trustProxy ?? false;
+	const rateLimitProgrammatic = config.rateLimitProgrammatic ?? true;
 	const forgotPasswordRateLimit = {
 		enabled: true,
 		maxAttempts: config.forgotPasswordRateLimit?.maxAttempts ?? 3,
@@ -48,7 +50,7 @@ export function passwordReset(config: PasswordResetConfig) {
 	);
 
 	async function getRequestIP(request: Request): Promise<string> {
-		const trusted = await getTrustedRequestIP(request);
+		const trusted = await getTrustedRequestIP(request, { trustProxy });
 		if (trusted) {
 			const ip = sanitizeIP(trusted);
 			if (isIPv6(ip)) {
@@ -148,19 +150,20 @@ export function passwordReset(config: PasswordResetConfig) {
 		}
 
 		const ip = await getRequestIP(request);
-		const forgotResult = await forgotPasswordLimiter.recordAttempt(ip);
-		if (forgotResult && !forgotResult.allowed) {
-			throw new AuthError(
-				ErrorCodes.RATE_LIMITED,
-				"Too many requests, please try again later",
-				{ statusCode: 429 },
-			);
-		}
 
 		try {
 			const { emailOrUsername } = (await request.json()) as {
 				emailOrUsername: string;
 			};
+
+			const forgotResult = await forgotPasswordLimiter.recordAttempt(ip);
+			if (forgotResult && !forgotResult.allowed) {
+				throw new AuthError(
+					ErrorCodes.RATE_LIMITED,
+					"Too many requests, please try again later",
+					{ statusCode: 429, retryAfter: forgotResult.retryAfter },
+				);
+			}
 
 			const userData = await resolveUser(emailOrUsername);
 			await createTokenAndNotify(userData);
@@ -189,22 +192,26 @@ export function passwordReset(config: PasswordResetConfig) {
 		}
 
 		const ip = await getRequestIP(request);
-		const blocked = await resetPasswordLimiter.isBlocked(ip);
-		if (blocked) {
-			throw new AuthError(
-				ErrorCodes.RATE_LIMITED,
-				"Too many requests, please try again later",
-				{ statusCode: 429 },
-			);
-		}
 
 		try {
+			const blocked = await resetPasswordLimiter.isBlocked(ip);
+			if (blocked) {
+				throw new AuthError(
+					ErrorCodes.RATE_LIMITED,
+					"Too many requests, please try again later",
+					{ statusCode: 429 },
+				);
+			}
+
 			const { token, newPassword } = (await request.json()) as {
 				token: string;
 				newPassword: string;
 			};
 
-			if (newPassword.length < minPasswordLength) {
+			if (
+				typeof newPassword !== "string" ||
+				newPassword.length < minPasswordLength
+			) {
 				throw new PasswordTooShortError(
 					`Password must be at least ${minPasswordLength} characters long`,
 				);
@@ -256,22 +263,36 @@ export function passwordReset(config: PasswordResetConfig) {
 					headers: { "Content-Type": "application/json" },
 				});
 			}
+			if (
+				error instanceof AuthError &&
+				error.code === ErrorCodes.RATE_LIMITED
+			) {
+				throw error;
+			}
 			const resetResult = await resetPasswordLimiter.recordAttempt(ip);
 			if (resetResult && !resetResult.allowed) {
 				throw new AuthError(
 					ErrorCodes.RATE_LIMITED,
 					"Too many requests, please try again later",
-					{ statusCode: 429 },
+					{ statusCode: 429, retryAfter: resetResult.retryAfter },
 				);
-			}
-			if (error instanceof AuthError) {
-				throw error;
 			}
 			throw error;
 		}
 	}
 
 	async function requestReset(target: string): Promise<RequestResetResult> {
+		if (rateLimitProgrammatic) {
+			const key = await sha256Hex(target);
+			const result = await forgotPasswordLimiter.recordAttempt(key);
+			if (result && !result.allowed) {
+				throw new AuthError(
+					ErrorCodes.RATE_LIMITED,
+					"Too many requests, please try again later",
+					{ statusCode: 429, retryAfter: result.retryAfter },
+				);
+			}
+		}
 		const userData = await resolveUser(target);
 		await createTokenAndNotify(userData);
 		return { processed: true };
@@ -280,45 +301,63 @@ export function passwordReset(config: PasswordResetConfig) {
 	async function consumeResetToken(
 		token: string,
 	): Promise<ConsumeResetTokenResult> {
-		const { selector, validator } = parseResetToken(token);
-		const stored = await config.storage.findBySelector(selector);
-		if (!stored) {
-			throw new AuthError(
-				ErrorCodes.RESET_TOKEN_INVALID,
-				"Invalid or expired reset token",
-				{ statusCode: 400 },
-			);
+		const key = rateLimitProgrammatic ? await sha256Hex(token) : undefined;
+		if (key) {
+			const blocked = await resetPasswordLimiter.isBlocked(key);
+			if (blocked) {
+				throw new AuthError(
+					ErrorCodes.RATE_LIMITED,
+					"Too many requests, please try again later",
+					{ statusCode: 429 },
+				);
+			}
 		}
-		if (Date.now() > stored.expiry) {
-			await config.storage.delete(selector);
-			throw new AuthError(
-				ErrorCodes.RESET_TOKEN_EXPIRED,
-				"Reset token has expired",
-				{ statusCode: 400 },
-			);
+		try {
+			const { selector, validator } = parseResetToken(token);
+			const stored = await config.storage.findBySelector(selector);
+			if (!stored) {
+				throw new AuthError(
+					ErrorCodes.RESET_TOKEN_INVALID,
+					"Invalid or expired reset token",
+					{ statusCode: 400 },
+				);
+			}
+			if (Date.now() > stored.expiry) {
+				await config.storage.delete(selector);
+				throw new AuthError(
+					ErrorCodes.RESET_TOKEN_EXPIRED,
+					"Reset token has expired",
+					{ statusCode: 400 },
+				);
+			}
+			const computedHash = await hashValidator(validator);
+			if (!constantTimeCompareStrings(computedHash, stored.validatorHash)) {
+				await config.storage.delete(selector);
+				throw new AuthError(
+					ErrorCodes.RESET_TOKEN_INVALID,
+					"Invalid or expired reset token",
+					{ statusCode: 400 },
+				);
+			}
+			const result = await config.storage.consume(selector);
+			if (!result) {
+				throw new AuthError(
+					ErrorCodes.RESET_TOKEN_INVALID,
+					"Invalid or expired reset token",
+					{ statusCode: 400 },
+				);
+			}
+			return {
+				userId: result.userId,
+				email: result.email,
+				username: result.username,
+			};
+		} catch (error) {
+			if (key && !(error instanceof SyntaxError)) {
+				await resetPasswordLimiter.recordAttempt(key);
+			}
+			throw error;
 		}
-		const computedHash = await hashValidator(validator);
-		if (!constantTimeCompareStrings(computedHash, stored.validatorHash)) {
-			await config.storage.delete(selector);
-			throw new AuthError(
-				ErrorCodes.RESET_TOKEN_INVALID,
-				"Invalid or expired reset token",
-				{ statusCode: 400 },
-			);
-		}
-		const result = await config.storage.consume(selector);
-		if (!result) {
-			throw new AuthError(
-				ErrorCodes.RESET_TOKEN_INVALID,
-				"Invalid or expired reset token",
-				{ statusCode: 400 },
-			);
-		}
-		return {
-			userId: result.userId,
-			email: result.email,
-			username: result.username,
-		};
 	}
 
 	return {

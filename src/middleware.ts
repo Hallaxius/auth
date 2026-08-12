@@ -1,6 +1,11 @@
 import { parseCookies } from "./internal/cookies";
 import { verifyToken } from "./internal/jwt";
-import type { EdgeAuthConfig, EdgeRoleConfig, SessionData } from "./types";
+import type {
+	EdgeAuthConfig,
+	EdgeRoleConfig,
+	SessionData,
+	TokenRevocationStorage,
+} from "./types";
 
 export function publicPath(path: string, patterns: string[]): boolean {
 	const normalizedPath = path.endsWith("/") ? path.slice(0, -1) : path;
@@ -48,8 +53,18 @@ export function required(
 }
 
 export function redirect(url: string): Response {
-	if (!url.startsWith("/") || url.startsWith("//")) {
-		throw new Error("redirect url must be a relative path starting with /");
+	if (
+		typeof url !== "string" ||
+		!url.startsWith("/") ||
+		url.includes("\\") ||
+		url.includes("%5c") ||
+		url.includes("%5C") ||
+		/[\r\n]/.test(url) ||
+		url.replace(/\\/g, "/").startsWith("//")
+	) {
+		throw new Error(
+			"redirect url must be a safe relative path starting with /",
+		);
 	}
 	return new Response(null, { status: 302, headers: { Location: url } });
 }
@@ -66,7 +81,11 @@ export function deny(message = "Forbidden"): Response {
 
 export async function session(
 	request: Request,
-	config: { secret: string; cookieName?: string },
+	config: {
+		secret: string;
+		cookieName?: string;
+		revocationStorage?: TokenRevocationStorage;
+	},
 ): Promise<SessionData | null> {
 	const cookieName = config.cookieName ?? "discord-auth-session";
 	const cookies = parseCookies(request);
@@ -76,6 +95,7 @@ export async function session(
 	const payload = await verifyToken<Record<string, unknown>>(
 		token,
 		config.secret,
+		config.revocationStorage,
 	);
 	if (!payload) return null;
 

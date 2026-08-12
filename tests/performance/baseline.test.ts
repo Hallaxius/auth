@@ -6,12 +6,12 @@ import { TestStateStore } from "../helpers/storage";
 const TEST_CONFIG: DiscordAuthConfig = {
 	clientId: "test-client-id",
 	clientSecret: "test-client-secret",
-	secret: "test-secret-key-32-chars-long!!",
+	secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 	callbackUrl: "http://localhost:3000/auth/callback",
 	redirectUri: "http://localhost:3000/auth/callback",
 	session: {
 		type: "jwt",
-		secret: "test-session-secret-32-chars!!",
+		secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 	},
 	csrf: {
 		storage: new TestStateStore(),
@@ -106,3 +106,5 @@ describe("Performance Baseline - v4.0.1", () => {
 		});
 	});
 });
+
+

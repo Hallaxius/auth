@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bun
+#!/usr/bin/env bun
 
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -35,7 +35,7 @@ interface BaselineMetrics {
 }
 
 async function runBaseline(): Promise<BaselineMetrics> {
-	console.log("ðŸš€ Running Performance Baseline Tests...\n");
+	console.log("[START] Running Performance Baseline Tests...\n");
 
 	const metrics: BaselineMetrics = {
 		version: "4.0.1",
@@ -74,17 +74,17 @@ async function runBaseline(): Promise<BaselineMetrics> {
 	metrics.metrics.coldStart = coldStartTime;
 
 	console.log(
-		`âœ… Cold Start: ${coldStartTime}ms (target: <${metrics.targets.coldStart}ms)`,
+		`[OK] Cold Start: ${coldStartTime}ms (target: <${metrics.targets.coldStart}ms)`,
 	);
 
 	const TEST_CONFIG = {
 		clientId: "test-client-id",
 		clientSecret: "test-client-secret",
-		secret: "test-secret-key-32-chars-long!!",
+		secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 		callbackUrl: "/auth/callback",
 		session: {
 			type: "jwt" as const,
-			secret: "test-session-secret-32-chars!!",
+			secret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 		},
 	};
 
@@ -94,7 +94,7 @@ async function runBaseline(): Promise<BaselineMetrics> {
 	metrics.metrics.configProcessing = configTime;
 
 	console.log(
-		`âœ… Config Processing: ${configTime}ms (target: <${metrics.targets.configProcessing}ms)`,
+		`[OK] Config Processing: ${configTime}ms (target: <${metrics.targets.configProcessing}ms)`,
 	);
 
 	await new Promise((resolve) => setTimeout(resolve, 100));
@@ -103,7 +103,7 @@ async function runBaseline(): Promise<BaselineMetrics> {
 	metrics.metrics.memoryIdle = heapUsedMB;
 
 	console.log(
-		`âœ… Memory Idle: ${heapUsedMB.toFixed(2)}MB (target: <${metrics.targets.memoryIdle}MB)`,
+		`[OK] Memory Idle: ${heapUsedMB.toFixed(2)}MB (target: <${metrics.targets.memoryIdle}MB)`,
 	);
 
 	const iterations = 100;
@@ -122,7 +122,7 @@ async function runBaseline(): Promise<BaselineMetrics> {
 
 	metrics.metrics.latency = { p50, p95, p99 };
 
-	console.log(`âœ… Latency - p50: ${p50}ms, p95: ${p95}ms, p99: ${p99}ms`);
+	console.log(`[OK] Latency - p50: ${p50}ms, p95: ${p95}ms, p99: ${p99}ms`);
 	console.log(
 		`   Targets - p50: <${metrics.targets.latency.p50}ms, p95: <${metrics.targets.latency.p95}ms, p99: <${metrics.targets.latency.p99}ms`,
 	);
@@ -136,7 +136,7 @@ async function runBaseline(): Promise<BaselineMetrics> {
 		p99 < metrics.targets.latency.p99;
 
 	console.log(
-		`\n${allTargetsMet ? "âœ…" : "âŒ"} All performance targets ${allTargetsMet ? "MET" : "NOT MET"}`,
+		`\n${allTargetsMet ? "[OK]" : "[FAIL]"} All performance targets ${allTargetsMet ? "MET" : "NOT MET"}`,
 	);
 
 	return metrics;
@@ -152,7 +152,7 @@ async function saveReport(metrics: BaselineMetrics): Promise<void> {
 
 	await writeFile(reportPath, JSON.stringify(metrics, null, 2));
 
-	console.log(`\nðŸ“Š Baseline report saved to: ${reportPath}`);
+	console.log(`\n[REPORT] Baseline report saved to: ${reportPath}`);
 }
 
 async function main(): Promise<void> {
@@ -160,10 +160,10 @@ async function main(): Promise<void> {
 		const metrics = await runBaseline();
 		await saveReport(metrics);
 
-		console.log("\nâœ¨ Baseline tests completed successfully!");
+		console.log("\n[DONE] Baseline tests completed successfully!");
 		process.exit(0);
 	} catch (error) {
-		console.error("âŒ Baseline tests failed:", error);
+		console.error("[FAIL] Baseline tests failed:", error);
 		process.exit(1);
 	}
 }
@@ -171,3 +171,5 @@ async function main(): Promise<void> {
 if (import.meta.main) {
 	main();
 }
+
+

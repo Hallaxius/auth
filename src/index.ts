@@ -161,6 +161,7 @@ export {
 	parseCookies,
 } from "./internal/cookies";
 export { decrypt, encrypt } from "./internal/crypto-aes";
+export { DEFAULT_SESSION_TTL_SECONDS } from "./internal/defaults";
 export {
 	expiresInToSeconds,
 	parseExpiresIn,
@@ -211,6 +212,8 @@ export {
 export {
 	createStorageAdapters,
 	isMemoryBacked,
+	MemoryBruteForceStore,
+	MemoryRateLimitStore,
 } from "./storage/factory";
 export type {
 	AuthUserIdentifier,
@@ -233,6 +236,7 @@ export type {
 	MfaStorage,
 	MfaVerifyResult,
 	PasswordResetConfig,
+	PendingTokenEntry,
 	RateLimitConfig,
 	RateLimitResult,
 	RateLimitStorage,
@@ -241,6 +245,7 @@ export type {
 	ResetPasswordResult,
 	ResetTokenStorage,
 	RoutesConfig as RouteOptions,
+	SafeAuthUser,
 	SafeStoredUser,
 	SessionConfig as SessionOptions,
 	SessionData as SessionUser,

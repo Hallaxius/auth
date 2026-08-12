@@ -146,7 +146,7 @@ describe("BruteForceProtection - blocked scenario", () => {
 				usernameRequired: true,
 				secret:
 					process.env.TEST_SECRET ||
-					"test-secret-key-that-is-at-least-32-char!",
+					"5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				expiresIn: "7d",
 				cookieName: "test-session",
 			},
@@ -170,3 +170,5 @@ describe("BruteForceProtection - blocked scenario", () => {
 		).rejects.toThrow("Account temporarily locked");
 	});
 });
+
+

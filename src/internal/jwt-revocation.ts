@@ -63,6 +63,15 @@ export class MemoryTokenRevocationStorage implements TokenRevocationStorage {
 		this.store.set(jti, { expiresAt });
 	}
 
+	async revokeIfPresent(jti: string, ttlSeconds: number): Promise<boolean> {
+		if (await this.isRevoked(jti)) {
+			return false;
+		}
+		const expiresAt = Date.now() + ttlSeconds * 1000;
+		this.store.set(jti, { expiresAt });
+		return true;
+	}
+
 	async revokeFamily(familyId: string, ttlSeconds: number): Promise<void> {
 		const expiresAt = Date.now() + ttlSeconds * 1000;
 		this.familyRevocations.set(familyId, { expiresAt });

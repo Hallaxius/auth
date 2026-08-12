@@ -79,3 +79,4 @@ describe("fingerprint cache TTL", () => {
 		expect(resultB).toMatch(/^fp:/);
 	});
 });
+

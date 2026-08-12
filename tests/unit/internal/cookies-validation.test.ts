@@ -356,3 +356,4 @@ describe("integration tests", () => {
 		expect(clearCookie).toContain("SameSite=strict");
 	});
 });
+

@@ -81,7 +81,7 @@ function createCredentialsConfig(
 		emailRequired: overrides.emailRequired ?? true,
 		storage: overrides.storage ?? new InMemoryUserStorage(),
 		session: {
-			secret: process.env.TEST_SECRET || "fallback-32-char-secret-key-here!!",
+			secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 			expiresIn: "7d",
 			cookieName: "credentials-session",
 		},
@@ -177,7 +177,7 @@ describe("credentials - edge cases and validation", () => {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
 				username: "notneeded",
-				password: "password123",
+				password: "StrongPass1!",
 			}),
 		});
 
@@ -328,6 +328,66 @@ describe("credentials - edge cases and validation", () => {
 		expect(body.error).toBe("Unauthorized");
 	});
 
+	test("getSession exposes the user without the password hash", async () => {
+		const config = createCredentialsConfig();
+		const handlers = credentials(config);
+
+		const registerReq = new Request("http://localhost/auth/register", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				username: "safeuser",
+				email: "safe@example.com",
+				password: "StrongPass1!",
+			}),
+		});
+		const registerRes = await handlers.handleRegister(registerReq);
+		const cookie = registerRes.headers.get("Set-Cookie")!;
+		expect(cookie).toBeTruthy();
+
+		const sessionReq = new Request("http://localhost/", {
+			headers: { Cookie: cookie },
+		});
+		const session = await handlers.getSession(sessionReq);
+
+		expect(session).not.toBeNull();
+		expect(session!.username).toBe("safeuser");
+		expect(session!.email).toBe("safe@example.com");
+		expect(session).not.toHaveProperty("password");
+		expect(JSON.stringify(session)).not.toContain("password123");
+	});
+
+	test("withAuth passes a user without the password hash", async () => {
+		const config = createCredentialsConfig();
+		const handlers = credentials(config);
+
+		const registerReq = new Request("http://localhost/auth/register", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				username: "safeuser2",
+				email: "safe2@example.com",
+				password: "StrongPass1!",
+			}),
+		});
+		const registerRes = await handlers.handleRegister(registerReq);
+		const cookie = registerRes.headers.get("Set-Cookie")!;
+
+		const sessionReq = new Request("http://localhost/", {
+			headers: { Cookie: cookie },
+		});
+		let seenUser: unknown;
+		const protectedHandler = handlers.withAuth(async (_req, ctx) => {
+			seenUser = ctx.user;
+			return new Response("OK");
+		});
+		const res = await protectedHandler(sessionReq);
+
+		expect(res.status).toBe(200);
+		expect(seenUser).not.toBeNull();
+		expect(JSON.stringify(seenUser)).not.toContain("password123");
+	});
+
 	test("errorResponse handles non-AuthError", async () => {
 		const config = createCredentialsConfig();
 		const handlers = credentials(config);
@@ -338,7 +398,7 @@ describe("credentials - edge cases and validation", () => {
 			body: JSON.stringify({
 				username: "testuser",
 				email: "test@example.com",
-				password: "password123",
+				password: "StrongPass1!",
 			}),
 		});
 		await handlers.handleRegister(registerReq);
@@ -460,7 +520,7 @@ describe("credentials - response headers", () => {
 				body: JSON.stringify({
 					username: "headeruser",
 					email: "header@example.com",
-					password: "password123",
+					password: "StrongPass1!",
 				}),
 			}),
 		);
@@ -483,3 +543,7 @@ describe("credentials - response headers", () => {
 		expect(blockedRes.headers.get("Retry-After")).toBeDefined();
 	});
 });
+
+
+
+

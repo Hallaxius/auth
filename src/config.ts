@@ -1,4 +1,7 @@
-import { ConfigurationError } from "./errors";
+import type { CaptchaConfig } from "./captcha";
+import { resolveCaptchaConfig } from "./captcha";
+import { validateSecretEntropy } from "./config/schema";
+import { defaultSameSite } from "./internal/cookies";
 import {
 	DEFAULT_BRUTE_FORCE,
 	DEFAULT_CALLBACKS,
@@ -16,7 +19,10 @@ import type {
 	RoutesConfig,
 } from "./types";
 import { sha256, toBase64URL } from "./utils/crypto-helpers";
+import { createSecurityLogger } from "./utils/logger";
 import { isProduction } from "./utils/validation";
+
+const logger = createSecurityLogger("config");
 
 export async function processConfig(
 	config: DiscordAuthConfig,
@@ -27,6 +33,7 @@ export async function processConfig(
 	if (!config.secret) {
 		throw new Error("secret is required");
 	}
+	validateSecretEntropy(config.secret);
 	if (
 		config.session?.type &&
 		!["jwt", "server"].includes(config.session.type)
@@ -38,7 +45,7 @@ export async function processConfig(
 
 	if (!redirectUri) {
 		throw new Error(
-			"redirectUri is required — set DISCORD_REDIRECT_URI env var or provide redirectUri in config. " +
+			"redirectUri is required - set DISCORD_REDIRECT_URI env var or provide redirectUri in config. " +
 				"Example: https://your-domain.com/auth/discord/callback",
 		);
 	}
@@ -64,9 +71,17 @@ export async function processConfig(
 
 	const mergedCsrf = { ...DEFAULT_CSRF, ...csrf };
 
-	if (mergedCsrf.enabled && mergedCsrf.singleUse && !mergedCsrf.storage) {
-		throw new ConfigurationError(
-			"csrf.singleUse requires a state storage. Provide a `csrf.storage` implementing StateStore (e.g. Redis, Database, KV).",
+	if (!mergedCsrf.enabled) {
+		logger.warn(
+			"CSRF protection is disabled. State parameter validation will still occur, " +
+				"but single-use enforcement falls back to in-memory storage (not suitable for multi-process/serverless).",
+		);
+	}
+
+	if (mergedCsrf.enabled && !mergedCsrf.singleUse) {
+		logger.warn(
+			"CSRF single-use enforcement is disabled. State parameters can be replayed " +
+				"within their TTL window. Set `csrf.singleUse: true` (default) to prevent state replay attacks.",
 		);
 	}
 
@@ -80,7 +95,7 @@ export async function processConfig(
 			cookiePath: config.session?.cookiePath ?? "/",
 			httpOnly: config.session?.httpOnly ?? true,
 			secure: config.session?.secure ?? isProduction(),
-			sameSite: config.session?.sameSite ?? "lax",
+			sameSite: config.session?.sameSite ?? defaultSameSite(),
 			expiresIn: config.session?.expiresIn ?? "7d",
 		},
 		scopes: (config.scopes ?? [...DEFAULT_SCOPES]) as DiscordScope[],
@@ -99,6 +114,10 @@ export async function processConfig(
 		csrf: mergedCsrf,
 		stateSecret,
 		meRateLimitStorage: config.meRateLimitStorage,
+		sessionRevocationStorage: config.sessionRevocationStorage,
+		captcha: config.captcha
+			? resolveCaptchaConfig(config.captcha as CaptchaConfig)
+			: null,
 	};
 }
 

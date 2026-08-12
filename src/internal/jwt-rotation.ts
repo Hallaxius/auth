@@ -15,6 +15,15 @@ export async function rotateToken(
 		});
 
 		if (revocationStorage && payload.jti) {
+			const isRevoked = await revocationStorage.isRevoked(
+				payload.jti as string,
+			);
+			if (isRevoked) {
+				return null;
+			}
+		}
+
+		if (revocationStorage && payload.jti) {
 			const remainingSeconds = payload.exp
 				? payload.exp - Math.floor(Date.now() / 1000)
 				: 3600;
@@ -26,20 +35,23 @@ export async function rotateToken(
 		}
 
 		const newJti = crypto.randomUUID();
+		const { iat: _iat, exp: _exp, type: _type, ...restPayload } = payload;
 		const newPayload = {
-			...payload,
+			...restPayload,
 			jti: newJti,
-			iat: undefined,
-			exp: undefined,
-			type: undefined,
 		};
+
+		const duration =
+			payload.exp && payload.iat
+				? (payload.exp as number) - (payload.iat as number)
+				: undefined;
+
+		const effectiveDuration = duration && duration > 0 ? duration : 15 * 60;
 
 		const signer = new SignJWT(newPayload)
 			.setProtectedHeader({ alg: "HS256" })
 			.setIssuedAt()
-			.setExpirationTime(
-				payload.exp ? payload.exp - (payload.iat as number) : "15m",
-			);
+			.setExpirationTime(Math.floor(Date.now() / 1000) + effectiveDuration);
 
 		if (issuer || payload.iss) {
 			signer.setIssuer(issuer ?? (payload.iss as string));

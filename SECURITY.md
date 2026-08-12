@@ -39,7 +39,7 @@ Include:
 |---------|-----------|------------|
 | JWT Signing | HS256 | 256-bit key |
 | Session Encryption | AES-256-GCM | HKDF-SHA256, 256-bit key, 16-byte IV |
-| MFA | TOTP (RFC 6238) | SHA-1, 30s period, 6 digits |
+| MFA | TOTP (RFC 6238) | SHA-256 default, 30s period, 6 digits |
 | State Parameter | HMAC-SHA256 | OAuth 2.0 CSRF protection |
 | Password Hashing | **User Responsibility** | Choose Argon2id (preferred), bcrypt, or scrypt |
 | Captcha Verification | Siteverify API | Secret key at config-time, user IP (`remoteip`) sent for risk scoring |
@@ -49,21 +49,20 @@ Include:
 ✅ **Secure Cookie Defaults:**
 - `HttpOnly` - Prevents JavaScript access
 - `Secure` - HTTPS only (production)
-- `SameSite=Lax` - CSRF protection (configurable: `lax` default, `strict`, or `none` with `secure`)
+- `SameSite` - CSRF protection (defaults to `lax` in development and `strict` in production; configurable to `none` with `secure`)
 - `Path=/` - All routes
 
 ✅ **Configurable Options:**
-- Session TTL: 7 days for Discord OAuth sessions, 15 minutes for Credentials sessions (configurable via `session.expiresIn`)
+- Session TTL: 7 days by default (sessions and refresh tokens share the same default via `DEFAULT_SESSION_TTL_SECONDS`, configurable via `session.expiresIn` / `options.maxAge`)
 - Cookie name customization
 - Domain/path configuration
 
 ### Input Validation & Protection
 
 ✅ **Redirect URI Validation:**
-- Uses `NEXT_PUBLIC_SITE_URL` for validation
-- HTTPS enforcement in production
-- Path traversal protection
-- Subdomain validation
+- Relative redirects only (no protocol-relative `//`, no backslashes or `%5c`)
+- Absolute redirects require an explicit origin allowlist (`allowedOrigins`) and HTTPS
+- Unsafe targets fall back to `/`
 
 ✅ **Request Validation:**
 - Content-Type enforcement (`application/json`)
@@ -83,11 +82,11 @@ Include:
 ### Rate Limiting
 
 ✅ **Built-in Protection:**
-- `/me` endpoint rate limiting (10 req/min per IP)
+- `/me` endpoint rate limiting when `meRateLimitStorage` is configured (10 req/min per IP)
 - Brute force protection on credentials login (5 attempts max, fixed 30-minute lockout)
 - MFA attempt limits (5 TOTP / 10 backup codes per user per hour, 20 backup codes per IP per hour)
 - Password reset rate limits (3 forgot-password requests per hour per IP, 10 reset attempts per 15 min per IP)
-- Sliding window algorithm
+- Fixed-window algorithm by default (sliding-window and token-bucket algorithms available)
 - Distributed rate limiting (requires Redis/KV)
 
 ✅ **RFC 6585 / 8683 Headers:**
@@ -101,7 +100,7 @@ Include:
 ✅ **Automatic Protection:**
 - Account lockout after 5 failed attempts
 - Fixed lockout duration: 30 minutes (configurable via `blockDurationMs`) — no exponential backoff
-- IP + User-Agent + Strategy tracking
+- Keyed by IP + account identifier (credentials) / IP (Discord)
 - Requires external storage for distributed deployments
 
 ### Audit & Monitoring
@@ -129,7 +128,7 @@ Include:
 | HTTPS | ✅ Required | All redirect URIs must use HTTPS |
 | Secure Cookies | ✅ Required | `Secure` flag enabled in production |
 | Secret Entropy | ✅ Required | Min 32 chars, high entropy validation |
-| `AUTH_SALT` (State Salt) | ✅ Required | Separate secret used with HKDF-SHA256 to derive the OAuth state HMAC; must differ from JWT secret |
+| `AUTH_SALT` (State Salt) | 🔶 Recommended | Separate secret used with HKDF-SHA256 to derive the OAuth state HMAC; optional — when unset it falls back to a derivation from the JWT secret |
 | External Storage | ✅ Required | Redis/Database/KV for stateful operations |
 | `TRUSTED_PROXY_IPS` | ✅ Required (behind proxy) | Comma-separated proxy IPs/CIDRs to trust for real-client-IP resolution when `trustProxy` is enabled |
 
@@ -170,6 +169,7 @@ Include:
 - **Session Management:** OWASP guidelines followed
 - **Password Storage:** User's responsibility (hash in storage layer)
 - **OAuth 2.0:** RFC 6749 compliant
+- **Data Protection:** `getPrivacySettings()` is async and reports recorded consents plus any pending data-deletion request for the user (GDPR/CCPA-style erasure flows)
 
 ---
 
@@ -189,6 +189,9 @@ bun test tests/unit/csp.test.ts
 
 # Run rate limiting tests
 bun test tests/unit/rate-limit/
+
+# Run integration tests (requires a previous build for the dist artifact)
+bun run build && bun test tests/integration/
 ```
 
 ### Manual Security Testing Checklist
@@ -199,13 +202,13 @@ bun test tests/unit/rate-limit/
    - Test path traversal attempts
 
 2. **Rate Limiting**
-   - Attempt >10 requests to `/auth/me` per minute
+   - Attempt >10 requests to `/auth/me` per minute (requires `meRateLimitStorage`)
    - Verify 429 response with Retry-After header
 
 3. **Cookie Security**
    - Verify Secure flag in production browser dev tools
    - Verify HttpOnly flag (not accessible via JavaScript)
-    - Verify SameSite defaults to lax (configurable to strict/none)
+   - Verify SameSite (lax in development, strict in production)
 
 4. **Secret Validation**
    - Attempt to start with weak secrets (< 32 chars)
@@ -272,7 +275,7 @@ Monitor these security events:
 Session cookies use:
 - `Secure` flag in production (HTTPS only)
 - `HttpOnly` flag (no JavaScript access)
-- `SameSite` defaults to `lax` (configurable to `strict` or `none`); `Secure` in production
+- `SameSite` defaults to `lax` in development and `strict` in production (configurable to `none` with `secure`); `Secure` in production
 
 ### Token Security
 
@@ -281,6 +284,17 @@ All JWTs include:
 - `iss` (issuer) claim
 - `exp` (expiration) claim
 - `iat` (issued at) claim
+
+✅ **Refresh Token Rotation:**
+- Every refresh token use issues a new token and revokes the previous one (single-use semantics)
+- Under concurrent rotation exactly one rotation wins; losing rotations return no token
+- Family tracking (opt-out via `familyTracking: false`): replaying a rotated token revokes the entire token family, invalidating all descendants
+
+✅ **Session Revocation:**
+- `session()` accepts an optional `revocationStorage`; revoked `jti`s are rejected with a `null` session (e.g. after logout)
+
+✅ **OAuth Provider Failure Handling:**
+- Failed Discord token exchanges (e.g. `invalid_grant`) map to `401` and increment the brute-force counter for the caller's IP
 
 ---
 

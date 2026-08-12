@@ -1,3 +1,4 @@
+import { type CaptchaConfig, verifyCaptcha } from "./captcha";
 import { deriveStateSecret, pkce, processConfig } from "./config";
 import { BruteForceProtection } from "./credentials";
 import {
@@ -18,12 +19,16 @@ import {
 	jsonResponse,
 	redirectResponse,
 } from "./internal/http-utils";
-import { expiresInToSeconds, signToken, verifyToken } from "./internal/jwt";
+import {
+	expiresInToSeconds,
+	revokeToken,
+	signToken,
+	verifyToken,
+} from "./internal/jwt";
 import {
 	consumeState,
 	generateState,
 	type ValidatedState,
-	validateState,
 } from "./internal/state";
 import { rateLimit } from "./rate-limit";
 import type {
@@ -37,21 +42,21 @@ import type {
 	DiscordUser,
 	GuildRoleSyncConfig,
 	InternalConfig,
+	RateLimitStorage,
 	RoutesConfig,
 	SafeStoredUser,
 	SessionConfig,
 	SessionData,
 	StoredUser,
+	TokenRevocationStorage,
 	UserStorage,
 } from "./types";
-
 import { GuildRoleSync } from "./utils/guild";
 import { getRequestIP } from "./utils/ip";
 import { createSecurityLogger } from "./utils/logger";
 import { isProduction } from "./utils/validation";
 
 const logger = createSecurityLogger("discord");
-
 interface CallbackContext {
 	config: InternalConfig;
 	client: DiscordClient;
@@ -61,27 +66,23 @@ interface CallbackContext {
 	sessionId?: string;
 	userAgent?: string;
 }
-
 interface CallbackResult {
 	user: DiscordUser;
 	tokens: DiscordTokenResponse;
 	syncedPermissions: string[];
 	storedUser?: StoredUser;
 }
-
 async function handleOAuthCallback(
 	ctx: CallbackContext,
 ): Promise<CallbackResult> {
 	const { config, client, storage, code, codeVerifier } = ctx;
-
 	if (!config.redirectUri) {
 		throw new AuthError(
 			ErrorCodes.CONFIGURATION_ERROR,
-			"redirectUri is required — set DISCORD_REDIRECT_URI env var or provide redirectUri in config",
+			"redirectUri is required - set DISCORD_REDIRECT_URI env var or provide redirectUri in config",
 		);
 	}
 	const redirectUri = config.redirectUri;
-
 	const tokens = await client.exchangeCode({
 		clientId: config.clientId,
 		clientSecret: config.clientSecret,
@@ -89,9 +90,7 @@ async function handleOAuthCallback(
 		redirectUri,
 		codeVerifier,
 	});
-
 	const user = await client.getUser(tokens.access_token);
-
 	if (config.mfa.enabled && config.mfa.requireMfa && !user.mfa_enabled) {
 		throw new AuthError(
 			ErrorCodes.MFA_REQUIRED,
@@ -101,7 +100,6 @@ async function handleOAuthCallback(
 			},
 		);
 	}
-
 	let storedUser: StoredUser | null = null;
 	if (storage) {
 		const expiresAt = Math.floor(Date.now() / 1000) + tokens.expires_in;
@@ -135,7 +133,6 @@ async function handleOAuthCallback(
 			storedUser = updated;
 		}
 	}
-
 	let syncedPermissions: string[] = [];
 	if (
 		config.guildRoleSync.enabled &&
@@ -154,7 +151,6 @@ async function handleOAuthCallback(
 			storedUser = await storage.update(user.id, { roles: mergedRoles });
 		}
 	}
-
 	return {
 		user,
 		tokens,
@@ -162,7 +158,6 @@ async function handleOAuthCallback(
 		storedUser: storedUser ?? undefined,
 	};
 }
-
 async function revokeTokenOnly(params: {
 	storage: UserStorage;
 	client: DiscordClient;
@@ -181,28 +176,27 @@ async function revokeTokenOnly(params: {
 			});
 		}
 	} catch (err) {
-		console.error(
-			`[Discord Auth] Token revocation failed for user ${sessionData.discordId}:`,
-			err,
-		);
+		logger.error("Token revocation failed for Discord user", {
+			discordId: sessionData.discordId,
+			error: err instanceof Error ? err.message : String(err),
+		});
 	}
 }
-
 async function getSessionFromRequest(
 	request: Request,
 	config: { secret: string; cookieName?: string },
+	revocationStorage?: TokenRevocationStorage,
 ): Promise<SessionData | null> {
 	const cookieName = config.cookieName ?? "discord-auth-session";
 	const cookies = parseCookies(request);
 	const token = cookies[cookieName];
 	if (!token) return null;
-
 	const payload = await verifyToken<Record<string, unknown>>(
 		token,
 		config.secret,
+		revocationStorage,
 	);
 	if (!payload) return null;
-
 	return {
 		discordId: payload.discordId as string,
 		username: payload.username as string,
@@ -213,15 +207,11 @@ async function getSessionFromRequest(
 		roles: (payload.roles as string[]) ?? undefined,
 	};
 }
-
 function isSafeRedirect(target: string, allowedOrigins?: string[]): boolean {
 	if (typeof target !== "string" || target.length === 0) return false;
-
 	if (target.includes("\\")) return false;
 	if (target.includes("%5c") || target.includes("%5C")) return false;
-
 	if (/^\s*\/\//.test(target)) return false;
-
 	if (target.startsWith("/")) {
 		try {
 			const parsed = new URL(target, "http://localhost");
@@ -232,7 +222,6 @@ function isSafeRedirect(target: string, allowedOrigins?: string[]): boolean {
 			return false;
 		}
 	}
-
 	if (/^[a-z][a-z0-9+.-]*:/i.test(target)) {
 		try {
 			const url = new URL(target);
@@ -251,10 +240,8 @@ function isSafeRedirect(target: string, allowedOrigins?: string[]): boolean {
 			return false;
 		}
 	}
-
 	return false;
 }
-
 function sanitizeRedirect(
 	target: string | undefined | null,
 	allowedOrigins?: string[],
@@ -262,16 +249,13 @@ function sanitizeRedirect(
 	if (target && isSafeRedirect(target, allowedOrigins)) return target;
 	return "/";
 }
-
 interface HandlerContext {
 	config: InternalConfig;
 	client: DiscordClient;
 	storage?: UserStorage;
 }
-
 function createHandlers(ctx: HandlerContext) {
 	const { config, client, storage } = ctx;
-
 	if (!storage) {
 		throw new ConfigurationError(
 			"STORAGE REQUIRED: External storage is mandatory for serverless deployments. " +
@@ -284,18 +268,16 @@ function createHandlers(ctx: HandlerContext) {
 	const secure = config.session.secure ?? isProduction();
 	const httpOnly = config.session.httpOnly ?? true;
 	const sessionCookieName = cookieName;
-
 	const expiresInSeconds = expiresInToSeconds(config.session.expiresIn ?? "7d");
-
 	const sessionConfig = {
 		cookieName,
 		cookiePath,
 		maxAge: expiresInSeconds,
-		sameSite: sameSite ?? "strict",
+		sameSite: sameSite ?? defaultSameSite(),
 		secure,
 		httpOnly,
 	};
-
+	const sessionRevocationStorage = config.sessionRevocationStorage;
 	const meRateLimiter = config.meRateLimitStorage
 		? rateLimit({
 				maxRequests: 10,
@@ -307,27 +289,50 @@ function createHandlers(ctx: HandlerContext) {
 				},
 			})
 		: undefined;
-
+	const loginRateLimiter = config.meRateLimitStorage
+		? rateLimit({
+				maxRequests: 10,
+				windowMs: 60 * 1000,
+				storage: config.meRateLimitStorage,
+				keyBy: async (req) => {
+					const ip = await getRequestIP(req, { trustProxy: true });
+					return `login:${ip}`;
+				},
+			})
+		: undefined;
 	const bruteForceEnabled = config.bruteForce.enabled !== false;
 	if (bruteForceEnabled && !config.bruteForce.storage) {
-		throw new ConfigurationError(
-			"bruteForce protection is enabled by default for Discord OAuth. " +
-				"Provide a `bruteForce.storage` implementing BruteForceStorage " +
-				"(e.g. Redis, Database, KV), or explicitly set " +
-				"`bruteForce.enabled: false`.",
+		logger.warn(
+			"bruteForce protection is enabled without a storage. Falling back to in-memory store. " +
+				"This is NOT suitable for production, serverless, or multi-process deployments. " +
+				"Provide a `bruteForce.storage` implementing BruteForceStorage (e.g. Redis, Database, KV), " +
+				"or explicitly set `bruteForce.enabled: false`.",
 		);
 	}
 	const bruteForce = bruteForceEnabled
 		? new BruteForceProtection(config.bruteForce, config.bruteForce.storage)
 		: undefined;
-
 	async function handleLogin(request: Request): Promise<Response> {
+		if (loginRateLimiter) {
+			const rateLimitResult = await loginRateLimiter.check(request);
+			if (!rateLimitResult.allowed) {
+				const headers = new Headers({
+					"Content-Type": "application/json; charset=utf-8",
+					"Retry-After": String(Math.ceil(rateLimitResult.retryAfter! / 1000)),
+					"RateLimit-Limit": String(rateLimitResult.limit),
+					"RateLimit-Remaining": String(rateLimitResult.remaining),
+					"RateLimit-Reset": String(Math.ceil(rateLimitResult.resetAt / 1000)),
+				});
+				return new Response(JSON.stringify({ error: "Too many requests" }), {
+					status: 429,
+					headers,
+				});
+			}
+		}
 		const cookies = parseCookies(request);
 		const sessionId = cookies[sessionCookieName];
 		const userAgent = request.headers.get("user-agent") ?? undefined;
-
 		const pkcePair = await pkce.create();
-
 		const state = await generateState(
 			config.stateSecret,
 			pkcePair.verifier,
@@ -335,7 +340,6 @@ function createHandlers(ctx: HandlerContext) {
 			userAgent,
 			config.csrf,
 		);
-
 		const url = client.generateAuthUrl({
 			clientId: config.clientId,
 			redirectUri: config.redirectUri,
@@ -345,17 +349,14 @@ function createHandlers(ctx: HandlerContext) {
 			codeChallenge: pkcePair.challenge,
 			codeChallengeMethod: pkcePair.codeChallengeMethod,
 		});
-
 		return redirectResponse(url);
 	}
-
 	async function handleCallback(request: Request): Promise<Response> {
 		const url = new URL(request.url);
 		const code = url.searchParams.get("code");
 		const state = url.searchParams.get("state");
 		const error = url.searchParams.get("error");
 		const errorDescription = url.searchParams.get("error_description");
-
 		if (error) {
 			const errorMap: Record<string, { message: string; status: number }> = {
 				interaction_required: {
@@ -383,7 +384,6 @@ function createHandlers(ctx: HandlerContext) {
 					status: 503,
 				},
 			};
-
 			const errorInfo = errorMap[error] ?? {
 				message: "OAuth2 error occurred",
 				status: 400,
@@ -402,55 +402,76 @@ function createHandlers(ctx: HandlerContext) {
 			await config.callbacks.onError(authErr, "callback");
 			return htmlResponse(authErr.message, errorInfo.status);
 		}
-
 		if (!code) return htmlResponse("Missing authorization code", 400);
 		if (!state) return htmlResponse("Missing state parameter", 400);
-
 		const cookies = parseCookies(request);
 		const sessionId = cookies[sessionCookieName];
 		const userAgent = request.headers.get("user-agent") ?? undefined;
-
 		let stateValidation: ValidatedState;
 		let csrfError: AuthErrorType | null = null;
-
-		if (config.csrf.enabled) {
-			stateValidation = await consumeState(
-				state,
-				config.stateSecret,
-				sessionId,
-				userAgent,
-				config.csrf,
-				config.csrf.storage,
+		stateValidation = await consumeState(
+			state,
+			config.stateSecret,
+			sessionId,
+			userAgent,
+			config.csrf,
+			config.csrf.storage,
+		);
+		if (!stateValidation.valid) {
+			csrfError = new AuthError(
+				ErrorCodes.INVALID_STATE,
+				"Invalid state parameter",
+				{ statusCode: 403 },
 			);
-
-			if (!stateValidation.valid) {
-				csrfError = new AuthError(
-					ErrorCodes.STATE_BINDING_FAILED,
-					"State parameter binding validation failed",
-					{ statusCode: 403 },
-				);
-			}
-		} else {
-			stateValidation = await validateState(
-				state,
-				config.stateSecret,
-				config.csrf,
-			);
-			if (!stateValidation.valid) {
-				csrfError = new AuthError(
-					ErrorCodes.INVALID_STATE,
-					"Invalid state parameter - possible CSRF attack",
-					{ statusCode: 403 },
-				);
-			}
 		}
-
 		if (csrfError) {
 			await config.callbacks.onError(csrfError, "callback");
 			const statusCode = csrfError.statusCode ?? 403;
 			return htmlResponse(csrfError.message, statusCode);
 		}
-
+		if (config.captcha?.enabled) {
+			const ip = await getRequestIP(request, { trustProxy: true });
+			const captchaToken = request.headers.get("x-captcha-response");
+			if (!captchaToken) {
+				const captchaErr = new AuthError(
+					ErrorCodes.CAPTCHA_FAILED,
+					"Captcha verification failed",
+					{ statusCode: 400 },
+				);
+				await config.callbacks.onError(captchaErr, "callback");
+				return htmlResponse(captchaErr.message, 400);
+			}
+			const captchaResult = await verifyCaptcha(
+				config.captcha as NonNullable<typeof config.captcha>,
+				captchaToken,
+				{ remoteip: ip },
+			);
+			if (!captchaResult.success) {
+				const captchaErr = new AuthError(
+					ErrorCodes.CAPTCHA_FAILED,
+					"Captcha verification failed",
+					{ statusCode: 403 },
+				);
+				await config.callbacks.onError(captchaErr, "callback");
+				return htmlResponse(captchaErr.message, 403);
+			}
+		}
+		if (loginRateLimiter) {
+			const rateLimitResult = await loginRateLimiter.check(request);
+			if (!rateLimitResult.allowed) {
+				const headers = new Headers({
+					"Content-Type": "application/json; charset=utf-8",
+					"Retry-After": String(Math.ceil(rateLimitResult.retryAfter! / 1000)),
+					"RateLimit-Limit": String(rateLimitResult.limit),
+					"RateLimit-Remaining": String(rateLimitResult.remaining),
+					"RateLimit-Reset": String(Math.ceil(rateLimitResult.resetAt / 1000)),
+				});
+				return new Response(JSON.stringify({ error: "Too many requests" }), {
+					status: 429,
+					headers,
+				});
+			}
+		}
 		if (bruteForce) {
 			const ip = await getRequestIP(request, { trustProxy: true });
 			const blockKey = `discord:${ip}`;
@@ -469,7 +490,6 @@ function createHandlers(ctx: HandlerContext) {
 				return htmlResponse(blockErr.message, 429);
 			}
 		}
-
 		let callbackResult: CallbackResult;
 		try {
 			callbackResult = await handleOAuthCallback({
@@ -483,7 +503,7 @@ function createHandlers(ctx: HandlerContext) {
 			});
 		} catch (err) {
 			if (bruteForce && err instanceof AuthError && err.statusCode === 401) {
-				bruteForce.recordAttempt(
+				await bruteForce.recordAttempt(
 					`discord:${await getRequestIP(request, { trustProxy: true })}`,
 				);
 			}
@@ -494,16 +514,13 @@ function createHandlers(ctx: HandlerContext) {
 				err instanceof AuthError ? err.message : "Authentication failed";
 			return htmlResponse(message, statusCode);
 		}
-
 		const { user, tokens, syncedPermissions, storedUser } = callbackResult;
-
 		if (bruteForce) {
 			await bruteForce.recordAttempt(
 				`discord:${await getRequestIP(request, { trustProxy: true })}`,
 				true,
 			);
 		}
-
 		const sessionPayload: Record<string, unknown> = {
 			discordId: user.id,
 			username: user.username,
@@ -513,20 +530,17 @@ function createHandlers(ctx: HandlerContext) {
 			locale: user.locale,
 			mfaEnabled: user.mfa_enabled,
 		};
-
 		if (storedUser?.roles) {
 			sessionPayload.roles = storedUser.roles;
 		}
 		if (syncedPermissions.length > 0) {
 			sessionPayload.permissions = syncedPermissions;
 		}
-
 		const sessionToken = await signToken(
 			sessionPayload,
 			config.session.secret,
 			config.session.expiresIn ?? "15m",
 		);
-
 		const cookie = createSessionCookie(
 			sessionCookieName,
 			sessionToken,
@@ -538,23 +552,28 @@ function createHandlers(ctx: HandlerContext) {
 				return redirectResponse(sanitizeRedirect(result.redirect), [cookie]);
 			}
 		}
-
 		return redirectResponse("/", [cookie]);
 	}
-
 	async function handleLogout(request: Request): Promise<Response> {
 		if (request.method !== "POST") {
 			return jsonResponse({ error: "Method not allowed" }, 405);
 		}
 		const cookies = parseCookies(request);
 		const sessionToken = cookies[sessionCookieName];
-
 		if (storage && sessionToken) {
 			const payload = await verifyToken<Record<string, unknown>>(
 				sessionToken,
 				config.session.secret,
+				sessionRevocationStorage,
 			);
 			if (payload) {
+				if (sessionRevocationStorage) {
+					await revokeToken(
+						sessionToken,
+						config.session.secret,
+						sessionRevocationStorage,
+					);
+				}
 				const userData: SessionData = {
 					discordId: payload.discordId as string,
 					username: payload.username as string,
@@ -573,7 +592,6 @@ function createHandlers(ctx: HandlerContext) {
 				});
 			}
 		}
-
 		const clearCookies: string[] = [
 			clearSessionCookie(sessionCookieName, sessionConfig),
 		];
@@ -582,7 +600,6 @@ function createHandlers(ctx: HandlerContext) {
 		const safeRedirect = sanitizeRedirect(requestedRedirect);
 		return redirectResponse(safeRedirect, clearCookies);
 	}
-
 	async function handleMe(request: Request): Promise<Response> {
 		if (meRateLimiter) {
 			const rateLimitResult = await meRateLimiter.check(request);
@@ -600,19 +617,16 @@ function createHandlers(ctx: HandlerContext) {
 				});
 			}
 		}
-
 		const cookies = parseCookies(request);
 		const sessionToken = cookies[sessionCookieName];
-
 		if (!sessionToken) return jsonResponse({ error: "Unauthorized" }, 401);
-
 		try {
 			const payload = await verifyToken<Record<string, unknown>>(
 				sessionToken,
 				config.session.secret,
+				sessionRevocationStorage,
 			);
 			if (!payload) return jsonResponse({ error: "Session expired" }, 401);
-
 			const sessionData: SessionData = {
 				discordId: payload.discordId as string,
 				username: payload.username as string,
@@ -622,12 +636,9 @@ function createHandlers(ctx: HandlerContext) {
 				locale: payload.locale as string,
 				roles: (payload.roles as string[]) ?? undefined,
 			};
-
 			if (!storage) return jsonResponse(sessionData);
-
 			const stored = await storage.findByDiscordId(sessionData.discordId);
 			if (!stored) return jsonResponse({ error: "User not found" }, 404);
-
 			const { accessToken, refreshToken, ...safe } = stored;
 			return jsonResponse(safe);
 		} catch (error) {
@@ -637,7 +648,6 @@ function createHandlers(ctx: HandlerContext) {
 			return jsonResponse({ error: "Internal server error" }, 500);
 		}
 	}
-
 	return {
 		handleLogin,
 		handleCallback,
@@ -646,7 +656,6 @@ function createHandlers(ctx: HandlerContext) {
 		dispose: () => {},
 	};
 }
-
 export interface DiscordFactoryConfig {
 	clientId: string;
 	clientSecret: string;
@@ -665,13 +674,14 @@ export interface DiscordFactoryConfig {
 	csrf?: Partial<CsrfConfig>;
 	callbacks?: Callbacks;
 	stateSecret?: string;
+	captcha?: CaptchaConfig;
+	meRateLimitStorage?: RateLimitStorage;
+	sessionRevocationStorage?: TokenRevocationStorage;
 }
-
 export type AuthHandler = (
 	request: Request,
 	ctx: { user: SessionData; storedUser: SafeStoredUser | null },
 ) => Response | Promise<Response>;
-
 export interface DiscordAuthResult {
 	handleLogin: (request: Request) => Promise<Response>;
 	handleCallback: (request: Request) => Promise<Response>;
@@ -681,9 +691,7 @@ export interface DiscordAuthResult {
 	withAuth: (handler: AuthHandler) => (request: Request) => Promise<Response>;
 	dispose?: () => void;
 }
-
 const COOKIE_NAME = "discord-auth-session";
-
 export async function discord(
 	config: DiscordFactoryConfig,
 ): Promise<DiscordAuthResult> {
@@ -703,12 +711,12 @@ export async function discord(
 		csrf,
 		callbacks,
 		stateSecret,
+		meRateLimitStorage,
+		sessionRevocationStorage,
+		captcha,
 	} = config;
-
 	const client = new DiscordClient({ clientId, clientSecret });
-
 	const derivedStateSecret = stateSecret ?? (await deriveStateSecret(secret));
-
 	const internalConfig = await processConfig({
 		clientId,
 		clientSecret,
@@ -726,14 +734,18 @@ export async function discord(
 		csrf,
 		callbacks,
 		stateSecret: derivedStateSecret,
+		meRateLimitStorage,
+		sessionRevocationStorage,
+		captcha,
 	});
-
 	const { handleLogin, handleCallback, handleLogout, handleMe, dispose } =
 		createHandlers({ config: internalConfig, client, storage });
-
 	const getSessionHelper = (request: Request) =>
-		getSessionFromRequest(request, { secret, cookieName: COOKIE_NAME });
-
+		getSessionFromRequest(
+			request,
+			{ secret, cookieName: COOKIE_NAME },
+			internalConfig.sessionRevocationStorage,
+		);
 	return {
 		handleLogin,
 		handleCallback,

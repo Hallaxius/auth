@@ -286,3 +286,4 @@ describe("Load Tests - 10k Concurrent Users", () => {
 		expect(results.p99LatencyMs).toBeLessThan(50);
 	}, 60000);
 });
+

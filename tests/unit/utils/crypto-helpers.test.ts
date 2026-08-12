@@ -104,3 +104,4 @@ describe("toBase64URL / fromBase64URL", () => {
 		expect(decoded).toEqual(data);
 	});
 });
+

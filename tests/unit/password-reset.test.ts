@@ -96,6 +96,29 @@ describe("passwordReset", () => {
 			const result = await manager.requestReset("unknown");
 			expect(result.processed).toBe(true);
 		});
+
+		test("rate limits repeated requests for the same target", async () => {
+			config = makeConfig({
+				forgotPasswordRateLimit: { maxAttempts: 2, windowMs: 60000, storage: new TestBruteForceStorage() },
+			});
+			manager = passwordReset(config);
+			await manager.requestReset("user@example.com");
+			await expect(manager.requestReset("user@example.com")).rejects.toThrow(
+				AuthError,
+			);
+		});
+
+		test("bypasses rate limiting when rateLimitProgrammatic is false", async () => {
+			config = makeConfig({
+				rateLimitProgrammatic: false,
+				forgotPasswordRateLimit: { maxAttempts: 1, windowMs: 60000, storage: new TestBruteForceStorage() },
+			});
+			manager = passwordReset(config);
+			for (let i = 0; i < 3; i++) {
+				const result = await manager.requestReset("user@example.com");
+				expect(result.processed).toBe(true);
+			}
+		});
 	});
 
 	describe("consumeResetToken", () => {
@@ -661,5 +684,80 @@ describe("passwordReset", () => {
 				),
 			).rejects.toThrow("Unexpected storage error");
 		});
+
+		test("throws on missing newPassword in handleResetPassword", async () => {
+			config = makeConfig({
+				resetPasswordRateLimit: { maxAttempts: 100, windowMs: 60000, storage: new TestBruteForceStorage() },
+			});
+			manager = passwordReset(config);
+			await expect(
+				manager.handleResetPassword(
+					new Request("http://localhost", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ token: "a.b" }),
+					}),
+				),
+			).rejects.toThrow(AuthError);
+		});
+
+		test("malformed JSON does not consume the forgot-password rate-limit quota", async () => {
+			config = makeConfig({
+				forgotPasswordRateLimit: { maxAttempts: 2, windowMs: 60000, storage: new TestBruteForceStorage() },
+			});
+			manager = passwordReset(config);
+			const malformed = () =>
+				new Request("http://localhost", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: "{not-json",
+				});
+			for (let i = 0; i < 5; i++) {
+				const res = await manager.handleForgotPassword(malformed());
+				expect(res?.status).toBe(400);
+			}
+			const valid = () =>
+				new Request("http://localhost", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ emailOrUsername: "user@example.com" }),
+				});
+			const res1 = await manager.handleForgotPassword(valid());
+			expect(res1?.status).toBe(200);
+			await expect(manager.handleForgotPassword(valid())).rejects.toThrow(
+				AuthError,
+			);
+		});
+
+		test("consumeResetToken rate limits repeated failed consumes of the same token", async () => {
+			let capturedToken = "";
+			config = makeConfig({
+				notifier: {
+					async send({ selector, validator }) {
+						capturedToken = `${selector}.${validator}`;
+					},
+				},
+				userLookup: async () => ({
+					userId: "user-1",
+					email: "test@example.com",
+					username: "testuser",
+				}),
+				resetPasswordRateLimit: { maxAttempts: 2, windowMs: 60000, storage: new TestBruteForceStorage() },
+			});
+			manager = passwordReset(config);
+			await manager.requestReset("test@example.com");
+			const parts = capturedToken.split(".");
+			const tamperedToken = `${parts[0]}.wrong-validator`;
+			await expect(manager.consumeResetToken(tamperedToken)).rejects.toThrow(
+				"Invalid or expired reset token",
+			);
+			await expect(manager.consumeResetToken(tamperedToken)).rejects.toThrow(
+				"Invalid or expired reset token",
+			);
+			await expect(manager.consumeResetToken(tamperedToken)).rejects.toThrow(
+				"Too many requests, please try again later",
+			);
+		});
 	});
 });
+

@@ -7,7 +7,7 @@ import {
 	verifyToken,
 } from "../../../src/";
 
-const TEST_SECRET = "test-secret-key-32-chars-long-for-jwt!!";
+const TEST_SECRET = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 
 describe("secretToKey", () => {
 	test("returns Uint8Array from string", () => {
@@ -124,3 +124,4 @@ describe("signToken and verifyToken", () => {
 		expect(verified).not.toBeNull();
 	});
 });
+

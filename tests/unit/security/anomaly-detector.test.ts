@@ -309,3 +309,4 @@ describe("AnomalyDetector onAnomaly actions", () => {
 		expect(store.records[0]?.ip).toBe(TO_IP)
 	})
 })
+

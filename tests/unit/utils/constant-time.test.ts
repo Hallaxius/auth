@@ -130,3 +130,4 @@ describe("constantTimeCompareHex", () => {
 		expect(constantTimeCompareHex("abc", "a1b2c3")).toBe(false);
 	});
 });
+

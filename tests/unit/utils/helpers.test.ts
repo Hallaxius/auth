@@ -79,7 +79,7 @@ describe("validate", () => {
 		expect(() =>
 			validate({
 				clientId: "",
-				clientSecret: "test-secret",
+				clientSecret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				secret: validSecret,
 			} as Parameters<typeof validate>[0]),
 		).toThrow(AuthError);
@@ -99,7 +99,7 @@ describe("validate", () => {
 		expect(() =>
 			validate({
 				clientId: "test-id",
-				clientSecret: "test-secret",
+				clientSecret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				secret: "",
 			} as Parameters<typeof validate>[0]),
 		).toThrow(AuthError);
@@ -109,7 +109,7 @@ describe("validate", () => {
 		expect(() =>
 			validate({
 				clientId: "test-id",
-				clientSecret: "test-secret",
+				clientSecret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				secret: "short",
 			} as Parameters<typeof validate>[0]),
 		).toThrow(AuthError);
@@ -119,7 +119,7 @@ describe("validate", () => {
 		expect(() =>
 			validate({
 				clientId: "test-id",
-				clientSecret: "test-secret",
+				clientSecret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				secret: validSecret,
 				scopes: ["identify"],
 			}),
@@ -130,7 +130,7 @@ describe("validate", () => {
 		expect(() =>
 			validate({
 				clientId: "test-id",
-				clientSecret: "test-secret",
+				clientSecret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				secret: validSecret,
 				scopes: [] as never,
 			}),
@@ -141,7 +141,7 @@ describe("validate", () => {
 		expect(() =>
 			validate({
 				clientId: "test-id",
-				clientSecret: "test-secret",
+				clientSecret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				secret: validSecret,
 				prompt: "invalid" as never,
 			}),
@@ -152,7 +152,7 @@ describe("validate", () => {
 		expect(() =>
 			validate({
 				clientId: "test-id",
-				clientSecret: "test-secret",
+				clientSecret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				secret: validSecret,
 				session: { type: "invalid" as never, secret: validSecret },
 			}),
@@ -163,7 +163,7 @@ describe("validate", () => {
 		expect(() =>
 			validate({
 				clientId: "test-id",
-				clientSecret: "test-secret",
+				clientSecret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				secret: validSecret,
 				session: {
 					type: "jwt",
@@ -187,7 +187,7 @@ describe("revokeUserSession", () => {
 		mockStorage.findByDiscordId.mockResolvedValue(null);
 
 		await expect(
-			revoke("user-id", mockStorage, "test-id", "test-secret"),
+			revoke("user-id", mockStorage, "test-id", "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2"),
 		).resolves.toBeUndefined();
 
 		expect(mockStorage.delete).not.toHaveBeenCalled();
@@ -197,7 +197,7 @@ describe("revokeUserSession", () => {
 		mockStorage.findByDiscordId.mockRejectedValue(new Error("Storage error"));
 
 		await expect(
-			revoke("user-id", mockStorage, "test-id", "test-secret"),
+			revoke("user-id", mockStorage, "test-id", "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2"),
 		).rejects.toThrow(AuthError);
 	});
 });
@@ -220,8 +220,10 @@ describe("syncUserRoles", () => {
 				"bot-token",
 				mockStorage,
 				"test-id",
-				"test-secret",
+				"5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 			),
 		).rejects.toThrow(AuthError);
 	});
 });
+
+

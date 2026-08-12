@@ -8,7 +8,7 @@ import {
 	type RefreshTokenManagerConfig,
 } from "../../../src/internal/refresh-token";
 
-const secret = "refresh-token-test-secret-at-least-32-chars!!";
+const secret = "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 
 function createManager(
 	storage: MemoryTokenRevocationStorage,
@@ -145,6 +145,73 @@ describe("RefreshTokenManager - rotation and reuse detection", () => {
 
 		expect(rotated).not.toBeNull();
 	});
+
+	it("returns null when the old jti is already revoked", async () => {
+		const storage = new MemoryTokenRevocationStorage();
+		const manager = createManager(storage, { familyTracking: false });
+
+		const first = await manager.issueRefreshToken("user-1");
+		await storage.revoke(first.jti, 3600);
+
+		const rotated = await manager.rotateRefreshToken(first.token);
+		expect(rotated).toBeNull();
+	});
+
+	it("awaits an async revokeIfPresent before deciding (setTimeout mock)", async () => {
+		const delayed = new DelayedStorage();
+		const manager = new RefreshTokenManager({
+			secret,
+			expiresIn: "1h",
+			revocationStorage: delayed as unknown as TokenRevocationStorage,
+		});
+
+		const first = await manager.issueRefreshToken("user-1");
+		const rotated = await manager.rotateRefreshToken(first.token);
+
+		expect(rotated).toBeNull();
+	});
+
+	it("allows exactly one winner among concurrent rotations", async () => {
+		const storage = new MemoryTokenRevocationStorage();
+		const manager = createManager(storage, { familyTracking: false });
+
+		const first = await manager.issueRefreshToken("user-1");
+		const results = await Promise.all(
+			Array.from({ length: 10 }, () => manager.rotateRefreshToken(first.token)),
+		);
+
+		const winners = results.filter((result) => result !== null);
+		expect(winners).toHaveLength(1);
+	});
+
+	it("falls back to revoke() and issues a new token without revokeIfPresent", async () => {
+		const plain = new PlainStorage();
+		const manager = new RefreshTokenManager({
+			secret,
+			expiresIn: "1h",
+			revocationStorage: plain as unknown as TokenRevocationStorage,
+		});
+
+		const first = await manager.issueRefreshToken("user-1");
+		const rotated = await manager.rotateRefreshToken(first.token);
+
+		expect(rotated).not.toBeNull();
+		expect(await plain.isRevoked(first.jti)).toBe(true);
+	});
+
+	it("returns null when revocation storage throws", async () => {
+		const throwing = new ThrowingStorage();
+		const manager = new RefreshTokenManager({
+			secret,
+			expiresIn: "1h",
+			revocationStorage: throwing as unknown as TokenRevocationStorage,
+		});
+
+		const first = await manager.issueRefreshToken("user-1");
+		const rotated = await manager.rotateRefreshToken(first.token);
+
+		expect(rotated).toBeNull();
+	});
 });
 
 class PlainStorage {
@@ -156,3 +223,28 @@ class PlainStorage {
 		this.revoked.add(jti);
 	}
 }
+
+class DelayedStorage {
+	async isRevoked(): Promise<boolean> {
+		return false;
+	}
+	async revoke(): Promise<void> {}
+	async revokeIfPresent(jti: string): Promise<boolean> {
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		return false;
+	}
+}
+
+class ThrowingStorage {
+	async isRevoked(): Promise<boolean> {
+		return false;
+	}
+	async revoke(): Promise<void> {
+		throw new Error("storage down");
+	}
+	async revokeIfPresent(): Promise<boolean> {
+		throw new Error("storage down");
+	}
+}
+
+

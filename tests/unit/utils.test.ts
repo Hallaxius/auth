@@ -190,7 +190,7 @@ describe("validate", () => {
 		expect(() =>
 			validate({
 				clientId: "test-id",
-				clientSecret: "test-secret",
+				clientSecret: "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				secret: validSecret,
 				scopes: ["identify"],
 			}),
@@ -550,7 +550,7 @@ describe("revoke", () => {
 
 	it("handles token revocation failure gracefully", async () => {
 		const consoleWarnSpy = jest
-			.spyOn(console, "warn")
+			.spyOn(console, "log")
 			.mockImplementation(() => {});
 		mockStorage.findByDiscordId.mockResolvedValue({
 			discordId: "user-id",
@@ -578,3 +578,5 @@ describe("revoke", () => {
 		).rejects.toThrow(AuthError);
 	});
 });
+
+

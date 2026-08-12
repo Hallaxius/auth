@@ -12,6 +12,11 @@ const DURATION_TO_SECONDS: Record<string, number> = {
 };
 
 export function secretToKey(secret: string): Uint8Array {
+	if (!secret || typeof secret !== "string") {
+		throw new ConfigurationError(
+			"JWT secret is required. Generate a strong secret (min 32 chars) using crypto.randomUUID() + crypto.randomUUID().",
+		);
+	}
 	validateJwtSecret(secret);
 	return new TextEncoder().encode(secret);
 }
@@ -144,9 +149,10 @@ export async function revokeToken(
 			return false;
 		}
 
-		const ttlSeconds = payload.exp
-			? Math.max(1, payload.exp - Math.floor(Date.now() / 1000))
-			: 3600;
+		const now = Math.floor(Date.now() / 1000);
+		const exp = payload.exp;
+		const expNum = typeof exp === "number" ? exp : undefined;
+		const ttlSeconds = expNum ? Math.max(1, expNum - now) : 3600;
 
 		await revocationStorage.revoke(payload.jti as string, ttlSeconds);
 		return true;

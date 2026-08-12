@@ -61,3 +61,4 @@ describe("MemoryCacheAdapter", () => {
 		cache.dispose();
 	});
 });
+

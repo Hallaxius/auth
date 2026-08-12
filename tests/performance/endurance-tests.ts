@@ -241,7 +241,7 @@ function printEnduranceResults(results: EnduranceTestResults): void {
 		`Memory Growth: ${results.memoryGrowthMBPerHour.toFixed(2)} MB/hour`,
 	);
 	console.log(
-		`Memory Leak Detected: ${results.memoryLeakDetected ? "YES ⚠️" : "NO"}`,
+		`Memory Leak Detected: ${results.memoryLeakDetected ? "YES [WARN]" : "NO"}`,
 	);
 	console.log(`\nRecommendation: ${results.recommendation}`);
 
@@ -308,3 +308,4 @@ describe("Endurance Tests - Long Running Load", () => {
 		expect(results.overallErrorRate).toBeLessThan(1);
 	}, 200000);
 });
+

@@ -174,3 +174,4 @@ describe("redirectResponse", () => {
 		expect(response.body).toBe(null);
 	});
 });
+

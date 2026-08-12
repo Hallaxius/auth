@@ -472,3 +472,4 @@ describe("audit logger singleton", () => {
 		expect(typeof auditLogger.logAuthSuccess).toBe("function");
 	});
 });
+

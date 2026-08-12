@@ -190,3 +190,4 @@ describe("EndpointSpecificLimiter", () => {
 		expect(getResult.allowed).toBe(true);
 	});
 });
+

@@ -4,7 +4,7 @@ import { mfa } from "../../../src/";
 
 describe("mfa - coverage gaps", () => {
 	const TEST_SECRET =
-		process.env.TEST_SECRET || "fallback-32-char-secret-key!!";
+		process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
 
 	test("line 251: challenge throws MFA_INVALID_CODE for wrong totp code", async () => {
 		const mockStorage: MfaStorage = {
@@ -119,3 +119,6 @@ describe("mfa - coverage gaps", () => {
 		expect(mockStorage.deleteSecret).toHaveBeenCalledWith("user-123");
 	});
 });
+
+
+

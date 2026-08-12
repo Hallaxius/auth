@@ -3,6 +3,14 @@ import type { AuthUserStorage } from "../../../src/";
 import { credentials } from "../../../src/";
 import { TestBruteForceStorage } from "../../helpers/storage";
 
+function extractSessionToken(res: Response): string {
+	const setCookie = res.headers.get("Set-Cookie");
+	if (!setCookie) throw new Error("Missing Set-Cookie header");
+	const match = setCookie.match(/credentials-session=([^;]+)/);
+	if (!match) throw new Error("Missing session cookie in Set-Cookie");
+	return match[1] as string;
+}
+
 interface AuthUser {
 	id: string;
 	username: string | null;
@@ -72,7 +80,7 @@ describe("credentials - handleMe coverage", () => {
 			bruteForce: { storage: new TestBruteForceStorage() },
 			storage,
 			session: {
-				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key-here!!",
+				secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				expiresIn: "7d",
 				cookieName: "credentials-session",
 			},
@@ -90,12 +98,12 @@ describe("credentials - handleMe coverage", () => {
 			body: JSON.stringify({
 				username: "meuser",
 				email: "me@example.com",
-				password: "password123",
+				password: "SecurePass123!",
 			}),
 		});
 
 		const registerRes = await handlers.handleRegister(registerReq);
-		const token = (await registerRes.json()).token;
+		const token = extractSessionToken(registerRes);
 
 		const meReq = new Request("http://localhost/auth/me", {
 			headers: { Cookie: `credentials-session=${token}` },
@@ -118,7 +126,7 @@ describe("credentials - handleMe coverage", () => {
 			bruteForce: { storage: new TestBruteForceStorage() },
 			storage,
 			session: {
-				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key-here!!",
+				secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				expiresIn: "7d",
 				cookieName: "credentials-session",
 			},
@@ -147,7 +155,7 @@ describe("credentials - handleMe coverage", () => {
 			bruteForce: { storage: new TestBruteForceStorage() },
 			storage,
 			session: {
-				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key-here!!",
+				secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				expiresIn: "7d",
 				cookieName: "credentials-session",
 			},
@@ -179,7 +187,7 @@ describe("credentials - handleMe coverage", () => {
 			bruteForce: { storage: new TestBruteForceStorage() },
 			storage,
 			session: {
-				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key-here!!",
+				secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				expiresIn: "7d",
 				cookieName: "credentials-session",
 			},
@@ -197,12 +205,12 @@ describe("credentials - handleMe coverage", () => {
 			body: JSON.stringify({
 				username: "tempuser",
 				email: "temp@example.com",
-				password: "password123",
+				password: "SecurePass123!",
 			}),
 		});
 
 		const registerRes = await handlers.handleRegister(registerReq);
-		const token = (await registerRes.json()).token;
+		const token = extractSessionToken(registerRes);
 
 		await storage.delete("user-1");
 
@@ -226,7 +234,7 @@ describe("credentials - handleMe coverage", () => {
 			bruteForce: { storage: new TestBruteForceStorage() },
 			storage,
 			session: {
-				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key-here!!",
+				secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				expiresIn: "7d",
 				cookieName: "credentials-session",
 			},
@@ -260,7 +268,7 @@ describe("credentials - handleLogout coverage", () => {
 			bruteForce: { storage: new TestBruteForceStorage() },
 			storage,
 			session: {
-				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key-here!!",
+				secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				expiresIn: "7d",
 				cookieName: "credentials-session",
 			},
@@ -292,7 +300,7 @@ describe("credentials - handleLogout coverage", () => {
 			bruteForce: { storage: new TestBruteForceStorage() },
 			storage,
 			session: {
-				secret: process.env.TEST_SECRET || "fallback-32-char-secret-key-here!!",
+				secret: process.env.TEST_SECRET || "5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2",
 				expiresIn: "7d",
 				cookieName: "credentials-session",
 			},
@@ -319,3 +327,5 @@ describe("credentials - handleLogout coverage", () => {
 		expect(clearCookie).toContain("Max-Age=0");
 	});
 });
+
+

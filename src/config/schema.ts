@@ -2,19 +2,71 @@ import { z } from "zod";
 import { ConfigurationError } from "../errors";
 import { isProduction } from "../utils/validation";
 
+export function calculateShannonEntropy(secret: string): number {
+	if (secret.length === 0) return 0;
+	const freq = new Map<string, number>();
+	for (const ch of secret) {
+		freq.set(ch, (freq.get(ch) ?? 0) + 1);
+	}
+	let entropy = 0;
+	for (const count of freq.values()) {
+		const p = count / secret.length;
+		entropy -= p * Math.log2(p);
+	}
+	return entropy;
+}
+
+export function isKnownWeakSecret(secret: string): boolean {
+	if (secret.length === 0) return true;
+	const uniqueChars = new Set(secret.split(""));
+	if (uniqueChars.size === 1) return true;
+	const period = Math.min(8, Math.floor(secret.length / 2));
+	for (let p = 1; p <= period; p++) {
+		if (secret.length % p !== 0) continue;
+		const pattern = secret.slice(0, p);
+		let isRepetitive = true;
+		for (let i = p; i < secret.length; i += p) {
+			if (secret.slice(i, i + p) !== pattern) {
+				isRepetitive = false;
+				break;
+			}
+		}
+		if (isRepetitive) return true;
+	}
+	return false;
+}
+
 export function validateSecretEntropy(secret: string): void {
+	if (!secret || typeof secret !== "string") {
+		throw new ConfigurationError(
+			"JWT secret is required. Generate a strong secret (min 32 chars) using crypto.randomUUID() + crypto.randomUUID().",
+		);
+	}
 	if (secret.length < 32) {
 		throw new ConfigurationError(
-			`JWT secret must be at least 32 characters (got ${secret.length}). Use a cryptographically secure random string.`,
+			`JWT secret too short (minimum 32 characters required). Generate a cryptographically secure random string.`,
+		);
+	}
+
+	if (isKnownWeakSecret(secret)) {
+		throw new ConfigurationError(
+			"JWT secret is too weak (repetitive or single-character pattern). Use a cryptographically secure random string with varied characters.",
 		);
 	}
 
 	const uniqueChars = new Set(secret.split(""));
-	const entropy = uniqueChars.size / secret.length;
+	const charVariety = uniqueChars.size / secret.length;
 
-	if (entropy < 0.3 && isProduction()) {
+	if (charVariety < 0.3) {
 		throw new ConfigurationError(
 			"JWT secret has low entropy. Use a cryptographically secure random string with varied characters.",
+		);
+	}
+
+	const shannonEntropy = calculateShannonEntropy(secret);
+	if (shannonEntropy < 4.0) {
+		throw new ConfigurationError(
+			`JWT secret entropy is too low (${shannonEntropy.toFixed(2)} bits/char, minimum 4.0 required). Use a cryptographically secure random string.`,
 		);
 	}
 
@@ -26,7 +78,7 @@ export function validateSecretEntropy(secret: string): void {
 		Boolean,
 	).length;
 
-	if (varietyCount < 3 && isProduction()) {
+	if (varietyCount < 3) {
 		throw new ConfigurationError(
 			"JWT secret lacks character variety. Use uppercase, lowercase, numbers, and special characters.",
 		);
@@ -41,8 +93,6 @@ export const SessionConfigSchema = z.object({
 		.min(32)
 		.refine(
 			(secret) => {
-				if (!isProduction()) return true;
-
 				const varietyCount = [
 					/[a-z]/.test(secret),
 					/[A-Z]/.test(secret),
@@ -50,13 +100,7 @@ export const SessionConfigSchema = z.object({
 					/[^a-zA-Z0-9]/.test(secret),
 				].filter(Boolean).length;
 
-				if (varietyCount < 3) {
-					throw new Error(
-						"JWT secret lacks character variety (need 3+: uppercase, lowercase, numbers, special chars)",
-					);
-				}
-
-				return true;
+				return varietyCount >= 3;
 			},
 			{
 				message:
@@ -247,6 +291,20 @@ export const CredentialsClientConfigSchema = z.object({
 	defaultRoles: z.array(z.string()).optional(),
 
 	minPasswordLength: z.number().int().positive().optional(),
+
+	validatePassword: z
+		.union([
+			z.boolean(),
+			z.object({
+				minLength: z.number().int().positive().optional(),
+				maxLength: z.number().int().positive().optional(),
+				requireLowercase: z.boolean().optional(),
+				requireUppercase: z.boolean().optional(),
+				requireNumber: z.boolean().optional(),
+				requireSpecial: z.boolean().optional(),
+			}),
+		])
+		.optional(),
 
 	captcha: CaptchaConfigSchema.optional(),
 });
