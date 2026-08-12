@@ -223,9 +223,7 @@ function getSocketIP(request: Request, peerIp?: string): string {
 			const ip = sanitizeIP(duck.ip);
 			if (ip !== "unknown") return ip;
 		}
-	} catch {
-		// ignore
-	}
+	} catch {}
 	try {
 		const bunGlobal = (
 			globalThis as {
@@ -241,18 +239,14 @@ function getSocketIP(request: Request, peerIp?: string): string {
 			const ip = sanitizeIP(requestIP(request)?.address ?? "unknown");
 			if (ip !== "unknown") return ip;
 		}
-	} catch {
-		// ignore
-	}
+	} catch {}
 	try {
 		const socketIP = (
 			request as unknown as { socket?: { remoteAddress?: string } }
 		).socket?.remoteAddress;
 		const ip = sanitizeIP(socketIP ?? "unknown");
 		if (ip !== "unknown") return ip;
-	} catch {
-		// ignore
-	}
+	} catch {}
 	return "unknown";
 }
 

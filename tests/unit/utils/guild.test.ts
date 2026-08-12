@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { MemoryCacheAdapter } from "../../../src/adapters/cache/memory";
 import type { GuildRoleSyncConfig } from "../../../src/types";
 import { GuildRoleSync } from "../../../src/utils/guild";
 
 interface MockClient {
 	getGuildMemberRoles: (...args: unknown[]) => Promise<unknown>;
+	getCurrentUserGuildMember: (...args: unknown[]) => Promise<unknown>;
 	getGuildMember: (...args: unknown[]) => Promise<unknown>;
 	addMember: (...args: unknown[]) => Promise<unknown>;
 	removeMember: (...args: unknown[]) => Promise<unknown>;
@@ -13,6 +13,9 @@ interface MockClient {
 function createMockClient(): MockClient {
 	return {
 		getGuildMemberRoles: async () => [],
+		getCurrentUserGuildMember: async () => {
+			throw new Error("Not implemented");
+		},
 		getGuildMember: async () => {
 			throw new Error("Not implemented");
 		},
@@ -43,39 +46,60 @@ describe("GuildRoleSync", () => {
 	const config = createConfig();
 
 	describe("syncUserRoles", () => {
-		test("returns permissions from API", async () => {
+		test("uses the user endpoint when accessToken is provided", async () => {
+			let calledWith: unknown = null;
 			const client = createMockClient();
-			client.getGuildMemberRoles = async () => ["role-1", "role-2"];
-			const sync = new GuildRoleSync(
-				config,
-				client as never,
-			);
-			const result = await sync.syncUserRoles("user-1", "token");
+			client.getCurrentUserGuildMember = async (...args) => {
+				calledWith = args;
+				return { roles: ["role-1", "role-2"] };
+			};
+			const sync = new GuildRoleSync(config, client as never);
+			const result = await sync.syncUserRoles("user-1", "access-token");
+			expect(calledWith).toEqual(["test-guild-123", "access-token"]);
 			expect(result).toEqual(["perm-a", "perm-b", "perm-c"]);
 		});
 
-		test("caches permissions", async () => {});
-
-		test("returns empty array for no matching roles", async () => {
+		test("falls back to the bot endpoint without accessToken", async () => {
+			let calledWith: unknown = null;
 			const client = createMockClient();
-			client.getGuildMemberRoles = async () => ["unknown-role"];
-			const sync = new GuildRoleSync(
-				config,
-				client as never,
-			);
+			client.getGuildMemberRoles = async (...args) => {
+				calledWith = args;
+				return ["role-1", "role-2"];
+			};
+			const sync = new GuildRoleSync(config, client as never);
+			const result = await sync.syncUserRoles("user-1");
+			expect(calledWith).toEqual([
+				"test-guild-123",
+				"user-1",
+				"test-bot-token",
+			]);
+			expect(result).toEqual(["perm-a", "perm-b", "perm-c"]);
+		});
+
+		test("returns empty array when no roles match the map", async () => {
+			const client = createMockClient();
+			client.getCurrentUserGuildMember = async () => ({
+				roles: ["unknown-role"],
+			});
+			const sync = new GuildRoleSync(config, client as never);
+			const result = await sync.syncUserRoles("user-1", "token");
+			expect(result).toEqual([]);
+		});
+
+		test("returns empty array for a member with no roles", async () => {
+			const client = createMockClient();
+			client.getCurrentUserGuildMember = async () => ({ roles: [] });
+			const sync = new GuildRoleSync(config, client as never);
 			const result = await sync.syncUserRoles("user-1", "token");
 			expect(result).toEqual([]);
 		});
 
 		test("handles API error", async () => {
 			const client = createMockClient();
-			client.getGuildMemberRoles = async () => {
+			client.getCurrentUserGuildMember = async () => {
 				throw new Error("API error");
 			};
-			const sync = new GuildRoleSync(
-				config,
-				client as never,
-			);
+			const sync = new GuildRoleSync(config, client as never);
 			await expect(sync.syncUserRoles("user-1", "token")).rejects.toThrow(
 				"API error",
 			);
@@ -84,10 +108,7 @@ describe("GuildRoleSync", () => {
 
 	describe("getMappedPermissions", () => {
 		test("maps single role to permissions", () => {
-			const sync = new GuildRoleSync(
-				config,
-				{} as never,
-			);
+			const sync = new GuildRoleSync(config, {} as never);
 			const result = sync.getMappedPermissions(["role-1"]);
 			expect(result).toEqual(["perm-a"]);
 		});
@@ -99,65 +120,102 @@ describe("GuildRoleSync", () => {
 					"role-2": ["perm-b", "perm-c"],
 				},
 			});
-			const sync = new GuildRoleSync(
-				configWithOverlap,
-				{} as never,
-			);
+			const sync = new GuildRoleSync(configWithOverlap, {} as never);
 			const result = sync.getMappedPermissions(["role-1", "role-2"]);
 			expect(result).toEqual(["perm-a", "perm-b", "perm-c"]);
 		});
 
 		test("returns empty array for unknown roles", () => {
-			const sync = new GuildRoleSync(
-				config,
-				{} as never,
-			);
+			const sync = new GuildRoleSync(config, {} as never);
 			const result = sync.getMappedPermissions(["non-existent"]);
 			expect(result).toEqual([]);
 		});
 	});
 
 	describe("hasRole", () => {
-		test("returns true when user has the role", async () => {
+		test("returns true when member has the real role ID", async () => {
 			const client = createMockClient();
 			client.getGuildMemberRoles = async () => ["role-1"];
-			const sync = new GuildRoleSync(
-				config,
-				client as never,
-			);
-			expect(await sync.hasRole("user-1", "perm-a")).toBe(true);
+			const sync = new GuildRoleSync(config, client as never);
+			expect(await sync.hasRole("user-1", "role-1")).toBe(true);
 		});
 
-		test("returns false when user does not have the role", async () => {
+		test("returns false when member does not have the role", async () => {
 			const client = createMockClient();
 			client.getGuildMemberRoles = async () => ["role-2"];
-			const sync = new GuildRoleSync(
-				config,
-				client as never,
-			);
+			const sync = new GuildRoleSync(config, client as never);
+			expect(await sync.hasRole("user-1", "role-1")).toBe(false);
+		});
+
+		test("returns false for a mapped permission, not a real role", async () => {
+			const client = createMockClient();
+			client.getGuildMemberRoles = async () => ["role-1"];
+			const sync = new GuildRoleSync(config, client as never);
 			expect(await sync.hasRole("user-1", "perm-a")).toBe(false);
+		});
+
+		test("returns false when the member fetch fails", async () => {
+			const client = createMockClient();
+			client.getGuildMemberRoles = async () => {
+				throw new Error("Forbidden");
+			};
+			const sync = new GuildRoleSync(config, client as never);
+			expect(await sync.hasRole("user-1", "role-1")).toBe(false);
 		});
 	});
 
 	describe("hasAnyRole", () => {
-		test("returns true when user has one of the roles", async () => {
+		test("returns true when member has one of the real role IDs", async () => {
 			const client = createMockClient();
 			client.getGuildMemberRoles = async () => ["role-1"];
-			const sync = new GuildRoleSync(
-				config,
-				client as never,
-			);
-			expect(await sync.hasAnyRole("user-1", ["perm-a", "perm-x"])).toBe(true);
+			const sync = new GuildRoleSync(config, client as never);
+			expect(await sync.hasAnyRole("user-1", ["role-2", "role-1"])).toBe(true);
 		});
 
-		test("returns false when user has none of the roles", async () => {
+		test("returns false when member has none of the roles", async () => {
 			const client = createMockClient();
 			client.getGuildMemberRoles = async () => ["role-3"];
-			const sync = new GuildRoleSync(
-				config,
-				client as never,
-			);
-			expect(await sync.hasAnyRole("user-1", ["perm-a", "perm-b"])).toBe(false);
+			const sync = new GuildRoleSync(config, client as never);
+			expect(await sync.hasAnyRole("user-1", ["role-1", "role-2"])).toBe(false);
+		});
+
+		test("returns false for an empty role list", async () => {
+			const client = createMockClient();
+			client.getGuildMemberRoles = async () => ["role-1"];
+			const sync = new GuildRoleSync(config, client as never);
+			expect(await sync.hasAnyRole("user-1", [])).toBe(false);
+		});
+
+		test("returns false when the member fetch fails", async () => {
+			const client = createMockClient();
+			client.getGuildMemberRoles = async () => {
+				throw new Error("Forbidden");
+			};
+			const sync = new GuildRoleSync(config, client as never);
+			expect(await sync.hasAnyRole("user-1", ["role-1"])).toBe(false);
+		});
+	});
+
+	describe("hasPermission", () => {
+		test("returns true when roles map to the permission", async () => {
+			const client = createMockClient();
+			client.getGuildMemberRoles = async () => ["role-1"];
+			const sync = new GuildRoleSync(config, client as never);
+			expect(await sync.hasPermission("user-1", "perm-a")).toBe(true);
+		});
+
+		test("returns false when roles do not map to the permission", async () => {
+			const client = createMockClient();
+			client.getGuildMemberRoles = async () => ["role-3"];
+			const sync = new GuildRoleSync(config, client as never);
+			expect(await sync.hasPermission("user-1", "perm-a")).toBe(false);
+		});
+
+		test("returns false for a raw role ID, not a mapped permission", async () => {
+			const client = createMockClient();
+			client.getGuildMemberRoles = async () => ["role-1"];
+			const sync = new GuildRoleSync(config, client as never);
+			expect(await sync.hasPermission("user-1", "role-1")).toBe(false);
 		});
 	});
 
@@ -171,10 +229,7 @@ describe("GuildRoleSync", () => {
 				deaf: false,
 				joined_at: "2024-01-01T00:00:00Z",
 			});
-			const sync = new GuildRoleSync(
-				config,
-				client as never,
-			);
+			const sync = new GuildRoleSync(config, client as never);
 			expect(await sync.hasMember("user-1")).toBe(true);
 		});
 
@@ -183,10 +238,7 @@ describe("GuildRoleSync", () => {
 			client.getGuildMember = async () => {
 				throw new Error("Not found");
 			};
-			const sync = new GuildRoleSync(
-				config,
-				client as never,
-			);
+			const sync = new GuildRoleSync(config, client as never);
 			expect(await sync.hasMember("user-1")).toBe(false);
 		});
 	});
@@ -198,10 +250,7 @@ describe("GuildRoleSync", () => {
 			client.addMember = async (args) => {
 				calledWith = args;
 			};
-			const sync = new GuildRoleSync(
-				config,
-				client as never,
-			);
+			const sync = new GuildRoleSync(config, client as never);
 			await sync.join("user-1", "access-token");
 			expect(calledWith).toEqual({
 				guildId: "test-guild-123",
@@ -219,10 +268,7 @@ describe("GuildRoleSync", () => {
 			client.addMember = async (args) => {
 				calledWith = args;
 			};
-			const sync = new GuildRoleSync(
-				config,
-				client as never,
-			);
+			const sync = new GuildRoleSync(config, client as never);
 			await sync.join("user-1", "access-token", {
 				nick: "TestUser",
 				roles: ["role-1"],
@@ -242,10 +288,7 @@ describe("GuildRoleSync", () => {
 			client.addMember = async () => {
 				throw new Error("Permission denied");
 			};
-			const sync = new GuildRoleSync(
-				config,
-				client as never,
-			);
+			const sync = new GuildRoleSync(config, client as never);
 			await expect(sync.join("user-1", "token")).rejects.toThrow(
 				"Permission denied",
 			);
@@ -259,10 +302,7 @@ describe("GuildRoleSync", () => {
 			client.removeMember = async (args) => {
 				calledWith = args;
 			};
-			const sync = new GuildRoleSync(
-				config,
-				client as never,
-			);
+			const sync = new GuildRoleSync(config, client as never);
 			await sync.revoke("user-1");
 			expect(calledWith).toEqual({
 				guildId: "test-guild-123",
@@ -276,12 +316,8 @@ describe("GuildRoleSync", () => {
 			client.removeMember = async () => {
 				throw new Error("Forbidden");
 			};
-			const sync = new GuildRoleSync(
-				config,
-				client as never,
-			);
+			const sync = new GuildRoleSync(config, client as never);
 			await expect(sync.revoke("user-1")).rejects.toThrow("Forbidden");
 		});
 	});
 });
-

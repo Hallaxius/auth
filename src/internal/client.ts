@@ -313,4 +313,21 @@ export class DiscordClient {
 		const member = await this.getGuildMember(guildId, userId, botToken);
 		return member.roles;
 	}
+
+	async getCurrentUserGuildMember(
+		guildId: string,
+		accessToken: string,
+	): Promise<DiscordGuildMember> {
+		const res = await this.fetchWithRateLimitHandling(
+			`${DISCORD_API}/users/@me/guilds/${guildId}/member`,
+			{ headers: { Authorization: `Bearer ${accessToken}` } },
+		);
+		if (!res.ok) {
+			const err = await res.text();
+			throw new Error(
+				`Failed to get current user guild member: ${res.status} ${err}`,
+			);
+		}
+		return res.json() as Promise<DiscordGuildMember>;
+	}
 }

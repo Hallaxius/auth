@@ -2,6 +2,13 @@ import type { BruteForceStorage } from "../../src/types";
 import type { RateLimitStorage } from "../../src/types";
 import type { StateStore } from "../../src/internal/state";
 
+export function createTestVerifyPassword(
+	known: Map<string, string> = new Map(),
+): (userId: string, password: string) => Promise<boolean> {
+	return async (userId: string, password: string) =>
+		known.get(userId) === password;
+}
+
 export class TestBruteForceStorage implements BruteForceStorage {
 	private store = new Map<
 		string,

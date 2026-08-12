@@ -55,6 +55,12 @@ class InMemoryUserStorage implements AuthUserStorage {
 	async delete(userId: string): Promise<void> {
 		this.users.delete(userId);
 	}
+
+	async verifyPassword(userId: string, password: string): Promise<boolean> {
+		const user = this.users.get(userId);
+		if (!user) return false;
+		return user.password === password;
+	}
 }
 
 function createConfig(storage: AuthUserStorage): Parameters<typeof credentials>[0] {

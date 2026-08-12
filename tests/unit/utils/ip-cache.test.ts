@@ -60,8 +60,6 @@ describe("fingerprint cache TTL", () => {
 	});
 
 	test("cache evicts entries using FIFO when at capacity", async () => {
-		// Fill the cache near capacity; this verifies the eviction path
-		// doesn't crash and continues returning valid fingerprints.
 		const reqA = new Request("http://localhost:3000", {
 			headers: {
 				"user-agent": "TestBrowser-CacheEviction-Unique-ccc333/1.0",

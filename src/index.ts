@@ -1,3 +1,7 @@
+export {
+	type ComplianceHandlersConfig,
+	createComplianceHandlers,
+} from "./compliance/handlers";
 export { compliance } from "./compliance-wrapper";
 export {
 	type CaptchaContextValue,
@@ -20,6 +24,13 @@ export { discord } from "./discord";
 export { type MfaHandlers, mfa } from "./mfa";
 export { type PasswordResetHandlers, passwordReset } from "./password-reset";
 export { rateLimit } from "./rate-limit";
+export {
+	type AnomalyConfig,
+	AnomalyDetector,
+	type GeolocationProvider,
+	LoginAnomalyError,
+	type TorExitProvider,
+} from "./security/anomaly-detector";
 
 import {
 	auth,
@@ -216,6 +227,22 @@ export {
 	MemoryRateLimitStore,
 } from "./storage/factory";
 export type {
+	IAuthUserStore,
+	IBruteForceStore,
+	IComplianceStore,
+	IMfaStore,
+	IRateLimitStore,
+	IResetTokenStore,
+	IStateStore,
+	ITokenRevocationStore,
+	IUserStore,
+	SessionStore,
+	StorageAdapters,
+	StorageFactoryOptions,
+} from "./storage/interfaces";
+export type {
+	AnomalyEvent,
+	AnomalySeverity,
 	AuthUserIdentifier,
 	AuthUserStorage,
 	ConsumeResetTokenResult,
@@ -230,6 +257,8 @@ export type {
 	EdgeAuthConfig,
 	EdgeRoleConfig,
 	GuildMember,
+	LoginHistoryStore,
+	LoginRecord,
 	MfaChallengeResult,
 	MfaFactoryConfig as MfaConfig,
 	MfaMethod,
@@ -278,11 +307,15 @@ export {
 	type ComplianceConfig,
 	ComplianceManager,
 	type ConsentRecord,
+	type ConsentStorage,
 	createComplianceManager,
 	type DataDeletionRequest,
 	type DataExportRequest,
+	type DataExportStorage,
+	type DeletionStorage,
 	type PrivacySettings,
 	type RetentionPolicy,
+	type RetentionStorage,
 	type UserDataExport,
 } from "./utils/compliance";
 export {

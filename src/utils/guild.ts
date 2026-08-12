@@ -10,12 +10,8 @@ export class GuildRoleSync {
 		this.client = client;
 	}
 
-	async syncUserRoles(userId: string, _accessToken: string): Promise<string[]> {
-		const discordRoleIds = await this.client.getGuildMemberRoles(
-			this.config.guildId,
-			userId,
-			this.config.botToken,
-		);
+	async syncUserRoles(userId: string, accessToken?: string): Promise<string[]> {
+		const discordRoleIds = await this.getMemberRoleIds(userId, accessToken);
 		return this.getMappedPermissions(discordRoleIds);
 	}
 
@@ -33,13 +29,26 @@ export class GuildRoleSync {
 	}
 
 	async hasRole(userId: string, roleId: string): Promise<boolean> {
-		const permissions = await this.syncUserRoles(userId, "");
-		return permissions.includes(roleId);
+		try {
+			const roles = await this.getMemberRoleIds(userId);
+			return roles.includes(roleId);
+		} catch {
+			return false;
+		}
 	}
 
 	async hasAnyRole(userId: string, roleIds: string[]): Promise<boolean> {
-		const permissions = await this.syncUserRoles(userId, "");
-		return roleIds.some((roleId) => permissions.includes(roleId));
+		try {
+			const roles = await this.getMemberRoleIds(userId);
+			return roleIds.some((roleId) => roles.includes(roleId));
+		} catch {
+			return false;
+		}
+	}
+
+	async hasPermission(userId: string, permission: string): Promise<boolean> {
+		const permissions = await this.syncUserRoles(userId);
+		return permissions.includes(permission);
 	}
 
 	async hasMember(userId: string): Promise<boolean> {
@@ -76,5 +85,23 @@ export class GuildRoleSync {
 			userId,
 			botToken: this.config.botToken,
 		});
+	}
+
+	private async getMemberRoleIds(
+		userId: string,
+		accessToken?: string,
+	): Promise<string[]> {
+		if (accessToken) {
+			const member = await this.client.getCurrentUserGuildMember(
+				this.config.guildId,
+				accessToken,
+			);
+			return member.roles;
+		}
+		return this.client.getGuildMemberRoles(
+			this.config.guildId,
+			userId,
+			this.config.botToken,
+		);
 	}
 }

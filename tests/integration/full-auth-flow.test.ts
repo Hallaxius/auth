@@ -184,6 +184,9 @@ describe("Full Auth Flow - Integration Tests", () => {
 					updatedAt: Date.now(),
 				}),
 			),
+			verifyPassword: mock((_userId: string, _password: string) =>
+				Promise.resolve(false),
+			),
 		};
 
 		beforeEach(() => {
@@ -307,6 +310,9 @@ describe("Full Auth Flow - Integration Tests", () => {
 						createdAt: Date.now(),
 						updatedAt: Date.now(),
 					}),
+				),
+				verifyPassword: mock((_userId: string, _password: string) =>
+					Promise.resolve(false),
 				),
 			};
 

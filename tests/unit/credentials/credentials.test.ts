@@ -57,6 +57,12 @@ class InMemoryUserStorage implements AuthUserStorage {
 		this.users.delete(userId);
 	}
 
+	async verifyPassword(userId: string, password: string): Promise<boolean> {
+		const user = this.users.get(userId);
+		if (!user) return false;
+		return user.password === password;
+	}
+
 	async findByDiscordId(_discordId: string): Promise<AuthUser | null> {
 		return null;
 	}
@@ -72,7 +78,7 @@ function createCredentialsConfig(
 			maxAttempts: number;
 			windowMs: number;
 			blockDurationMs: number;
-			storage?: unknown;
+			storage?: TestBruteForceStorage;
 		};
 	}> = {},
 ) {

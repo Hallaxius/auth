@@ -21,6 +21,9 @@ describe("Security - Penetration Tests", () => {
 				findByUsername: mock((_username: string) => Promise.resolve(null)),
 				findByEmail: mock((_email: string) => Promise.resolve(null)),
 				findById: mock((_id: string) => Promise.resolve(null)),
+				verifyPassword: mock((_userId: string, _password: string) =>
+					Promise.resolve(true),
+				),
 			};
 
 			const auth = credentials({
@@ -72,6 +75,9 @@ describe("Security - Penetration Tests", () => {
 				findByUsername: mock((_username: string) => Promise.resolve(null)),
 				findByEmail: mock((_email: string) => Promise.resolve(null)),
 				findById: mock((_id: string) => Promise.resolve(null)),
+				verifyPassword: mock((_userId: string, _password: string) =>
+					Promise.resolve(true),
+				),
 			};
 
 			const auth = credentials({
@@ -172,6 +178,9 @@ describe("Security - Penetration Tests", () => {
 				findByUsername: mock((_username: string) => Promise.resolve(null)),
 				findByEmail: mock((_email: string) => Promise.resolve(null)),
 				findById: mock((_id: string) => Promise.resolve(null)),
+				verifyPassword: mock((_userId: string, _password: string) =>
+					Promise.resolve(true),
+				),
 			};
 
 			const auth = credentials({
@@ -217,6 +226,9 @@ describe("Security - Penetration Tests", () => {
 				findByUsername: mock((_username: string) => Promise.resolve(null)),
 				findByEmail: mock((_email: string) => Promise.resolve(null)),
 				findById: mock((_id: string) => Promise.resolve(null)),
+				verifyPassword: mock((_userId: string, _password: string) =>
+					Promise.resolve(true),
+				),
 			};
 
 			const auth = credentials({
@@ -384,6 +396,9 @@ describe("Security - Penetration Tests", () => {
 				),
 				findByEmail: mock((_email: string) => Promise.resolve(null)),
 				findById: mock((_id: string) => Promise.resolve(null)),
+				verifyPassword: mock((_userId: string, _password: string) =>
+					Promise.resolve(false),
+				),
 			};
 
 			const auth = credentials({
@@ -571,6 +586,9 @@ describe("Security - Penetration Tests", () => {
 				),
 				findByEmail: mock((_email: string) => Promise.resolve(null)),
 				findById: mock((_id: string) => Promise.resolve(null)),
+				verifyPassword: mock((_userId: string, _password: string) =>
+					Promise.resolve(false),
+				),
 			};
 
 			const auth = credentials({
@@ -646,6 +664,9 @@ describe("Security - Penetration Tests", () => {
 				),
 				findByEmail: mock((_email: string) => Promise.resolve(null)),
 				findById: mock((_id: string) => Promise.resolve(null)),
+				verifyPassword: mock((_userId: string, _password: string) =>
+					Promise.resolve(false),
+				),
 			};
 
 			const auth = credentials({

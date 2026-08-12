@@ -125,6 +125,12 @@ describe("BruteForceProtection - blocked scenario", () => {
 			async findByDiscordId() {
 				return null;
 			}
+
+			async verifyPassword(userId: string, password: string) {
+				const user = this.users.get(userId);
+				if (!user) return false;
+				return user.passwordHash === password;
+			}
 		}
 
 		const storage = new InMemoryUserStorage() as unknown as AuthUserStorage;

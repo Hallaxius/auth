@@ -1,6 +1,6 @@
 # @hallaxius/auth
 
-**Secure authentication toolkit for Bun and Next.js 16+ with Discord OAuth2, Credentials, MFA/TOTP, password reset flows — backed by CSRF protection, rate limiting, and brute-force protection, captcha support (hCaptcha, reCAPTCHA v3, Turnstile), audit logging, and security headers.**
+**Secure authentication toolkit for Bun and Next.js 16+ — GDPR-compliant by default. Discord OAuth2, Credentials, MFA/TOTP, password reset flows — backed by CSRF protection, rate limiting, and brute-force protection, captcha support (hCaptcha, reCAPTCHA v3, Turnstile), audit logging, and security headers.**
 
 <p align="center">
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/Bun-%E2%89%A51.0-000?logo=bun" alt="Bun"></a>
@@ -15,6 +15,8 @@
 
 - [Overview](#overview)
 - [Features](#features)
+- [Compliance & Utilities](#compliance--utilities)
+- [Why not Better Auth / Lucia?](#why-not-better-auth--lucia)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [API Reference](#api-reference)
@@ -26,6 +28,7 @@
 - [Testing](#testing)
 - [Deployment](#deployment)
 - [Troubleshooting](#troubleshooting)
+- [Architecture Decision Records](#architecture-decision-records)
 
 ---
 
@@ -66,15 +69,31 @@ Secure authentication toolkit for **Bun** and **Next.js 16+** with Discord OAuth
 - ✅ **Security Headers** - CSP, HSTS, X-Frame-Options, Permissions-Policy
 - ✅ **Secret Validation** - Min 32 chars, high entropy enforcement
 
-### Storage
+---
 
-### Compliance & Utilities
+## Compliance & Utilities
 
 - ✅ **Compliance Manager** - GDPR utilities (consent management, data export, data deletion, retention policies)
 - ✅ **Audit Logging** - Security event logging with pluggable storage adapter
 - ✅ **IP Utilities** - Trusted proxy support, IP masking, Cloudflare detection, private IP detection
 - ✅ **Password Validation** - Configurable password strength rules (length, character variety)
 - ✅ **Hex & Crypto Helpers** - Buffer/hex conversion, base64URL, SHA-256
+
+---
+
+## Why not Better Auth / Lucia?
+
+| | **@hallaxius/auth** | Better Auth | Lucia |
+|---|---|---|---|
+| Runtime dependencies | 3 (`jose`, `zod`, `cookie`) | ~17 | ~5 (archived) |
+| ORM required | No — bring your own storage | Yes — Drizzle adapter bundled | No (standalone, archived) |
+| GDPR tooling | Built-in (consent, export, deletion, retention) | Community plugins | None |
+| Session revocation | First-class (`sessionRevocationStorage`) | Plugin | Manual |
+| Password hashing | Consumer-owned via `verifyPassword` (never stored/compared in plaintext) | Library-managed | Library-managed |
+| MFA/TOTP + backup codes | Built-in | Plugin | None |
+| Maintenance status | Active | Active | **Archived** (maintenance mode) |
+
+**Better Auth** bundles an ORM (Drizzle) and ships with a large dependency tree — everything it does, this package does with 3 dependencies and your own storage layer. **Lucia** was archived in 2024; the official recommendation is to use a library like this one or `lucia-auth` alternatives. If you need a batteries-included framework, this package is designed to be the middle ground: opinionated security defaults, zero storage lock-in.
 
 ---
 
@@ -180,6 +199,9 @@ const storage = {
   async create(data) { /* return AuthUser */ },
   async update(userId: string, data) { /* return AuthUser — required by AuthUserStorage */ },
   async delete(userId: string) { /* required by AuthUserStorage */ },
+  async verifyPassword(userId: string, password: string) {
+    /* required by AuthUserStorage — compare against your stored hash (see "Your responsibility: password hashing" below) */
+  },
 }
 
 export const { handleRegister, handleLogin, handleLogout, handleMe } = credentials({
@@ -286,11 +308,18 @@ credentials({
 #### Your responsibility: password hashing
 
 The library treats `password` as an **opaque value**. It never hashes, salts,
-or transforms it — `register` stores exactly the string you pass.
+or transforms it — `register` stores exactly the string you pass, and `login`
+never compares it. Hashing and verification are entirely **your
+responsibility**.
 
-**Recommended — `verifyPassword` hook.** Implement the optional
-`verifyPassword(userId, password)` method on your `AuthUserStorage` and compare
-against a hash with a memory-hard function (**Argon2id** preferred):
+`AuthUserStorage.verifyPassword(userId, password)` is **required**.
+`credentials()` (and `new CredentialsClient(...)`) throws a `ConfigurationError`
+at construction time when the method is missing. There is **no fallback path** —
+the package never compares plaintext passwords and never reads the stored
+`password` field for verification.
+
+**Recommended — `verifyPassword` hook.** Hash with a memory-hard function
+(**Argon2id** preferred) and implement the hook on your `AuthUserStorage`:
 
 ```typescript
 import { compare, hash, argon2id } from 'argon2'
@@ -318,27 +347,13 @@ await auth.register({ username: 'alice', password: rawPassword })
 await auth.login({ username: 'alice' }, rawPassword)
 ```
 
-When `verifyPassword` is present, `login` always uses it — you never send
-pre-hashed values back and forth.
-
-**Compat-legacy path (still supported):** if your storage does not implement
-`verifyPassword`, `login` falls back to a timing-safe constant-time comparison
-(`constantTimeCompareStrings`) of the `password` field. With this path you must
-pass the **same** pre-hashed value to both `register` and `login`:
-
-```typescript
-credentialsClient.register({
-  username: 'alice',
-  password: await hash(rawPassword, { type: argon2id }),
-})
-credentialsClient.login({ username: 'alice' }, await hash(rawPassword, { type: argon2id }))
-```
+`login` always calls `verifyPassword` — you never send pre-hashed values back
+and forth.
 
 Guidelines:
 
-- Hash with Argon2id (preferred), or bcrypt/scrypt, with per-user salt.
-  Prefer the `verifyPassword` hook so hashing and comparison both live in your
-  storage layer.
+- Hash with Argon2id (preferred), or bcrypt/scrypt, with per-user salt. Both
+  hashing and comparison live in your storage layer via `verifyPassword`.
 - If you pass **raw** passwords (dev / non-sensitive setups), disable
   `validatePassword` (password rules would apply to the opaque value instead of
   the raw secret) and rely on your own transport/confidentiality controls.
@@ -488,9 +503,9 @@ const manager = compliance({
 
 ---
 
-### Edge Middleware
+### Middleware
 
-`middleware` (alias `proxy`) is a drop-in edge middleware for platforms like Cloudflare Workers and Vercel Edge:
+`middleware` (alias `proxy`) protects any Bun, Node.js, or Next.js route handler — no platform-specific APIs required:
 
 ```typescript
 import { middleware } from '@hallaxius/auth'
@@ -1237,6 +1252,111 @@ const auth = await discord({
   },
 });
 ```
+
+---
+
+## Architecture Decision Records
+
+Architecture Decision Records (ADRs) document notable design decisions and are
+maintained here in the README.
+
+### ADR-001 — `dispose()` and `ping()` stay optional
+
+**Status:** Accepted (1.0.0 cycle)
+
+**Date:** 2026-08-12
+
+**Context:**
+
+Storage implementations (`IAuthUserStore`, `ITokenRevocationStore`, etc.) declare
+optional lifecycle methods `dispose()` and `ping()`. Some consumers asked for them
+to become mandatory so resource cleanup and health checks are guaranteed.
+
+**Decision:**
+
+`dispose()` and `ping()` remain **optional** (`dispose?(): void`, `ping?(): Promise<boolean>`)
+on all storage interfaces. The package never calls them unconditionally — callers
+must guard with `?.`. The factory-created memory stores keep implementing both.
+
+**Consequences:**
+
+- Consumers with stateless stores (e.g. pure HTTP-backed stores) are not forced to
+  implement no-op lifecycle methods.
+- Health checks (`ping`) remain a consumer-driven feature; the package stays
+  storage-agnostic.
+- Revisit if a lifecycle contract is needed for serverless multi-instance cleanup.
+
+### ADR-002 — `AuthUserStorage.verifyPassword` is mandatory; hashing is the consumer's responsibility
+
+**Status:** Accepted (1.0.0 cycle)
+
+**Date:** 2026-08-12
+
+**Context:**
+
+`AuthUserStorage.verifyPassword` was optional. When absent, the credentials module
+fell back to a constant-time comparison of the plaintext password against the
+stored `password` field (`constantTimeCompareStrings`). This meant the package was
+one misconfiguration away from comparing plaintext passwords against stored
+plaintext — a critical security flaw.
+
+**Decision:**
+
+1. `verifyPassword(userId, password): Promise<boolean>` is now **required** on
+   `AuthUserStorage`.
+2. The plaintext fallback was **removed**. The package never compares plaintext
+   passwords, never hashes them, and never reads the stored `password` field for
+   verification.
+3. The `CredentialsClient` constructor (and therefore the `credentials()` factory)
+   throws `ConfigurationError` when `verifyPassword` is missing.
+4. No hashing primitive (e.g. pbkdf2, argon2, bcrypt) was added — hashing and
+   verification are entirely the consumer's responsibility, so the choice of KDF
+   is the consumer's, not the package's.
+
+**Consequences:**
+
+- Consumer storage must implement `verifyPassword` (compare against their stored
+  hash with their chosen KDF).
+- Misconfiguration fails fast with `ConfigurationError` instead of silently
+  degrading to plaintext comparison.
+- Test storages use a dummy plaintext `verifyPassword` helper documented as
+  test-only; a real consumer would compare against a stored hash.
+
+### ADR-003 — Role semantics v2 — `hasRole`/`hasAnyRole` on real role IDs, `hasPermission` on the mapped permission
+
+**Status:** Accepted (1.0.0 cycle)
+
+**Date:** 2026-08-12
+
+**Context:**
+
+`GuildRoleSync.hasRole(userId, roleId)` and `hasAnyRole` were ambiguous: some
+callers passed real Discord role IDs, others passed mapped application permissions.
+The `roleMap` was consulted in an inconsistent way, making the API's contract
+unclear and enabling authorization bypasses when callers assumed role-ID semantics.
+
+**Decision:**
+
+Two distinct concepts are now separated explicitly:
+
+- **Roles** — real Discord role IDs present on the guild member:
+  `hasRole(userId, roleId)` and `hasAnyRole(userId, roleIds)` check the member's
+  raw role list. The `roleMap` is **never** consulted; fetch errors return `false`.
+- **Permissions** — application permissions derived from the configured `roleMap`:
+  `hasPermission(userId, permission)` maps real role IDs through `roleMap` and
+  checks the resulting permission set (previously part of `hasRole`).
+
+`syncUserRoles(userId, accessToken?)` now uses the authenticated user's endpoint
+(`/users/@me/guilds/{guild.id}/member`) when an access token is provided, falling
+back to the bot endpoint (`/guilds/{guild.id}/members/{userId}`) otherwise.
+
+**Consequences:**
+
+- Breaking change in `1.0.0-beta.8`: callers that passed mapped permissions to
+  `hasRole` must switch to `hasPermission`.
+- No more role-check vs permission-check ambiguity; each method has a single,
+  documented meaning.
+- Non-member or failed fetches resolve to `false` (deny-by-default).
 
 ---
 

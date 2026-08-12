@@ -83,6 +83,10 @@ function createMockDiscordClient() {
 			return [];
 		},
 
+		async getCurrentUserGuildMember(_guildId: string, _accessToken: string) {
+			return { roles: ["role-1", "role-2"] };
+		},
+
 		async addMember(_params: {
 			guildId: string;
 			userId: string;
@@ -139,6 +143,19 @@ function mockDiscordFetch(
 					expires_in: 3600,
 					refresh_token: "refresh-token-123",
 					scope: "identify email",
+				}),
+				{
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				},
+			);
+		}
+
+		if (url.includes("/users/@me/guilds/") && url.endsWith("/member")) {
+			return new Response(
+				JSON.stringify({
+					guild_id: "guild-1",
+					roles: ["role-1", "role-2"],
 				}),
 				{
 					status: 200,

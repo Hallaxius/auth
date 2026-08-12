@@ -489,7 +489,7 @@ export interface AuthUserStorage {
 	): Promise<AuthUser>;
 	update(userId: string, data: Partial<AuthUser>): Promise<AuthUser>;
 	delete(userId: string): Promise<void>;
-	verifyPassword?(userId: string, password: string): Promise<boolean>;
+	verifyPassword(userId: string, password: string): Promise<boolean>;
 	dispose?(): void;
 }
 export interface PasswordValidationConfig {

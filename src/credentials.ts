@@ -42,7 +42,6 @@ import type {
 	SafeAuthUser,
 	TokenRevocationStorage,
 } from "./types";
-import { constantTimeCompareStrings } from "./utils/constant-time";
 import { getRequestIP } from "./utils/ip";
 import { createSecurityLogger } from "./utils/logger";
 import { validatePasswordOrThrow } from "./utils/password-validation";
@@ -166,6 +165,11 @@ export class CredentialsClient {
 				"At least one of emailRequired or usernameRequired must be true",
 			);
 		}
+		if (typeof storage.verifyPassword !== "function") {
+			throw new ConfigurationError(
+				"AuthUserStorage.verifyPassword is required: password hashing and verification are the consumer's responsibility, the package never hashes or compares plaintext passwords",
+			);
+		}
 
 		this.config = {
 			emailRequired,
@@ -278,9 +282,10 @@ export class CredentialsClient {
 			);
 		}
 
-		const passwordMatches = this.storage.verifyPassword
-			? await this.storage.verifyPassword(user.id, password)
-			: constantTimeCompareStrings(user.password, password);
+		const passwordMatches = await this.storage.verifyPassword(
+			user.id,
+			password,
+		);
 		if (!passwordMatches) {
 			if (bruteForceKey) {
 				const result = await this.bruteForce.recordAttempt(bruteForceKey);
