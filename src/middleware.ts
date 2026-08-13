@@ -107,6 +107,8 @@ export async function session(
 		email: (payload.email as string) ?? null,
 		locale: payload.locale as string,
 		roles: (payload.roles as string[]) ?? undefined,
+		tenantId: (payload.tenantId as string) ?? undefined,
+		userId: (payload.userId as string) ?? undefined,
 	};
 }
 
@@ -152,6 +154,9 @@ export function role(config: EdgeRoleConfig) {
 	const loginUrl = config.loginUrl ?? "/auth/discord";
 	const cookieName = config.cookieName ?? "discord-auth-session";
 	const roles = config.roles;
+	const perTenant =
+		typeof config.tenantIdFromRequest === "function" &&
+		config.tenantMembership !== undefined;
 
 	return async function roleMiddleware(
 		request: Request,
@@ -171,6 +176,21 @@ export function role(config: EdgeRoleConfig) {
 
 		if (!user) {
 			return redirect(`${loginUrl}?redirect=${encodeURIComponent(path)}`);
+		}
+
+		if (perTenant) {
+			const tenantId = await config.tenantIdFromRequest!(request);
+			if (!tenantId) {
+				return deny("Insufficient permissions");
+			}
+			const userId = user.userId ?? user.discordId;
+			const memberships = await config.tenantMembership!.getMemberships(userId);
+			const membership = memberships.find((m) => m.tenantId === tenantId);
+			const effectiveRoles = membership?.roles ?? [];
+			if (!requiredRoles.some((r) => effectiveRoles.includes(r))) {
+				return deny("Insufficient permissions");
+			}
+			return undefined;
 		}
 
 		if (!user.roles || !requiredRoles.some((r) => user.roles?.includes(r))) {

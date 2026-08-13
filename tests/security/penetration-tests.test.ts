@@ -863,7 +863,223 @@ describe("Security - Penetration Tests", () => {
 		});
 	});
 
-	describe("Header Injection Prevention", () => {
+	describe("Anti-Enumeration (P1-A dummyVerifyPassword / P2-B genericRegistrationErrors)", () => {
+	const SECRET =
+		"5K8qN2mR9pL3vX7wJ4tY6hF1dS0aG8bC2eU5iO9xM3nZ7kV4rW1qP6yT0uI8oA2";
+
+	function loginRequest(identifier: Record<string, string>, password = "wrongpw") {
+		return new Request("http://localhost:3000/auth/login", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ ...identifier, password }),
+		});
+	}
+
+	function registerRequest(username: string, email: string) {
+		return new Request("http://localhost:3000/auth/register", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ username, email, password: "SecurePass123!" }),
+		});
+	}
+
+	test("(a) dummyVerifyPassword hook is awaited when the user does not exist", async () => {
+		let hookCalls = 0;
+		const auth = credentials({
+			emailRequired: true,
+			usernameRequired: true,
+			session: { secret: SECRET, expiresIn: "15m" },
+			storage: {
+				create: mock(() => Promise.resolve(null)),
+				findByUsername: mock(() => Promise.resolve(null)),
+				findByEmail: mock(() => Promise.resolve(null)),
+				findById: mock(() => Promise.resolve(null)),
+				verifyPassword: mock(() => Promise.resolve(false)),
+			} as any,
+			dummyVerifyPassword: async () => {
+				hookCalls++;
+				await Bun.sleep(50);
+				return false;
+			},
+		});
+
+		const start = performance.now();
+		const response = await auth.handleLogin(loginRequest({ email: "ghost@example.com" }));
+		const elapsed = performance.now() - start;
+
+		expect(response.status).toBe(401);
+		expect(hookCalls).toBe(1);
+		expect(elapsed).toBeGreaterThanOrEqual(45);
+	});
+
+	test("(b) cost parity — found vs not-found logins are both >= KDF floor", async () => {
+		function makeAuth(exists: boolean) {
+			return credentials({
+				emailRequired: true,
+				usernameRequired: true,
+				session: { secret: SECRET, expiresIn: "15m" },
+				storage: {
+					create: mock(() => Promise.resolve(null)),
+					findByUsername: mock(() => Promise.resolve(null)),
+					findByEmail: mock(() => (exists
+						? Promise.resolve({
+								id: "user_123",
+								username: "alice",
+								email: "alice@example.com",
+								password: "hash",
+								roles: ["user"],
+								createdAt: new Date(),
+								updatedAt: new Date(),
+							})
+						: Promise.resolve(null))),
+					findById: mock(() => Promise.resolve(null)),
+					verifyPassword: mock(async () => {
+						await Bun.sleep(50);
+						return false;
+					}),
+				} as any,
+				dummyVerifyPassword: async () => {
+					await Bun.sleep(50);
+					return false;
+				},
+			});
+		}
+
+		const foundAuth = makeAuth(true);
+		const ghostAuth = makeAuth(false);
+
+		const foundStart = performance.now();
+		await foundAuth.handleLogin(loginRequest({ email: "alice@example.com" }));
+		const foundElapsed = performance.now() - foundStart;
+
+		const ghostStart = performance.now();
+		await ghostAuth.handleLogin(loginRequest({ email: "ghost@example.com" }));
+		const ghostElapsed = performance.now() - ghostStart;
+
+		// Relative assertion — no absolute deltas (CI-stable):
+		// both paths must pay at least the KDF cost floor.
+		expect(foundElapsed).toBeGreaterThanOrEqual(45);
+		expect(ghostElapsed).toBeGreaterThanOrEqual(45);
+	});
+
+	test("(c) enumeration off — flag ON: taken-username/email and validation failure are indistinguishable", async () => {
+		const auth = credentials({
+			emailRequired: true,
+			usernameRequired: true,
+			session: { secret: SECRET, expiresIn: "15m" },
+			storage: {
+				create: mock(() => Promise.resolve(null)),
+				findByUsername: mock((u: string) =>
+					u === "takenuser"
+						? Promise.resolve({
+								id: "user_taken",
+								username: "takenuser",
+								email: null,
+								password: "hash",
+								roles: ["user"],
+								createdAt: new Date(),
+								updatedAt: new Date(),
+							})
+						: Promise.resolve(null),
+				),
+				findByEmail: mock((e: string) =>
+					e === "taken@example.com"
+						? Promise.resolve({
+								id: "user_taken",
+								username: null,
+								email: "taken@example.com",
+								password: "hash",
+								roles: ["user"],
+								createdAt: new Date(),
+								updatedAt: new Date(),
+							})
+						: Promise.resolve(null),
+				),
+				findById: mock(() => Promise.resolve(null)),
+				verifyPassword: mock(() => Promise.resolve(false)),
+			} as any,
+			genericRegistrationErrors: true,
+		});
+
+		const takenUsername = await auth.handleRegister(
+			registerRequest("takenuser", "new@example.com"),
+		);
+		const takenEmail = await auth.handleRegister(
+			registerRequest("newuser", "taken@example.com"),
+		);
+		const validationFailure = await auth.handleRegister(
+			registerRequest("newuser", "invalid-email"),
+		);
+
+		const from = async (r: Response) => ({ status: r.status, body: await r.json() });
+		const usernameJson = await from(takenUsername);
+		const emailJson = await from(takenEmail);
+		const validationJson = await from(validationFailure);
+
+		expect(usernameJson.status).toBe(400);
+		expect(emailJson.status).toBe(400);
+		expect(validationJson.status).toBe(400);
+		expect(usernameJson.body.code).toBe("CREDENTIALS_VALIDATION_ERROR");
+		expect(emailJson.body.code).toBe("CREDENTIALS_VALIDATION_ERROR");
+		expect(validationJson.body.code).toBe("CREDENTIALS_VALIDATION_ERROR");
+		expect(usernameJson.body).toEqual(emailJson.body);
+	});
+
+	test("(c2) default OFF preserves the distinct 409s", async () => {
+		const auth = credentials({
+			emailRequired: true,
+			usernameRequired: true,
+			session: { secret: SECRET, expiresIn: "15m" },
+			storage: {
+				create: mock(() => Promise.resolve(null)),
+				findByUsername: mock((u: string) =>
+					u === "takenuser"
+						? Promise.resolve({
+								id: "user_taken",
+								username: "takenuser",
+								email: null,
+								password: "hash",
+								roles: ["user"],
+								createdAt: new Date(),
+								updatedAt: new Date(),
+							})
+						: Promise.resolve(null),
+				),
+				findByEmail: mock((e: string) =>
+					e === "taken@example.com"
+						? Promise.resolve({
+								id: "user_taken",
+								username: null,
+								email: "taken@example.com",
+								password: "hash",
+								roles: ["user"],
+								createdAt: new Date(),
+								updatedAt: new Date(),
+							})
+						: Promise.resolve(null),
+				),
+				findById: mock(() => Promise.resolve(null)),
+				verifyPassword: mock(() => Promise.resolve(false)),
+			} as any,
+		});
+
+		const takenUsername = await auth.handleRegister(
+			registerRequest("takenuser", "new@example.com"),
+		);
+		const takenEmail = await auth.handleRegister(
+			registerRequest("newuser", "taken@example.com"),
+		);
+
+		expect(takenUsername.status).toBe(409);
+		expect(takenEmail.status).toBe(409);
+		const usernameJson = (await takenUsername.json()) as { code: string };
+		const emailJson = (await takenEmail.json()) as { code: string };
+		expect(usernameJson.code).toBe("USERNAME_TAKEN");
+		expect(emailJson.code).toBe("EMAIL_TAKEN");
+	});
+});
+
+describe("Header Injection Prevention", () => {
 		test("cookie value sanitization prevents CRLF injection", async () => {
 			const { createSessionCookie } = await import(
 				"../../src/internal/cookies"

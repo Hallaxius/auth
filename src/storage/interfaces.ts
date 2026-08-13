@@ -1,3 +1,14 @@
+import type {
+	MagicLinkTokenStorage,
+	OidcJwksCache,
+	OidcStateStorage,
+	OtpStorage,
+	TenantMembershipStorage,
+	TenantRepository,
+	WebAuthnChallengeStorage,
+	WebAuthnCredentialStorage,
+} from "../types";
+
 export interface SessionStore {
 	get(sessionId: string): Promise<Record<string, unknown> | null>;
 	set(
@@ -149,6 +160,13 @@ export interface IUserStore {
 	ping?(): Promise<boolean>;
 }
 
+/**
+ * Mirror of `AuthUserStorage` for the storage layer.
+ *
+ * Contract (ADR-002): the package never hashes passwords. `create` MUST
+ * receive a KDF hash (Argon2id preferred; bcrypt/scrypt acceptable, per-user
+ * salt) — hash in this layer before persisting.
+ */
 export interface IAuthUserStore {
 	findByUsername(username: string): Promise<{
 		id: string;
@@ -177,6 +195,10 @@ export interface IAuthUserStore {
 		createdAt: Date;
 		updatedAt: Date;
 	} | null>;
+	/**
+	 * `password` MUST be a KDF hash (Argon2id preferred) — hash here before
+	 * persisting; the package never hashes (ADR-002).
+	 */
 	create(data: {
 		username?: string;
 		email?: string;
@@ -323,6 +345,90 @@ export interface StorageAdapters {
 	authUser: IAuthUserStore;
 	resetToken: IResetTokenStore;
 	compliance: IComplianceStore;
+	tenant: TenantRepository;
+	tenantMembership: TenantMembershipStorage;
+	magicLink: IMagicLinkTokenStore;
+	otp: IOtpStore;
+	webAuthn: {
+		credentials: IWebAuthnCredentialStore;
+		challenges: IWebAuthnChallengeStore;
+	};
+	oidc: {
+		state: IOidcStateStore;
+		jwks: IOidcJwksCacheStore;
+	};
+}
+
+/**
+ * Internal contract for the public `TenantRepository` (src/types.ts).
+ * Memory impl: `MemoryTenantStore` (src/storage/factory.ts).
+ */
+export interface ITenantStore extends TenantRepository {
+	ping?(): Promise<boolean>;
+	dispose?(): void;
+}
+
+/**
+ * Internal contract for the public `TenantMembershipStorage` (src/types.ts).
+ * Memory impl: `MemoryTenantMembershipStore` (src/storage/factory.ts).
+ */
+export interface ITenantMembershipStore extends TenantMembershipStorage {
+	ping?(): Promise<boolean>;
+	dispose?(): void;
+}
+
+/**
+ * Internal contract for the public `MagicLinkTokenStorage` (src/types.ts).
+ * Memory impl: `MemoryMagicLinkStore` (src/storage/factory.ts).
+ */
+export interface IMagicLinkTokenStore extends MagicLinkTokenStorage {
+	ping?(): Promise<boolean>;
+	dispose?(): void;
+}
+
+/**
+ * Internal contract for the public `OtpStorage` (src/types.ts).
+ * Memory impl: `MemoryOtpStore` (src/storage/factory.ts).
+ */
+export interface IOtpStore extends OtpStorage {
+	ping?(): Promise<boolean>;
+	dispose?(): void;
+}
+
+/**
+ * Internal contract for the public `WebAuthnCredentialStorage` (src/types.ts).
+ * Memory impl: `MemoryWebAuthnCredentialStore` (src/storage/factory.ts).
+ */
+export interface IWebAuthnCredentialStore extends WebAuthnCredentialStorage {
+	ping?(): Promise<boolean>;
+	dispose?(): void;
+}
+
+/**
+ * Internal contract for the public `WebAuthnChallengeStorage` (src/types.ts).
+ * Memory impl: `MemoryWebAuthnChallengeStore` (src/storage/factory.ts).
+ */
+export interface IWebAuthnChallengeStore extends WebAuthnChallengeStorage {
+	ping?(): Promise<boolean>;
+	dispose?(): void;
+}
+
+/**
+ * Internal contract for the public `OidcStateStorage` (src/types.ts).
+ * Memory impl: `MemoryOidcStateStore` (src/storage/factory.ts).
+ */
+export interface IOidcStateStore extends OidcStateStorage {
+	ping?(): Promise<boolean>;
+	dispose?(): void;
+}
+
+/**
+ * Internal contract for the public `OidcJwksCache` (src/types.ts).
+ * Memory impl: `MemoryOidcJwksCacheStore` (src/storage/factory.ts).
+ */
+export interface IOidcJwksCacheStore extends OidcJwksCache {
+	ping?(): Promise<boolean>;
+	dispose?(): void;
 }
 
 export type StorageType = "memory";

@@ -27,6 +27,7 @@ import {
 } from "./internal/jwt";
 import { rateLimit } from "./rate-limit";
 import { MemoryBruteForceStore } from "./storage/factory";
+import { tenancy } from "./tenancy";
 import type {
 	AuthUser,
 	AuthUserIdentifier,
@@ -34,12 +35,14 @@ import type {
 	BruteForceConfig,
 	BruteForceStorage,
 	CreateCredentialsUserData,
+	CreateSessionWithoutPasswordOptions,
 	CredentialsAuthResult,
 	CredentialsClientConfig,
 	CredentialsConfig,
 	CredentialsResult,
 	InternalCredentialsConfig,
 	SafeAuthUser,
+	TenancyResult,
 	TokenRevocationStorage,
 } from "./types";
 import { getRequestIP } from "./utils/ip";
@@ -47,6 +50,8 @@ import { createSecurityLogger } from "./utils/logger";
 import { validatePasswordOrThrow } from "./utils/password-validation";
 
 const logger = createSecurityLogger("credentials");
+
+export const SUSPENDED_ROLE = "suspended";
 
 export class BruteForceProtection {
 	private config: Required<Omit<BruteForceConfig, "storage">>;
@@ -189,6 +194,8 @@ export class CredentialsClient {
 				? (resolveCaptchaConfig(config.captcha as CaptchaConfig) ?? undefined)
 				: undefined,
 			trustProxy: config.trustProxy ?? false,
+			dummyVerifyPassword: config.dummyVerifyPassword,
+			genericRegistrationErrors: config.genericRegistrationErrors ?? false,
 		};
 		this.storage = storage;
 		this.bruteForce = new BruteForceProtection({
@@ -203,6 +210,7 @@ export class CredentialsClient {
 	async register(
 		data: CreateCredentialsUserData & { password: string },
 		_request?: Request,
+		tenantId?: string,
 	): Promise<CredentialsAuthResult> {
 		this.validateRegistrationFields(data);
 
@@ -226,7 +234,7 @@ export class CredentialsClient {
 			roles: data.roles ?? this.config.defaultRoles,
 		});
 
-		const token = await this.createSessionToken(user);
+		const token = await this.createSessionToken(user, tenantId);
 
 		return { user, token };
 	}
@@ -235,8 +243,22 @@ export class CredentialsClient {
 		identifier: AuthUserIdentifier,
 		password: string,
 		request?: Request,
+		tenantId?: string,
 	): Promise<CredentialsAuthResult> {
-		const bruteForceKey = await this.getBruteForceKey(identifier, request);
+		if (!identifier.email && !identifier.username) {
+			throw new AuthError(
+				ErrorCodes.CREDENTIALS_VALIDATION_ERROR,
+				"Email or username is required",
+				{
+					statusCode: 400,
+				},
+			);
+		}
+		const bruteForceKey = await this.getBruteForceKey(
+			identifier,
+			request,
+			tenantId,
+		);
 		if (bruteForceKey) {
 			const blocked = await this.bruteForce.isBlocked(bruteForceKey);
 			if (blocked) {
@@ -256,6 +278,9 @@ export class CredentialsClient {
 		const user = await this.findUserByIdentifier(identifier);
 
 		if (!user) {
+			if (this.config.dummyVerifyPassword) {
+				await this.config.dummyVerifyPassword(password);
+			}
 			if (bruteForceKey) {
 				const result = await this.bruteForce.recordAttempt(bruteForceKey);
 				if (result && !result.allowed) {
@@ -317,7 +342,7 @@ export class CredentialsClient {
 			await this.bruteForce.recordAttempt(bruteForceKey, true);
 		}
 
-		const token = await this.createSessionToken(user);
+		const token = await this.createSessionToken(user, tenantId);
 
 		return { user, token };
 	}
@@ -376,7 +401,16 @@ export class CredentialsClient {
 	): Promise<void> {
 		if (username) {
 			const existing = await this.storage.findByUsername(username);
-			if (existing)
+			if (existing) {
+				if (this.config.genericRegistrationErrors) {
+					throw new AuthError(
+						ErrorCodes.CREDENTIALS_VALIDATION_ERROR,
+						"Registration failed",
+						{
+							statusCode: 400,
+						},
+					);
+				}
 				throw new AuthError(
 					ErrorCodes.USERNAME_TAKEN,
 					"Username is already taken",
@@ -384,14 +418,25 @@ export class CredentialsClient {
 						statusCode: 409,
 					},
 				);
+			}
 		}
 
 		if (email) {
 			const existing = await this.storage.findByEmail(email);
-			if (existing)
+			if (existing) {
+				if (this.config.genericRegistrationErrors) {
+					throw new AuthError(
+						ErrorCodes.CREDENTIALS_VALIDATION_ERROR,
+						"Registration failed",
+						{
+							statusCode: 400,
+						},
+					);
+				}
 				throw new AuthError(ErrorCodes.EMAIL_TAKEN, "Email is already taken", {
 					statusCode: 409,
 				});
+			}
 		}
 	}
 
@@ -409,26 +454,99 @@ export class CredentialsClient {
 		return null;
 	}
 
-	private async createSessionToken(user: AuthUser): Promise<string> {
+	private async createSessionToken(
+		user: AuthUser,
+		tenantId?: string,
+	): Promise<string> {
 		const payload: Record<string, unknown> = {
 			userId: user.id,
 			roles: user.roles,
 		};
 		if (user.username) payload.username = user.username;
 		if (user.email) payload.email = user.email;
+		if (tenantId) payload.tenantId = tenantId;
 
 		return signToken(payload, this.config.secret, this.config.expiresIn);
+	}
+
+	/**
+	 * Additively creates a session WITHOUT verifying a password.
+	 * Internal-only: the package's passwordless handlers (magic-link/OTP,
+	 * SMS, WebAuthn) mint sessions through here (via the factory
+	 * wrapper, which enforces Guard 4 at src/credentials.ts factory level).
+	 *
+	 * Guards (mandatory):
+	 * 1. Never calls `verifyPassword`.
+	 * 2. User exists and is not suspended (role `"suspended"`).
+	 * 3. `BruteForceProtection.isBlocked("passwordless:<tenantId>:<userId>")`
+	 *    checked BEFORE the session is created.
+	 * 4. `tenantId` MUST come from subdomain resolution (D3) — never parsed
+	 *    from body/query/header (enforced by the factory wrapper when tenancy
+	 *    is enabled).
+	 * 5. Minimal claims `{ userId, tenantId?, roles?, type: "passwordless" }` —
+	 *    same `signToken` path as `createSessionToken`.
+	 */
+	async createSessionWithoutPassword(
+		options: CreateSessionWithoutPasswordOptions,
+	): Promise<{ sessionToken: string; idToken: string }> {
+		const bruteForceKey = `passwordless:${options.tenantId ? `${options.tenantId}:` : ""}${options.userId}`;
+		const blocked = await this.bruteForce.isBlocked(bruteForceKey);
+		if (blocked) {
+			const retryAfter = await this.bruteForce.getRetryAfter(bruteForceKey);
+			throw new AuthError(
+				ErrorCodes.BRUTE_FORCE_BLOCKED,
+				"Too many attempts, please try again later",
+				{
+					statusCode: 429,
+					retryable: true,
+					retryAfter,
+				},
+			);
+		}
+
+		const user = await this.storage.findById(options.userId);
+		if (!user) {
+			throw new AuthError(ErrorCodes.USER_NOT_FOUND, "User not found", {
+				statusCode: 404,
+			});
+		}
+		if (user.roles.includes(SUSPENDED_ROLE)) {
+			throw new AuthError(ErrorCodes.TENANT_FORBIDDEN, "User is suspended", {
+				statusCode: 403,
+			});
+		}
+
+		const payload: Record<string, unknown> = {
+			userId: user.id,
+			roles: options.roles ?? user.roles,
+			type: "passwordless",
+		};
+		if (options.tenantId) payload.tenantId = options.tenantId;
+
+		const sessionToken = await signToken(
+			payload,
+			this.config.secret,
+			this.config.expiresIn,
+		);
+		return { sessionToken, idToken: sessionToken };
 	}
 
 	private async getBruteForceKey(
 		identifier: AuthUserIdentifier,
 		request?: Request,
+		tenantId?: string,
 	): Promise<string | null> {
 		const ip = request
 			? await getRequestIP(request, { trustProxy: this.config.trustProxy })
 			: "unknown";
 		const identifierValue =
 			identifier.username ?? identifier.email ?? "unknown";
+		// Legacy (global) key format is preserved without a tenantId so that
+		// existing blocked keys keep working (additivity, ADR-002). With a
+		// tenantId the composite key isolates per-tenant counters.
+		if (tenantId) {
+			return `credentials-login:${ip}:${tenantId}:${identifierValue}`;
+		}
 		return `credentials-login:${ip}:${identifierValue}`;
 	}
 }
@@ -443,10 +561,12 @@ interface CredentialsHandlerContext {
 	maxAge?: number;
 	bruteForce?: BruteForceProtection;
 	rateLimiter?: ReturnType<typeof rateLimit>;
+	loginRateLimiter?: ReturnType<typeof rateLimit>;
 	captcha?: ResolvedCaptchaConfig;
 	bruteForceMaxAttempts?: number;
 	sessionRevocationStorage?: TokenRevocationStorage;
 	sessionSecret?: string;
+	tenancy?: TenancyResult;
 }
 
 function jsonResponse(
@@ -584,6 +704,9 @@ function createCredentialsHandlers(ctx: CredentialsHandlerContext) {
 
 		try {
 			await verifyCaptchaIfEnabled(request);
+			const tenantId = ctx.tenancy
+				? await ctx.tenancy.resolveTenantId(request)
+				: null;
 			const password =
 				typeof body.password === "string"
 					? body.password
@@ -596,6 +719,7 @@ function createCredentialsHandlers(ctx: CredentialsHandlerContext) {
 					password,
 				},
 				request,
+				tenantId ?? undefined,
 			);
 
 			const cookie = createSessionCookie(
@@ -630,8 +754,28 @@ function createCredentialsHandlers(ctx: CredentialsHandlerContext) {
 			return jsonResponse({ error: "Invalid JSON body" }, 400);
 		}
 
+		if (ctx.loginRateLimiter) {
+			const result = await ctx.loginRateLimiter.check(request);
+			if (!result.allowed) {
+				const headers = new Headers({
+					"Content-Type": "application/json; charset=utf-8",
+					"Retry-After": String(Math.ceil(result.retryAfter! / 1000)),
+					"RateLimit-Limit": String(result.limit),
+					"RateLimit-Remaining": String(result.remaining),
+					"RateLimit-Reset": String(Math.ceil(result.resetAt / 1000)),
+				});
+				return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
+					status: 429,
+					headers,
+				});
+			}
+		}
+
 		try {
 			await verifyCaptchaIfEnabled(request);
+			const tenantId = ctx.tenancy
+				? await ctx.tenancy.resolveTenantId(request)
+				: null;
 			const password =
 				typeof body.password === "string"
 					? body.password
@@ -644,6 +788,7 @@ function createCredentialsHandlers(ctx: CredentialsHandlerContext) {
 				},
 				password,
 				request,
+				tenantId ?? undefined,
 			);
 
 			const cookie = createSessionCookie(
@@ -727,6 +872,19 @@ export function credentials(config: CredentialsConfig): CredentialsResult {
 	const cookieName = config.session.cookieName ?? "credentials-session";
 	const sessionMaxAge = expiresInToSeconds(config.session.expiresIn ?? "15m");
 
+	const tenancyInstance = config.tenancy?.enabled
+		? tenancy(config.tenancy)
+		: undefined;
+
+	async function tenantRateLimitNamespace(request: Request): Promise<string> {
+		if (!tenancyInstance) return "global";
+		try {
+			return (await tenancyInstance.resolveTenantId(request)) ?? "global";
+		} catch {
+			return "global";
+		}
+	}
+
 	const client = new CredentialsClient(
 		{
 			emailRequired: config.emailRequired,
@@ -737,6 +895,8 @@ export function credentials(config: CredentialsConfig): CredentialsResult {
 			validatePassword: config.validatePassword,
 			sessionRevocationStorage: config.sessionRevocationStorage,
 			captcha: config.captcha,
+			dummyVerifyPassword: config.dummyVerifyPassword,
+			genericRegistrationErrors: config.genericRegistrationErrors,
 		},
 		config.storage,
 		config.bruteForce ?? {},
@@ -753,7 +913,21 @@ export function credentials(config: CredentialsConfig): CredentialsResult {
 				storage: config.meRateLimitStorage,
 				keyBy: async (request) => {
 					const ip = await getRequestIP(request);
-					return `me:${ip}`;
+					if (!tenancyInstance) return `me:${ip}`;
+					return `me:${await tenantRateLimitNamespace(request)}:${ip}`;
+				},
+			})
+		: undefined;
+
+	const loginRateLimiter = config.loginRateLimitStorage
+		? rateLimit({
+				maxRequests: 10,
+				windowMs: 60 * 1000,
+				storage: config.loginRateLimitStorage,
+				keyBy: async (request) => {
+					const ip = await getRequestIP(request);
+					if (!tenancyInstance) return `login:${ip}`;
+					return `login:${await tenantRateLimitNamespace(request)}:${ip}`;
 				},
 			})
 		: undefined;
@@ -767,12 +941,14 @@ export function credentials(config: CredentialsConfig): CredentialsResult {
 		httpOnly: config.httpOnly ?? true,
 		maxAge: sessionMaxAge,
 		rateLimiter: meRateLimiter,
+		loginRateLimiter,
 		bruteForceMaxAttempts:
 			config.bruteForce?.maxAttempts ??
 			LIMIT_CONSTANTS.BRUTE_FORCE_MAX_ATTEMPTS,
 		captcha: resolvedCaptcha ?? undefined,
 		sessionRevocationStorage: config.sessionRevocationStorage,
 		sessionSecret: config.session.secret,
+		tenancy: tenancyInstance,
 	});
 
 	async function getSession(request: Request): Promise<SafeAuthUser | null> {
@@ -815,6 +991,38 @@ export function credentials(config: CredentialsConfig): CredentialsResult {
 		};
 	}
 
+	/**
+	 * Factory-level wrapper enforcing Guard 4 (`tenantId` resolved from
+	 * the subdomain only, never body/query/header). Delegates the remaining
+	 * guards (1, 2, 3, 5) to `CredentialsClient.createSessionWithoutPassword`.
+	 * Internal-only: consumed by the package's passwordless handlers.
+	 */
+	async function createSessionWithoutPassword(
+		options: CreateSessionWithoutPasswordOptions,
+	): Promise<{ sessionToken: string; idToken: string }> {
+		if (tenancyInstance) {
+			if (!options.tenantId) {
+				throw new AuthError(ErrorCodes.TENANT_REQUIRED, "Tenant is required", {
+					statusCode: 403,
+				});
+			}
+			const kind = await tenancyInstance.getTenant(options.tenantId);
+			if (!kind) {
+				throw new AuthError(ErrorCodes.TENANT_NOT_FOUND, "Tenant not found", {
+					statusCode: 404,
+				});
+			}
+			if (kind.status === "suspended") {
+				throw new AuthError(
+					ErrorCodes.TENANT_SUSPENDED,
+					"Tenant is suspended",
+					{ statusCode: 403 },
+				);
+			}
+		}
+		return client.createSessionWithoutPassword(options);
+	}
+
 	return {
 		handleRegister: handlers.handleRegister,
 		handleLogin: handlers.handleLogin,
@@ -822,8 +1030,10 @@ export function credentials(config: CredentialsConfig): CredentialsResult {
 		handleMe: handlers.handleMe,
 		getSession,
 		withAuth,
+		createSessionWithoutPassword,
 		dispose: () => {
 			config.storage.dispose?.();
+			tenancyInstance?.dispose?.();
 		},
 	};
 }

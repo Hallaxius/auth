@@ -19,9 +19,15 @@ export {
 	type TurnstileRef,
 	useCaptcha,
 } from "./components";
-export { credentials } from "./credentials";
+export { credentials, SUSPENDED_ROLE } from "./credentials";
 export { discord } from "./discord";
+export {
+	type MagicLinkHandlers,
+	type MagicLinkResult,
+	magicLink,
+} from "./magic-link";
 export { type MfaHandlers, mfa } from "./mfa";
+export { type OidcHandlers, oidc } from "./oidc";
 export { type PasswordResetHandlers, passwordReset } from "./password-reset";
 export { rateLimit } from "./rate-limit";
 export {
@@ -31,6 +37,9 @@ export {
 	LoginAnomalyError,
 	type TorExitProvider,
 } from "./security/anomaly-detector";
+export { type SmsOtpHandlers, smsOtp } from "./sms-otp";
+export { subdomainResolver, tenancy } from "./tenancy";
+export { type WebAuthnHandlers, webauthn } from "./webauthn";
 
 import {
 	auth,
@@ -114,11 +123,21 @@ export {
 	CredentialsClientConfigSchema,
 	DiscordAuthConfigSchema,
 	DiscordScopeSchema,
+	MagicLinkConfigSchema,
+	OidcConfigSchema,
 	RateLimitConfigSchema,
 	SessionConfigSchema,
+	SmsConfigSchema,
+	TenancyConfigSchema,
 	validateCredentialsConfig,
 	validateDiscordAuthConfig,
+	validateMagicLinkConfig,
+	validateOidcConfig,
 	validateRateLimitConfig,
+	validateSmsConfig,
+	validateTenancyConfig,
+	validateWebAuthnConfig,
+	WebAuthnConfigSchema,
 } from "./config/schema";
 export {
 	BruteForceProtection,
@@ -143,6 +162,9 @@ export {
 	InvalidStateError,
 	InvalidTokenError,
 	isAuthError,
+	MagicLinkExpiredError,
+	MagicLinkInvalidError,
+	MagicLinkUsedError,
 	MfaRequiredError,
 	NetworkError,
 	PasswordInvalidFormatError,
@@ -155,6 +177,11 @@ export {
 	StorageReadError,
 	StorageUnavailableError,
 	StorageWriteError,
+	TenantForbiddenError,
+	TenantMismatchError,
+	TenantNotFoundError,
+	TenantRequiredError,
+	TenantSuspendedError,
 	TokenExchangeError,
 	TokenExpiredError,
 	TokenRefreshError,
@@ -224,18 +251,34 @@ export {
 	createStorageAdapters,
 	isMemoryBacked,
 	MemoryBruteForceStore,
+	MemoryMagicLinkStore,
+	MemoryOidcJwksCacheStore,
+	MemoryOidcStateStore,
+	MemoryOtpStore,
 	MemoryRateLimitStore,
+	MemoryTenantMembershipStore,
+	MemoryTenantStore,
+	MemoryWebAuthnChallengeStore,
+	MemoryWebAuthnCredentialStore,
 } from "./storage/factory";
 export type {
 	IAuthUserStore,
 	IBruteForceStore,
 	IComplianceStore,
+	IMagicLinkTokenStore,
 	IMfaStore,
+	IOidcJwksCacheStore,
+	IOidcStateStore,
+	IOtpStore,
 	IRateLimitStore,
 	IResetTokenStore,
 	IStateStore,
+	ITenantMembershipStore,
+	ITenantStore,
 	ITokenRevocationStore,
 	IUserStore,
+	IWebAuthnChallengeStore,
+	IWebAuthnCredentialStore,
 	SessionStore,
 	StorageAdapters,
 	StorageFactoryOptions,
@@ -247,6 +290,7 @@ export type {
 	AuthUserStorage,
 	ConsumeResetTokenResult,
 	CreateCredentialsUserData as CreateCredentialsInput,
+	CreateSessionWithoutPasswordOptions,
 	CredentialsConfig,
 	DiscordAuthConfig,
 	DiscordAuthConfig as DiscordConfig,
@@ -259,12 +303,26 @@ export type {
 	GuildMember,
 	LoginHistoryStore,
 	LoginRecord,
+	MagicLinkConfig,
+	MagicLinkLookupResult,
+	MagicLinkNotifier,
+	MagicLinkTokenStorage,
+	MagicLinkVerifyResult,
 	MfaChallengeResult,
 	MfaFactoryConfig as MfaConfig,
 	MfaMethod,
 	MfaStorage,
 	MfaVerifyResult,
+	OidcConfig,
+	OidcJwksCache,
+	OidcMappedUser,
+	OidcStateRecord,
+	OidcStateStorage,
+	OidcUserClaims,
+	OtpCode,
+	OtpStorage,
 	PasswordResetConfig,
+	PendingMagicLink,
 	PendingTokenEntry,
 	RateLimitConfig,
 	RateLimitResult,
@@ -278,10 +336,22 @@ export type {
 	SafeStoredUser,
 	SessionConfig as SessionOptions,
 	SessionData as SessionUser,
+	SmsConfig,
+	SmsNotifier,
 	StoredUser,
+	TenancyConfig,
+	TenancyResult,
+	TenantMembershipStorage,
+	TenantRecord,
+	TenantRepository,
 	TokenRevocationStorage,
 	TotpSetupResult,
 	UserStorage,
+	WebAuthnChallenge,
+	WebAuthnChallengeStorage,
+	WebAuthnConfig,
+	WebAuthnCredential,
+	WebAuthnCredentialStorage,
 } from "./types";
 export {
 	hasAnyRole,

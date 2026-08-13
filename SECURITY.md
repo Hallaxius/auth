@@ -115,7 +115,7 @@ Include:
 ✅ **Timing Attack Prevention:**
 - Constant-time string comparison
 - Uniform error responses
-- Consistent validation timing
+- Consistent validation timing **when `dummyVerifyPassword` is configured** (`credentials({ dummyVerifyPassword })`): logins for non-existing users run the same dummy KDF cost as real users, closing the user-enumeration-by-timing channel. Without the hook, non-existing users answer faster (early return) — the default is documented behavior, and public deployments SHOULD provide the hook (see P2-B for registration enumeration).
 
 ---
 
@@ -130,6 +130,7 @@ Include:
 | Secret Entropy | ✅ Required | Min 32 chars, high entropy validation |
 | `AUTH_SALT` (State Salt) | 🔶 Recommended | Separate secret used with HKDF-SHA256 to derive the OAuth state HMAC; optional — when unset it falls back to a derivation from the JWT secret |
 | External Storage | ✅ Required | Redis/Database/KV for stateful operations |
+| Password Hashing | ✅ Required | Hash with Argon2id/bcrypt in your storage layer before persisting |
 | `TRUSTED_PROXY_IPS` | ✅ Required (behind proxy) | Comma-separated proxy IPs/CIDRs to trust for real-client-IP resolution when `trustProxy` is enabled |
 
 ### Recommended for Production
@@ -295,6 +296,114 @@ All JWTs include:
 
 ✅ **OAuth Provider Failure Handling:**
 - Failed Discord token exchanges (e.g. `invalid_grant`) map to `401` and increment the brute-force counter for the caller's IP
+
+---
+
+## E2E Browser Testing
+
+E2E test suite against `tests/next-app` (Next.js 16 + lib), using **Playwright + Firefox**.
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `bun run test:e2e:setup` | Builds lib, installs deps, installs Playwright Firefox |
+| `bun run test:e2e` | Runs the full Playwright test suite |
+| `bun run test:e2e:headed` | Same, with visible browser window (debug) |
+| `bun run test:e2e:run` | Smart runner: builds, starts server, runs tests, tears down |
+
+### Port
+
+The runner uses `$env:E2E_PORT` (default `3100`). If the port is already responding, the runner reuses the existing server.
+
+### Architecture
+
+- `fixtures.ts` — Playwright `test` fixture extending base with `api` (fresh `APIRequestContext` per call, unique UA) and `page` fixtures
+- API tests: `Api` class wrapping `APIRequestContext` (fetch-style, no UI)
+- UI flows: `test_ui_flow.ts` navigates real pages via Playwright
+- Rate limit `/me`: isolated `acme` namespace; `/login` not configured (shared IP)
+- Magic link / SMS: fake notifiers with debug routes
+
+### Limitations
+
+- Real WebAuthn: requires platform authenticator (covered by unit tests + manual validation)
+- Captcha: no credentials configured
+- OIDC/Discord: external providers required
+
+### User Seed
+
+| Email | Password | Phone |
+|-------|----------|-------|
+| `e2e-user@example.com` | `E2E-Pass-1234!` | — |
+| `alice@example.com` | `Password123!` | `+5511999990001` |
+| `bob@example.com` | `Password123!` | `+5511999990002` |
+| `carol@example.com` | `Password123!` | `+5511999990003` |
+| `dave@example.com` | `Password123!` | — |
+| `eve@example.com` | `Password123!` | `+5511999990004` |
+
+### Test Tenancy
+
+| Host | Tenant |
+|------|--------|
+| `localhost:{E2E_PORT}` | global |
+| `acme.localhost:{E2E_PORT}` | `acme` (active) |
+| `suspended.localhost:{E2E_PORT}` | `suspended` → 403 |
+| `ghost.localhost:{E2E_PORT}` | unknown → 404 |
+
+---
+
+## Performance Benchmarks
+
+> Powered by [mitata](https://github.com/evanwashere/mitata). Hardware: AMD Ryzen 5 5600, Bun 1.3.14, Windows 11.
+
+### Commands
+
+```bash
+bun run benchmarks              # all
+bun run benchmarks/auth.ts      # auth ops
+bun run benchmarks/jwt.ts       # JWT
+bun run benchmarks/rate-limit.ts
+bun run benchmarks/mfa.ts       # MFA/TOTP
+```
+
+### Auth Operations
+
+| Operation | Avg Time | P75 | P99 Range | Memory |
+|-----------|----------|-----|-----------|--------|
+| Login (valid credentials) | 98.14 µs | 94.20 µs | 56.80 µs–1.86 ms | 2.85 KB |
+| Login (invalid password) | 15.64 µs | 17.20 µs | 7.20 µs–1.20 ms | 2.18 KB |
+| Logout | 5.89 µs | 6.30 µs | 2.70 µs–1.15 ms | 547 B |
+
+### JWT Operations
+
+| Operation | Avg Time | P75 | P99 Range | Memory |
+|-----------|----------|-----|-----------|--------|
+| JWT Sign (HS256) | 42.45 µs | 41.90 µs | 23.00 µs–1.67 ms | 954 B |
+| JWT Verify (valid) | 96.62 µs | 93.40 µs | 54.10 µs–1.96 ms | 1.96 KB |
+| JWT Verify (expired) | 104.28 µs | 100.40 µs | 60.10 µs–2.29 ms | 1.33 KB |
+| JWT Parse (no verify) | 37.87 µs | 38.20 µs | 20.90 µs–4.42 ms | 700 B |
+
+### Rate Limiting
+
+| Operation | Avg Time | P75 | P99 Range | Memory |
+|-----------|----------|-----|-----------|--------|
+| Check (allowed) | 11.03 µs | 12.10 µs | 5.30 µs–1.40 ms | 578 B |
+| Check (different IPs) | 111.93 µs | 127.50 µs | 62.60 µs–2.04 ms | 1.75 KB |
+
+### MFA (TOTP)
+
+| Operation | Avg Time | P75 | P99 Range | Memory |
+|-----------|----------|-----|-----------|--------|
+| Setup (generate secret) | 13.68 ms | 14.42 ms | 11.35–17.24 ms | 37.42 KB |
+| Verify (valid TOTP) | 27.40 ms | 28.66 ms | 24.58–30.37 ms | 24.38 KB |
+| Verify (invalid TOTP) | 4.94 µs | 5.17 µs | 4.27–6.23 µs | 462 B |
+| Backup codes | 83.13 µs | 91.90 µs | 44.00 µs–2.74 ms | 4.09 KB |
+
+### Summary
+
+- **< 100 µs:** MFA reject (4.94 µs), logout (5.89 µs), rate limit (11.03 µs), invalid login (15.64 µs), JWT sign (42.45 µs)
+- **100 µs–1 ms:** valid login (98.14 µs), JWT verify (96.62–104.28 µs)
+- **> 1 ms:** MFA setup (13.68 ms), valid MFA verify (27.40 ms)
 
 ---
 

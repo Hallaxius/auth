@@ -269,6 +269,94 @@ export const DiscordAuthConfigSchema = z.object({
 	meRoute: z.string().optional(),
 });
 
+export const TenancyConfigSchema = z.object({
+	enabled: z.boolean().optional(),
+
+	resolver: z.function().optional(),
+
+	required: z.boolean().optional(),
+
+	defaultTenantId: z.string().min(1).optional(),
+
+	baseDomains: z.array(z.string().min(1)).optional(),
+
+	storage: z
+		.object({
+			tenant: z
+				.object({
+					getById: z.function(),
+					getByDomain: z.function(),
+					set: z.function(),
+					delete: z.function(),
+					ping: z.function().optional(),
+					dispose: z.function().optional(),
+				})
+				.optional(),
+			tenantMembership: z
+				.object({
+					getMemberships: z.function(),
+					getMembers: z.function(),
+					setMembership: z.function(),
+					deleteMembership: z.function(),
+				})
+				.optional(),
+		})
+		.optional(),
+});
+
+export function validateTenancyConfig(
+	config: unknown,
+): z.infer<typeof TenancyConfigSchema> {
+	const result = TenancyConfigSchema.safeParse(config);
+	if (!result.success) {
+		throw new Error(
+			`Invalid TenancyConfig: ${result.error.issues.map((i) => i.message).join(", ")}`,
+		);
+	}
+	return result.data;
+}
+
+export const MagicLinkConfigSchema = z.object({
+	storage: z
+		.object({
+			findBySelector: z.function(),
+			create: z.function(),
+			consume: z.function(),
+			deleteByRecipient: z.function(),
+			ping: z.function().optional(),
+			dispose: z.function().optional(),
+		})
+		.optional(),
+	notifier: z
+		.object({
+			sendEmail: z.function(),
+		})
+		.optional(),
+	mode: z.enum(["link", "code"]).optional(),
+	ttlMinutes: z.number().int().positive().max(15).optional(),
+	codeLength: z.number().int().min(6).max(8).optional(),
+	userLookup: z.function().optional(),
+	linkPath: z.string().min(1).optional(),
+	tenantIdFromRequest: z.function().optional(),
+	requestLimit: z.unknown().optional(),
+	recipientLimit: z.unknown().optional(),
+	verifyLimit: z.unknown().optional(),
+	onVerified: z.function().optional(),
+	trustProxy: z.boolean().optional(),
+});
+
+export function validateMagicLinkConfig(
+	config: unknown,
+): z.infer<typeof MagicLinkConfigSchema> {
+	const result = MagicLinkConfigSchema.safeParse(config);
+	if (!result.success) {
+		throw new Error(
+			`Invalid MagicLinkConfig: ${result.error.issues.map((i) => i.message).join(", ")}`,
+		);
+	}
+	return result.data;
+}
+
 export const CredentialsClientConfigSchema = z.object({
 	emailRequired: z.boolean().optional(),
 
@@ -307,6 +395,18 @@ export const CredentialsClientConfigSchema = z.object({
 		.optional(),
 
 	captcha: CaptchaConfigSchema.optional(),
+
+	dummyVerifyPassword: z
+		.function()
+		.input([z.string()])
+		.output(z.promise(z.boolean()))
+		.optional(),
+
+	loginRateLimitStorage: z.unknown().optional(),
+
+	genericRegistrationErrors: z.boolean().optional(),
+
+	tenancy: TenancyConfigSchema.optional(),
 });
 
 export const RateLimitConfigSchema = z.object({
@@ -355,6 +455,157 @@ export function validateRateLimitConfig(
 	if (!result.success) {
 		throw new Error(
 			`Invalid RateLimitConfig: ${result.error.issues.map((i) => i.message).join(", ")}`,
+		);
+	}
+	return result.data;
+}
+
+export const SmsConfigSchema = z.object({
+	notifier: z
+		.object({
+			send: z.function(),
+		})
+		.optional(),
+	smsPasswordless: z.boolean().optional(),
+	codeLength: z.number().int().min(4).max(10).optional(),
+	ttlSeconds: z.number().int().positive().max(600).optional(),
+	maxAttempts: z.number().int().positive().optional(),
+	lockoutSeconds: z.number().int().positive().optional(),
+	cooldownMs: z.number().int().positive().optional(),
+	dailyPerPhoneLimit: z.number().int().positive().optional(),
+	allowedCountryPrefixes: z.array(z.string().min(2)).optional(),
+	storage: z
+		.object({
+			set: z.function(),
+			getAndConsume: z.function(),
+			delete: z.function(),
+			ping: z.function().optional(),
+			dispose: z.function().optional(),
+		})
+		.optional(),
+	phoneLookup: z.function().optional(),
+	createSessionWithoutPassword: z.function().optional(),
+	tenantIdFromRequest: z.function().optional(),
+	bruteForceStorage: z.unknown().optional(),
+	getBinding: z.function().optional(),
+	onEnrolled: z.function().optional(),
+	verifyPassword: z.function().optional(),
+	mfaStorage: z.unknown().optional(),
+	sessionCookieName: z.string().min(1).optional(),
+	secret: z.string().min(1).optional(),
+	trustProxy: z.boolean().optional(),
+	dispose: z.function().optional(),
+});
+
+export function validateSmsConfig(
+	config: unknown,
+): z.infer<typeof SmsConfigSchema> {
+	const result = SmsConfigSchema.safeParse(config);
+	if (!result.success) {
+		throw new Error(
+			`Invalid SmsConfig: ${result.error.issues.map((i) => i.message).join(", ")}`,
+		);
+	}
+	return result.data;
+}
+
+export const WebAuthnConfigSchema = z.object({
+	rp: z.object({
+		id: z.string().min(1),
+		name: z.string().min(1),
+		origins: z.array(z.string().url()),
+	}),
+	requireUserVerification: z.boolean().optional(),
+	attestationType: z.enum(["none", "direct", "enterprise"]).optional(),
+	timeoutMs: z.number().int().positive().optional(),
+	storage: z
+		.object({
+			credentials: z
+				.object({
+					findById: z.function(),
+					listByUser: z.function(),
+					create: z.function(),
+					updateSignCount: z.function(),
+					delete: z.function(),
+					deleteByUser: z.function(),
+					ping: z.function().optional(),
+					dispose: z.function().optional(),
+				})
+				.optional(),
+			challenges: z
+				.object({
+					set: z.function(),
+					getAndConsume: z.function(),
+					ping: z.function().optional(),
+					dispose: z.function().optional(),
+				})
+				.optional(),
+		})
+		.optional(),
+	getUser: z.function().optional(),
+	createSessionWithoutPassword: z.function().optional(),
+	tenantIdFromRequest: z.function().optional(),
+	sessionCookieName: z.string().min(1).optional(),
+	secret: z.string().min(1).optional(),
+	trustProxy: z.boolean().optional(),
+	dispose: z.function().optional(),
+});
+
+export function validateWebAuthnConfig(
+	config: unknown,
+): z.infer<typeof WebAuthnConfigSchema> {
+	const result = WebAuthnConfigSchema.safeParse(config);
+	if (!result.success) {
+		throw new Error(
+			`Invalid WebAuthnConfig: ${result.error.issues.map((i) => i.message).join(", ")}`,
+		);
+	}
+	return result.data;
+}
+
+export const OidcConfigSchema = z.object({
+	discoveryUrl: z.string().url().optional(),
+	serverMetadata: z.record(z.string(), z.unknown()).optional(),
+	clientId: z.string().min(1),
+	clientSecret: z.string().optional(),
+	redirectUris: z.array(z.string().url()).min(1),
+	scope: z.string().min(1).optional(),
+	usePkce: z.boolean().optional(),
+	storage: z
+		.object({
+			state: z
+				.object({
+					set: z.function(),
+					getAndConsume: z.function(),
+					ping: z.function().optional(),
+					dispose: z.function().optional(),
+				})
+				.optional(),
+			jwks: z.unknown().optional(),
+		})
+		.optional(),
+	createSessionWithoutPassword: z.function().optional(),
+	mapUser: z.function().optional(),
+	tenantIdFromRequest: z.function().optional(),
+	logout: z
+		.object({
+			tokenRevocationStorage: z.unknown().optional(),
+			jtiTtlSeconds: z.number().int().positive().optional(),
+		})
+		.optional(),
+	stateTtlSeconds: z.number().int().positive().optional(),
+	allowInsecureRequests: z.boolean().optional(),
+	trustProxy: z.boolean().optional(),
+	dispose: z.function().optional(),
+});
+
+export function validateOidcConfig(
+	config: unknown,
+): z.infer<typeof OidcConfigSchema> {
+	const result = OidcConfigSchema.safeParse(config);
+	if (!result.success) {
+		throw new Error(
+			`Invalid OidcConfig: ${result.error.issues.map((i) => i.message).join(", ")}`,
 		);
 	}
 	return result.data;

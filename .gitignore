@@ -56,6 +56,10 @@ tests/**/*.temp
 # Build artifacts
 build/
 
+# Playwright
+tests/e2e/test-results/
+tests/e2e/playwright-report/
+
 # Type duplication check
 type-check-results.json
 

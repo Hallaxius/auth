@@ -20,6 +20,9 @@ export interface SessionData {
 	locale: string;
 	roles?: string[];
 	mfaEnabled?: boolean;
+	tenantId?: string;
+	/** Present when the session token carries a `userId` claim (credentials path). */
+	userId?: string;
 }
 export type DiscordScope =
 	| "identify"
@@ -401,6 +404,15 @@ export interface EdgeRoleConfig {
 	cookieName?: string;
 	loginUrl?: string;
 	roles: Record<string, string[]>;
+	/**
+	 * Per-tenant mode. When both `tenantIdFromRequest` and
+	 * `tenantMembership` are provided, `middleware.role` resolves the tenant
+	 * from the request (subdomain, D3 — never from body/query/header) and
+	 * reads the user's roles for **that tenant** only, instead of the legacy
+	 * session `roles` claim.
+	 */
+	tenantIdFromRequest?: (request: Request) => Promise<string | null>;
+	tenantMembership?: TenantMembershipStorage;
 }
 export interface MiddlewareAuthConfig {
 	cookies: Array<{ name: string; secret: string }>;
@@ -460,6 +472,8 @@ export interface CredentialsClientConfig {
 	sessionRevocationStorage?: TokenRevocationStorage;
 	captcha?: CaptchaConfig;
 	trustProxy?: boolean;
+	dummyVerifyPassword?: (password: string) => Promise<boolean>;
+	genericRegistrationErrors?: boolean;
 }
 export interface InternalCredentialsConfig {
 	emailRequired: boolean;
@@ -477,11 +491,19 @@ export interface InternalCredentialsConfig {
 	sessionRevocationStorage?: TokenRevocationStorage;
 	captcha?: ResolvedCaptchaConfig;
 	trustProxy: boolean;
+	dummyVerifyPassword?: (password: string) => Promise<boolean>;
+	genericRegistrationErrors: boolean;
 }
 export interface AuthUserStorage {
 	findByUsername(username: string): Promise<AuthUser | null>;
 	findByEmail(email: string): Promise<AuthUser | null>;
 	findById(id: string): Promise<AuthUser | null>;
+	/**
+	 * Create a user. The `password` value MUST already be a KDF hash
+	 * (Argon2id preferred; bcrypt/scrypt acceptable) with a per-user salt —
+	 * the package never hashes passwords (ADR-002). Hash in your storage
+	 * layer before persisting.
+	 */
 	create(
 		data: Omit<AuthUser, "id" | "createdAt" | "updatedAt"> & {
 			password: string;
@@ -489,6 +511,11 @@ export interface AuthUserStorage {
 	): Promise<AuthUser>;
 	update(userId: string, data: Partial<AuthUser>): Promise<AuthUser>;
 	delete(userId: string): Promise<void>;
+	/**
+	 * Verify a raw password against the hash stored by `create`.
+	 * MUST compare using the consumer's KDF (e.g. Argon2id `compare`) —
+	 * the package never reads the stored `password` field for verification.
+	 */
 	verifyPassword(userId: string, password: string): Promise<boolean>;
 	dispose?(): void;
 }
@@ -524,6 +551,97 @@ export interface CredentialsConfig {
 	validatePassword?: boolean | PasswordValidationConfig;
 	sessionRevocationStorage?: TokenRevocationStorage;
 	meRateLimitStorage?: RateLimitStorage;
+	loginRateLimitStorage?: RateLimitStorage;
+	genericRegistrationErrors?: boolean;
+	dummyVerifyPassword?: (password: string) => Promise<boolean>;
+	/** Multi-tenancy. Inert until `tenancy.enabled === true`. */
+	tenancy?: TenancyConfig;
+}
+export interface CreateSessionWithoutPasswordOptions {
+	userId: string;
+	/** Required when `tenancy.enabled`. MUST come from subdomain resolution (D3) — never parsed from body/query/header. */
+	tenantId?: string;
+	/** Roles for that tenant. Defaults to the user's global `roles`. */
+	roles?: string[];
+	/** Request context, used for the passwordless brute-force key. */
+	ip: string;
+	userAgent?: string;
+}
+
+export interface TenantRecord {
+	id: string;
+	domain: string;
+	status: "active" | "suspended";
+	createdAt: number;
+}
+
+/**
+ * Multi-tenancy D2: shared schema + consumer-owned RLS (Drizzle `pgPolicy` /
+ * Prisma `current_setting`) — the package only scopes keys/claims on `tenantId`.
+ * Impls map 1:1 to `ITenantStore` (src/storage/interfaces.ts).
+ */
+export interface TenantRepository {
+	getById(tenantId: string): Promise<TenantRecord | null>;
+	getByDomain(domain: string): Promise<TenantRecord | null>;
+	set(record: TenantRecord): Promise<void>;
+	delete(tenantId: string): Promise<void>;
+	ping?(): Promise<boolean>;
+	dispose?(): void;
+}
+
+/**
+ * Global user (D4) + per-tenant membership/roles (Notion/Linear model).
+ * Impls map 1:1 to `ITenantMembershipStore` (src/storage/interfaces.ts).
+ */
+export interface TenantMembershipStorage {
+	getMemberships(
+		userId: string,
+	): Promise<Array<{ tenantId: string; roles: string[] }>>;
+	getMembers(
+		tenantId: string,
+	): Promise<Array<{ userId: string; roles: string[] }>>;
+	setMembership(
+		tenantId: string,
+		userId: string,
+		roles: string[],
+	): Promise<void>;
+	deleteMembership(tenantId: string, userId: string): Promise<void>;
+}
+
+export interface TenancyConfig {
+	/** Additivity gate — default `false`. All tenancy behavior is inert until `true`. */
+	enabled?: boolean;
+	/**
+	 * Resolves `tenantId` from the request (D3 — subdomain). Defaults to the
+	 * built-in `subdomainResolver`. A divergent `x-tenant-id` header → error.
+	 * Must NEVER be derived from body/query/header values.
+	 */
+	resolver?: (request: Request) => Promise<string | null>;
+	/** When `true`, unresolved tenant → 403 `TENANT_REQUIRED`. */
+	required?: boolean;
+	/** Used when the resolver returns `null` and `required` is `false`. */
+	defaultTenantId?: string;
+	/** For the built-in subdomain resolver: hosts like `acme.example.com` → `acme` (tenant = first label). */
+	baseDomains?: string[];
+	storage?: {
+		tenant: TenantRepository;
+		tenantMembership: TenantMembershipStorage;
+	};
+}
+
+export interface TenancyResult {
+	/** Resolve + enforce: returns the tenant record or `null` (not required). Throws on suspended/divergent. */
+	resolveTenant(request: Request): Promise<TenantRecord | null>;
+	/** `resolveTenant` → `record.id`; falls back to `defaultTenantId`; throws when `required` and unresolved. */
+	resolveTenantId(request: Request): Promise<string | null>;
+	/** `resolveTenantId` but throws 403 `TENANT_REQUIRED` when there is no tenant. */
+	requireTenant(request: Request): Promise<string>;
+	getTenant(tenantId: string): Promise<TenantRecord | null>;
+	/** Roles of `userId` within `tenantId` (empty when no membership). */
+	getRoles(tenantId: string, userId: string): Promise<string[]>;
+	/** True when the user has any member record for the tenant. */
+	isMember(tenantId: string, userId: string): Promise<boolean>;
+	dispose?(): void;
 }
 export interface CredentialsResult {
 	handleRegister: (request: Request) => Promise<Response>;
@@ -539,8 +657,415 @@ export interface CredentialsResult {
 	>(
 		handler: T,
 	) => (request: Request) => Promise<Response>;
+	/**
+	 * Internal-only session creation for the package's passwordless
+	 * handlers. NEVER calls `verifyPassword`.
+	 */
+	createSessionWithoutPassword: (
+		options: CreateSessionWithoutPasswordOptions,
+	) => Promise<{ sessionToken: string; idToken: string }>;
 	dispose?: () => void;
 }
+/**
+ * Magic-link / email OTP pending token (selector + token hash). The raw
+ * link/code is never stored (ADR-005): only `tokenHash = SHA-256(validator)`.
+ * Precedent: password-reset selector.validator mechanic.
+ */
+export interface PendingMagicLink {
+	tenantId: string;
+	selector: string;
+	tokenHash: string;
+	recipient: string;
+	userId: string | null;
+	purpose: "login" | "verify-email";
+	expiresAt: number;
+	createdAt: number;
+}
+
+/**
+ * Pending-token storage. Impls map 1:1 to `IMagicLinkTokenStore`
+ * (src/storage/interfaces.ts) and `StorageAdapters.magicLink`.
+ */
+export interface MagicLinkTokenStorage {
+	findBySelector(
+		tenantId: string,
+		selector: string,
+	): Promise<PendingMagicLink | null>;
+	create(token: PendingMagicLink): Promise<void>;
+	/** Atomic single-use — returns the record when consumed, `null` when already used/absent. */
+	consume(tenantId: string, selector: string): Promise<PendingMagicLink | null>;
+	/** Resend invalidation — removes every pending token of the recipient within the tenant. */
+	deleteByRecipient(tenantId: string, recipient: string): Promise<void>;
+	ping?(): Promise<boolean>;
+	dispose?(): void;
+}
+
+/**
+ * D6: the consumer brings the provider (Resend, Nodemailer, SES…).
+ * Blueprint: `ResetNotifier`. Called in-handler.
+ */
+export interface MagicLinkNotifier {
+	sendEmail(input: {
+		tenantId: string;
+		to: string;
+		link?: string;
+		code?: string;
+		ttlMinutes: number;
+	}): Promise<void>;
+}
+
+export interface MagicLinkLookupResult {
+	userId: string | null;
+}
+
+export interface MagicLinkConfig {
+	/** Required — pending-token storage (both layers). */
+	storage: MagicLinkTokenStorage;
+	/** Required (D6) — the consumer's email provider; called in-handler. */
+	notifier: MagicLinkNotifier;
+	/** `"link"` (default; `?t=<selector>.<validator>`) or `"code"` (digits, constant-time). */
+	mode?: "link" | "code";
+	/** TTL, clamped to 5–15 min (default 10). */
+	ttlMinutes?: number;
+	/** Code length for `mode: "code"` (6–8, default 6). */
+	codeLength?: number;
+	/** Resolves the recipient → user. Unknown recipients get an identical response + dummy work. */
+	userLookup?: (recipient: string) => Promise<MagicLinkLookupResult | null>;
+	/** Base path for mode `"link"` (default `/auth/magic-link`); final link = `${this}?t=<token>`. */
+	linkPath?: string;
+	/** Tenant resolution (D3) — default `null` → `"global"` tenant (additive, non-tenant consumers). */
+	tenantIdFromRequest?: (request: Request) => Promise<string | null>;
+	/** Per-IP request limits (BruteForceProtection). No storage → in-memory fallback + warning. */
+	requestLimit?: {
+		maxAttempts?: number;
+		windowMs?: number;
+		blockDurationMs?: number;
+		storage?: BruteForceStorage;
+	};
+	/** Per-recipient cooldown (default 30 s windowed 3/10 min). */
+	recipientLimit?: {
+		maxAttempts?: number;
+		windowMs?: number;
+		blockDurationMs?: number;
+		storage?: BruteForceStorage;
+	};
+	/** Per-IP verify-attempt limits (default 10/15 min). */
+	verifyLimit?: {
+		maxAttempts?: number;
+		windowMs?: number;
+		blockDurationMs?: number;
+		storage?: BruteForceStorage;
+	};
+	/** Hook after a successful single-use verification — returns the consumer response (e.g. mints the session). */
+	onVerified?: (result: {
+		userId: string | null;
+		recipient: string;
+		tenantId: string;
+		purpose: "login" | "verify-email";
+	}) => Promise<Response> | Response;
+	trustProxy?: boolean;
+	dispose?(): void;
+}
+
+/**
+ * SMS OTP / phone MFA single-use code record (ADR-005: only the hash is
+ * stored). `phoneHash = sha256Hex(E.164 phone)` — the raw number never reaches
+ * storage.
+ */
+export interface OtpCode {
+	phoneHash: string;
+	tenantId: string | null;
+	userId: string | null;
+	purpose: "sms-login" | "mfa" | "recovery";
+	codeHash: string;
+	attempts: number;
+	expiresAt: number;
+	createdAt: number;
+}
+
+/**
+ * Single-use OTP storage. `getAndConsume` is atomic (last consumer
+ * wins) so a code can never be replayed. `attempts` is re-seeded by the
+ * caller when the presented code does not match.
+ */
+export interface OtpStorage {
+	set(
+		phoneHash: string,
+		purpose: OtpCode["purpose"],
+		code: OtpCode,
+	): Promise<void>;
+	/** Atomic single-use — returns the record and deletes it. */
+	getAndConsume(
+		phoneHash: string,
+		purpose: OtpCode["purpose"],
+	): Promise<OtpCode | null>;
+	delete(phoneHash: string, purpose: OtpCode["purpose"]): Promise<void>;
+	ping?(): Promise<boolean>;
+	dispose?(): void;
+}
+
+/**
+ * D6: the consumer brings the provider (Twilio, Vonage, SNS…).
+ * Called in-handler; never called on the dummy (unknown-number) path.
+ */
+export interface SmsNotifier {
+	send(input: {
+		to: string;
+		code: string;
+		ttlMinutes: number;
+		purpose: OtpCode["purpose"];
+		tenantId?: string;
+	}): Promise<void>;
+}
+
+export interface SmsConfig {
+	/** Required (D6) — the consumer's SMS provider; called in-handler. */
+	notifier?: SmsNotifier;
+	/** Enables ante-auth phone passwordless (request+verify mint a session via `createSessionWithoutPassword`). Default `false`. */
+	smsPasswordless?: boolean;
+	/** Code length 4–10 (default 6). */
+	codeLength?: number;
+	/** TTL, clamped to ≤10 min (default 600 s). */
+	ttlSeconds?: number;
+	/** Wrong-code attempts before a phone+IP lockout (default 5). */
+	maxAttempts?: number;
+	/** Lockout duration after `maxAttempts` failures (default 900 s). */
+	lockoutSeconds?: number;
+	/** Resend cooldown (default 30 s). */
+	cooldownMs?: number;
+	/** Daily cost control per phone (default 5). */
+	dailyPerPhoneLimit?: number;
+	/** Only serve these country prefixes (e.g. `["+55", "+1"]`); others get the dummy path. */
+	allowedCountryPrefixes?: string[];
+	/** Single-use code storage (in-memory fallback + warning when absent). */
+	storage?: OtpStorage;
+	/** Phone hash → user for ante-auth flows; `null` → dummy path (anti-enumeration). */
+	phoneLookup?: (phoneHash: string) => Promise<{ userId: string } | null>;
+	/** Mints the session after a successful passwordless verify (ADR-002 — never `verifyPassword`). */
+	createSessionWithoutPassword?: (
+		options: CreateSessionWithoutPasswordOptions,
+	) => Promise<{ sessionToken: string; idToken: string }>;
+	/** Tenant resolution (D3) — default `null` → `"global"` (additive, non-tenant consumers). */
+	tenantIdFromRequest?: (request: Request) => Promise<string | null>;
+	/** Shared anti-bombing / verify-failure store (3-layer per-IP/per-phone/per-tenant + lockout). */
+	bruteForceStorage?: BruteForceStorage;
+	/** Registered phone binding (post-auth MFA) — `null` = not bound. */
+	getBinding?: (userId: string) => Promise<{ phoneHash: string } | null>;
+	/** Persist the binding after step-up verification succeeds (consumer keeps phone PII). */
+	onEnrolled?: (input: {
+		userId: string;
+		phoneHash: string;
+		tenantId: string | null;
+	}) => Promise<void>;
+	/** Re-authentication for re-binding a different phone (consumer-provided check, ADR-002 — the package never verifies plaintext passwords). */
+	verifyPassword?: (userId: string, password: string) => Promise<boolean>;
+	/** MFA pending-token storage (reused from F1.3 for the post-auth step-up flow). */
+	mfaStorage?: MfaStorage;
+	/** Session cookie name for authenticated ops (default `"session"`). */
+	sessionCookieName?: string;
+	/** Required for authenticated ops (enroll / step-up / resend-recovery) — the same JWT secret used by `credentials()`/`discord()`. */
+	secret?: string;
+	trustProxy?: boolean;
+	dispose?(): void;
+}
+
+/**
+ * FIDO2/WebAuthn passkey credential. Public-key-only records don't exist
+ * yet in the graph — this is the first one; documented in the README ADR section
+ * (ADR-007). `publicKey` is stored base64url (never raw key material).
+ */
+export interface WebAuthnCredential {
+	tenantId: string;
+	userId: string;
+	credentialId: string;
+	publicKey: string;
+	signCount: number;
+	transports?: string[];
+	aaguid: string;
+	createdAt: number;
+	lastUsedAt: number;
+}
+
+/**
+ * Credential storage, tenant-scoped (D3). `updateSignCount` feeds the
+ * anti-replay counter check on every authentication.
+ */
+export interface WebAuthnCredentialStorage {
+	findById(
+		tenantId: string,
+		credentialId: string,
+	): Promise<WebAuthnCredential | null>;
+	listByUser(tenantId: string, userId: string): Promise<WebAuthnCredential[]>;
+	create(credential: WebAuthnCredential): Promise<void>;
+	updateSignCount(
+		tenantId: string,
+		credentialId: string,
+		signCount: number,
+	): Promise<void>;
+	delete(tenantId: string, credentialId: string): Promise<void>;
+	deleteByUser(tenantId: string, userId: string): Promise<void>;
+	ping?(): Promise<boolean>;
+	dispose?(): void;
+}
+
+export interface WebAuthnChallenge {
+	userId: string | null;
+	type: "registration" | "authentication";
+	challenge: string;
+	rpId: string;
+	allowCredentials?: string[];
+	expiresAt: number;
+	createdAt: number;
+}
+
+/**
+ * Challenge storage. Opaque random `challengeId` returned to the client;
+ * `getAndConsume` is atomic single-use (replay → invalid challenge).
+ */
+export interface WebAuthnChallengeStorage {
+	set(
+		tenantId: string,
+		challengeId: string,
+		challenge: WebAuthnChallenge,
+	): Promise<void>;
+	getAndConsume(
+		tenantId: string,
+		challengeId: string,
+	): Promise<WebAuthnChallenge | null>;
+	ping?(): Promise<boolean>;
+	dispose?(): void;
+}
+
+export interface WebAuthnConfig {
+	/** RP identifier — the site's domain (e.g. `login.example.com`), plus its display name. */
+	rp: {
+		id: string;
+		name: string;
+		/** Exact-match origins the verification accepts (e.g. `["https://login.example.com"]`). */
+		origins: string[];
+	};
+	/** Enforce user verification (PIN/biometric) — default `true`. */
+	requireUserVerification?: boolean;
+	/** Default `"none"` (privacy-preserving; no attestation statements fetched). */
+	attestationType?: "none" | "direct" | "enterprise";
+	/** Browser operation timeout (default 60000 ms). */
+	timeoutMs?: number;
+	/** Required — credential + challenge stores (D6 pattern). */
+	storage?: {
+		credentials: WebAuthnCredentialStorage;
+		challenges: WebAuthnChallengeStorage;
+	};
+	/** Display info for registration options — absent → `username = userId`. */
+	getUser?: (
+		userId: string,
+	) => Promise<{ username: string; displayName?: string } | null>;
+	/** Mints the session after a successful authentication (ADR-002 — never `verifyPassword`). */
+	createSessionWithoutPassword?: (
+		options: CreateSessionWithoutPasswordOptions,
+	) => Promise<{ sessionToken: string; idToken: string }>;
+	/** Tenant resolution (D3) — default `null` → `"global"`. */
+	tenantIdFromRequest?: (request: Request) => Promise<string | null>;
+	/** Session cookie name for authenticated ops (default `"session"`). */
+	sessionCookieName?: string;
+	/** Required for authenticated ops (register / remove) — the same JWT secret used by `credentials()`. */
+	secret?: string;
+	trustProxy?: boolean;
+	dispose?(): void;
+}
+
+export interface OidcStateRecord {
+	nonce: string;
+	codeVerifier: string;
+	redirectUri: string;
+	tenantId: string | null;
+	userId: string | null;
+	expiresAt: number;
+	createdAt: number;
+}
+
+/**
+ * OIDC single-use state/PKCE record storage. `getAndConsume` is atomic
+ * (replay → invalid state, CSRF-safe).
+ */
+export interface OidcStateStorage {
+	set(stateId: string, record: OidcStateRecord): Promise<void>;
+	/** Atomic single-use — returns the record when consumed, `null` on replay/absence. */
+	getAndConsume(stateId: string): Promise<OidcStateRecord | null>;
+	ping?(): Promise<boolean>;
+	dispose?(): void;
+}
+
+/** F4 — optional cross-instance JWKS cache (seeds openid-client's in-process cache). */
+export interface OidcJwksCache {
+	get(issuer: string): Promise<{ keys: unknown; expiresAt: number } | null>;
+	set(issuer: string, keys: unknown, ttlSeconds: number): Promise<void>;
+	ping?(): Promise<boolean>;
+	dispose?(): void;
+}
+
+export interface OidcUserClaims {
+	sub?: string;
+	email?: string;
+	email_verified?: boolean;
+	name?: string;
+	preferred_username?: string;
+	phone_number?: string;
+	[key: string]: unknown;
+}
+
+export interface OidcMappedUser {
+	userId: string;
+	email?: string;
+	username?: string;
+}
+
+export interface OidcConfig {
+	/** OIDC discovery URL — `${issuer}/.well-known/openid-configuration`. */
+	discoveryUrl?: string;
+	/** Static server metadata (test doubles / private OPs) — skips the discovery fetch. */
+	serverMetadata?: Record<string, unknown>;
+	clientId: string;
+	/** Omit for public clients (PKCE-only, RFC 9700). */
+	clientSecret?: string;
+	/** Exact-match redirect URI whitelist (RFC 9700); the used one is frozen in the state record. */
+	redirectUris: string[];
+	/** Default scopes — must include `openid` (default `"openid profile email"`). */
+	scope?: string;
+	/** PKCE S256, always on (default `true`). */
+	usePkce?: boolean;
+	/** Single-use (state, PKCE) records; optional cross-instance JWKS cache. */
+	storage?: {
+		state: OidcStateStorage;
+		jwks?: OidcJwksCache;
+	};
+	/** Mints the session after callback validation (ADR-002 — never `verifyPassword`). */
+	createSessionWithoutPassword?: (
+		options: CreateSessionWithoutPasswordOptions,
+	) => Promise<{ sessionToken: string; idToken: string }>;
+	/** Claims → local user adapter. Absent → `userId = claims.sub`. `null` → 401. */
+	mapUser?: (claims: OidcUserClaims) => OidcMappedUser | null;
+	/** Tenant resolution (D3) — default `null` → `"global"`. */
+	tenantIdFromRequest?: (request: Request) => Promise<string | null>;
+	/** Back-channel logout hardening (jti replay + token revocation). */
+	logout?: {
+		tokenRevocationStorage?: TokenRevocationStorage;
+		jtiTtlSeconds?: number;
+	};
+	/** State TTL (default 600 s). */
+	stateTtlSeconds?: number;
+	/** Allow http:// endpoints (local dev / test doubles only — never in production). */
+	allowInsecureRequests?: boolean;
+	trustProxy?: boolean;
+	dispose?(): void;
+}
+
+export interface MagicLinkVerifyResult {
+	userId: string | null;
+	recipient: string;
+	tenantId: string;
+	purpose: "login" | "verify-email";
+}
+
 export interface ResetTokenStorage {
 	create(data: {
 		selector: string;

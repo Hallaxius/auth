@@ -6,6 +6,9 @@ import {
 	credentials,
 	LoginAnomalyError,
 	MemoryTokenRevocationStorage,
+	subdomainResolver,
+	tenancy,
+	magicLink,
 	type ComplianceHandlersConfig,
 	type ConsentStorage,
 	type DataExportStorage,
@@ -13,24 +16,36 @@ import {
 	type IAuthUserStore,
 	type IBruteForceStore,
 	type IComplianceStore,
+	type IMagicLinkTokenStore,
 	type IMfaStore,
+	type IOidcJwksCacheStore,
+	type IOidcStateStore,
+	type IOtpStore,
 	type IRateLimitStore,
 	type IResetTokenStore,
 	type IStateStore,
+	type ITenantMembershipStore,
+	type ITenantStore,
 	type ITokenRevocationStore,
 	type IUserStore,
+	type IWebAuthnChallengeStore,
+	type IWebAuthnCredentialStore,
 	type LoginHistoryStore,
 	type LoginRecord,
 	type RetentionStorage,
 	type SessionStore,
 	type StorageAdapters,
 	type StorageFactoryOptions,
+	type TenancyConfig,
+	type TenantMembershipStorage,
+	type TenantRepository,
 	type GeolocationProvider,
 	type TorExitProvider,
 } from "../../src/index";
+import { validateTenancyConfig } from "../../src/index";
 
 describe("public surface (entry point only)", () => {
-	describe("F0.1 anomaly detection exports", () => {
+	describe("anomaly detection exports", () => {
 		test("AnomalyDetector is constructible and analyze returns events", async () => {
 			const history: LoginRecord[] = [];
 			const storage: LoginHistoryStore = {
@@ -104,7 +119,7 @@ describe("public surface (entry point only)", () => {
 		});
 	});
 
-	describe("F0.2 compliance handler exports", () => {
+	describe("compliance handler exports", () => {
 		test("createComplianceHandlers exposes the full handler set", () => {
 			const memory = createMemoryComplianceStorage();
 			const handlers = createComplianceHandlers({
@@ -218,7 +233,7 @@ describe("public surface (entry point only)", () => {
 		});
 	});
 
-	describe("F0.3 storage/type exports", () => {
+	describe("storage/type exports", () => {
 		test("storage interfaces are exported as types", () => {
 			const adapters: StorageAdapters = {
 				bruteForce: {} as IBruteForceStore,
@@ -231,8 +246,35 @@ describe("public surface (entry point only)", () => {
 				resetToken: {} as IResetTokenStore,
 				compliance: {} as IComplianceStore,
 				session: {} as SessionStore,
+				tenant: {} as ITenantStore,
+				tenantMembership: {} as ITenantMembershipStore,
+				magicLink: {} as IMagicLinkTokenStore,
+				otp: {} as IOtpStore,
+				webAuthn: {
+					credentials: {} as IWebAuthnCredentialStore,
+					challenges: {} as IWebAuthnChallengeStore,
+				},
+				oidc: {
+					state: {} as IOidcStateStore,
+					jwks: {} as IOidcJwksCacheStore,
+				},
 			};
 			expect(adapters).toBeDefined();
+		});
+
+		test("tenancy exports are present", () => {
+			const config: TenancyConfig = {
+				enabled: true,
+				baseDomains: ["example.com"],
+				storage: {
+					tenant: {} as TenantRepository,
+					tenantMembership: {} as TenantMembershipStorage,
+				},
+			};
+			expect(config).toBeDefined();
+			expect(tenancy).toBeTypeOf("function");
+			expect(subdomainResolver).toBeTypeOf("function");
+			expect(validateTenancyConfig).toBeTypeOf("function");
 		});
 
 		test("compliance storage types are exported", () => {
@@ -252,6 +294,12 @@ describe("public surface (entry point only)", () => {
 				keyPrefix: "auth",
 			};
 			expect(options).toBeDefined();
+		});
+
+		test("magic-link API and types are exported", () => {
+			const config = {} as unknown as Parameters<typeof magicLink>[0];
+			expect(magicLink).toBeTypeOf("function");
+			expect(config).toBeDefined();
 		});
 	});
 

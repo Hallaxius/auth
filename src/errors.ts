@@ -110,6 +110,20 @@ export const ErrorCodes = {
 	PKCE_VALIDATION_FAILED: "PKCE_VALIDATION_FAILED",
 
 	CAPTCHA_FAILED: "CAPTCHA_FAILED",
+
+	TENANT_NOT_FOUND: "TENANT_NOT_FOUND",
+	TENANT_SUSPENDED: "TENANT_SUSPENDED",
+	TENANT_MISMATCH: "TENANT_MISMATCH",
+	TENANT_REQUIRED: "TENANT_REQUIRED",
+	TENANT_FORBIDDEN: "TENANT_FORBIDDEN",
+
+	MAGIC_LINK_INVALID: "MAGIC_LINK_INVALID",
+	MAGIC_LINK_EXPIRED: "MAGIC_LINK_EXPIRED",
+	MAGIC_LINK_USED: "MAGIC_LINK_USED",
+
+	FORBIDDEN: "FORBIDDEN",
+	CHALLENGE_INVALID: "CHALLENGE_INVALID",
+	VERIFICATION_FAILED: "VERIFICATION_FAILED",
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -476,6 +490,84 @@ export class InteractionRequiredError extends AuthError {
 export class PKCEValidationError extends AuthError {
 	constructor(message = "PKCE validation failed", options?: { cause?: Error }) {
 		super(ErrorCodes.PKCE_VALIDATION_FAILED, message, {
+			statusCode: 400,
+			cause: options?.cause,
+		});
+	}
+}
+
+export class TenantNotFoundError extends AuthError {
+	constructor(message = "Tenant not found", options?: { cause?: Error }) {
+		super(ErrorCodes.TENANT_NOT_FOUND, message, {
+			statusCode: 404,
+			cause: options?.cause,
+		});
+	}
+}
+
+export class TenantSuspendedError extends AuthError {
+	constructor(message = "Tenant is suspended", options?: { cause?: Error }) {
+		super(ErrorCodes.TENANT_SUSPENDED, message, {
+			statusCode: 403,
+			cause: options?.cause,
+		});
+	}
+}
+
+export class TenantMismatchError extends AuthError {
+	constructor(message = "Tenant mismatch", options?: { cause?: Error }) {
+		super(ErrorCodes.TENANT_MISMATCH, message, {
+			statusCode: 403,
+			cause: options?.cause,
+		});
+	}
+}
+
+export class TenantRequiredError extends AuthError {
+	constructor(message = "Tenant is required", options?: { cause?: Error }) {
+		super(ErrorCodes.TENANT_REQUIRED, message, {
+			statusCode: 403,
+			cause: options?.cause,
+		});
+	}
+}
+
+export class TenantForbiddenError extends AuthError {
+	constructor(message = "Tenant forbidden", options?: { cause?: Error }) {
+		super(ErrorCodes.TENANT_FORBIDDEN, message, {
+			statusCode: 403,
+			cause: options?.cause,
+		});
+	}
+}
+
+export class MagicLinkInvalidError extends AuthError {
+	constructor(
+		message = "Invalid or expired link",
+		options?: { cause?: Error },
+	) {
+		super(ErrorCodes.MAGIC_LINK_INVALID, message, {
+			statusCode: 400,
+			cause: options?.cause,
+		});
+	}
+}
+
+export class MagicLinkExpiredError extends AuthError {
+	constructor(message = "Link has expired", options?: { cause?: Error }) {
+		super(ErrorCodes.MAGIC_LINK_EXPIRED, message, {
+			statusCode: 400,
+			cause: options?.cause,
+		});
+	}
+}
+
+export class MagicLinkUsedError extends AuthError {
+	constructor(
+		message = "This link has already been used",
+		options?: { cause?: Error },
+	) {
+		super(ErrorCodes.MAGIC_LINK_USED, message, {
 			statusCode: 400,
 			cause: options?.cause,
 		});

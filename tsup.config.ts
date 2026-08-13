@@ -16,5 +16,5 @@ export default defineConfig({
 	},
 	outDir: "dist",
 	removeDtsExtension: true,
-	external: ["next", "react", "react-dom"],
+	external: ["next", "react", "react-dom", "@simplewebauthn/server"],
 });

@@ -41,7 +41,7 @@ Secure authentication toolkit for **Bun** and **Next.js 16+** with Discord OAuth
 - ✅ Flexible - Bring your own storage (Redis, Database, KV)
 - ✅ Secure - Built-in CSRF, rate limiting, brute force protection, security headers
 - ✅ Compliant - GDPR utilities, audit logging, consent management
-- ✅ Fast - Sub-100µs operations (see [BENCHMARK.md](https://github.com/hallaxius/auth/blob/main/BENCHMARK.md))
+- ✅ Fast - Sub-100µs operations (see [BENCHMARK.md](BENCHMARK.md))
 - ✅ Serverless-ready - External storage required for all stateful operations
 
 ---
@@ -53,6 +53,9 @@ Secure authentication toolkit for **Bun** and **Next.js 16+** with Discord OAuth
 - **Discord OAuth2** - 30-second setup with Discord login
 - **Credentials Auth** - Username/email + password with configurable requirements
 - **MFA/TOTP** - Time-based one-time passwords (RFC 6238)
+- **SMS OTP** - Phone-based passwordless login + MFA enrollment, hashed codes, anti-enumeration + layered rate limits
+- **WebAuthn / Passkeys** - FIDO2 registration & authentication (login + MFA), single-use challenges, sign-count tracking
+- **OIDC Client** - Authorization code flow with PKCE S256, nonce, strict redirect whitelist, ID-token signature validation, back-channel logout
 - **Password Reset** - Secure password reset flow
 - **Captcha** - React components for hCaptcha, reCAPTCHA v2/v3, and Cloudflare Turnstile
 
@@ -202,6 +205,9 @@ const storage = {
   async verifyPassword(userId: string, password: string) {
     /* required by AuthUserStorage — compare against your stored hash (see "Your responsibility: password hashing" below) */
   },
+  async create(data) {
+    /* hash with Argon2id BEFORE persisting — see "Your responsibility: password hashing" below */
+  },
 }
 
 export const { handleRegister, handleLogin, handleLogout, handleMe } = credentials({
@@ -350,6 +356,37 @@ await auth.login({ username: 'alice' }, rawPassword)
 `login` always calls `verifyPassword` — you never send pre-hashed values back
 and forth.
 
+**Recommended — close the user-enumeration timing channel.** `login()` returns
+early when the user does not exist, so a nonexistent user answers in ~ms vs the
+KDF cost (100–500 ms) of a real user. Provide `dummyVerifyPassword` to equalize
+the cost — it runs your own KDF against a **pre-computed dummy hash** (same
+params as your real hashes) and its return value is never used:
+
+```typescript
+const dummyHash = await hash('dummy-never-matches', { type: argon2id })
+
+credentials({
+  storage,
+  session: { secret: process.env.JWT_SECRET! },
+  dummyVerifyPassword: async (password) => {
+    await verify(password, dummyHash)   // cost parity — return ignored
+    return false                        // never allow a nonexistent user
+  },
+})
+
+// Without the hook, non-existing users answer immediately (documented default);
+// with it, found vs not-found logins take the same time.
+```
+
+Precompute the dummy hash at startup (never at request time) and use the **same
+KDF parameters** (memory, iterations, parallelism) as your real user hashes —
+mismatched params defeat the purpose of the parity.
+
+**Public registration?** If you expose an open `register` endpoint, set
+`genericRegistrationErrors: true` so taken-usernames/taken-emails return the
+same generic 400 as other validation failures (see `checkUniqueness`); by
+default they return distinct 409s for developer convenience.
+
 Guidelines:
 
 - Hash with Argon2id (preferred), or bcrypt/scrypt, with per-user salt. Both
@@ -444,6 +481,87 @@ mfaHandlers.handleMfaDisable(request)    // Disable MFA for a user
 ```
 
 **TOTP defaults:** 30-second step, 6 digits, SHA-256 HMAC (configurable via `totpHash`; SHA-1 supported), 10 backup codes (12 chars). Verification is rate limited (5 TOTP / 10 backup code attempts per user per hour, 20 backup code attempts per IP per hour — the per-IP cap is enforced when a `Request` is passed to `verifyBackupCode`). Uses a dedicated `mfa-session` cookie for the challenge flow.
+
+---
+
+### SMS OTP (Phone MFA / Passwordless)
+
+```typescript
+import { smsOtp } from '@hallaxius/auth'
+
+const otp = smsOtp({
+  notifier: SmsNotifier,               // Required: your SMS provider (send(code, phone, meta))
+  getBinding: ...,                     // Required: resolve the user for a phone number
+  getOrCreateUser: ...,                // Required: create the user on first passwordless sign-in
+  dailyPerPhoneLimit?: number,         // Default: 5 (CURD)
+  codeLength?: number,                 // Default: 6 (4-10)
+  ttlSeconds?: number,                 // Default: 600, clamped to 60-600
+  cooldownMs?: number,                 // Default: 30000 (0 disables)
+  smsPasswordless?: boolean,           // Default: true
+  verifyPassword: ...,                 // Re-auth hook for re-binding a different phone
+  createSessionWithoutPassword: ...,   // Required: mints the session (ADR-002)
+})
+
+otp.handleSmsRequest(request)        // POST: send a 6-digit code
+otp.handleSmsVerify(request)         // POST: exchange code for a session
+otp.handleSmsEnroll(request)         // POST: enroll a phone for MFA
+otp.handleVerifyMfa(request)         // POST: verify an MFA code during login
+otp.handleResendCode(request)        // POST: resend with cooldown
+```
+
+**Security defaults:** only `sha256Hex(code)` is ever stored (ADR-005); dummy-path responses are byte-identical (anti-enumeration, no notifier/storage on unknown phones). Rate limits: 3 codes / 10 min per phone, 5 / hour per IP, 100 / 10 min per tenant, daily cap per phone, 30 s resend cooldown, and verify lockout (max attempt count → `RATE_LIMITED` and the code is destroyed; the correct code afterwards returns `INVALID_CODE`).
+
+---
+
+### WebAuthn / Passkeys
+
+```typescript
+import { webauthn } from '@hallaxius/auth'
+import { startRegistration, startAuthentication, verifyRegistrationResponse, verifyAuthenticationResponse } from '@simplewebauthn/server'
+
+const passkeys = webauthn({
+  rp: { id: 'login.example.com', name: 'Example', origins: ['https://login.example.com'] },
+  storage: { credentials: WebAuthnCredentialStorage, challenges: WebAuthnChallengeStorage },
+  createSessionWithoutPassword: ...,   // Required: mints the session (ADR-002)
+  tenantIdFromRequest?: ...,           // Tenant-scoped keys (global by default)
+  trustProxy?: boolean,
+})
+
+passkeys.handleRegisterStart(request)      // GET/POST: registration options (challenge, RP)
+passkeys.handleRegisterVerify(request)     // POST: verify attestation, persist credential
+passkeys.handleAuthenticateStart(request)  // GET/POST: challenge (userless or user-bound)
+passkeys.handleAuthenticateVerify(request) // POST: verify assertion, mint session, update sign count
+passkeys.handleRemoveCredential(request)   // POST: delete a credential
+```
+
+**Security defaults:** challenges are single-use (`getAndConsume`) with `rpId`/origin binding; public keys are stored **base64url** (never raw key material); counter resynchronization on every authentication; user-binding is enforced — a challenge minted for user A cannot be satisfied by user B's credential (`INVALID_TOKEN`).
+
+---
+
+### OIDC Client
+
+```typescript
+import { oidc } from '@hallaxius/auth'
+
+const client = oidc({
+  discoveryUrl: 'https://accounts.example.com',   // discovery-based
+  // ...or static serverMetadata for private OPs / test doubles
+  clientId: 'app-client',
+  redirectUris: ['https://app.example.com/cb'],   // exact-match whitelist (RFC 9700)
+  storage: { state: OidcStateStorage, jwks: OidcJwksCache },  // state is required
+  createSessionWithoutPassword: ...,   // Required: mints the session after validation
+  mapUser?: ...,                       // claims -> local user; null rejects (401)
+  scope?: string,                      // Default: 'openid profile email'
+  allowInsecureRequests?: boolean,     // NEVER in production — http:// test doubles only
+})
+
+client.handleAuthorizeUrl(request)       // GET/POST: PKCE S256 auth URL (state + nonce)
+client.handleCallback(request)           // GET/POST: code exchange + ID-token validation + session
+client.handleUserInfo(request)           // GET/POST: userinfo with Bearer / accessToken
+client.handleBackchannelLogout(request)  // POST: logout_token validation + jti replay prevention
+```
+
+**Security defaults:** PKCE S256 with single-use state records tied to the exact `redirect_uri`; the ID token is **signature-verified against the discovered JWKS** on every code exchange (openid-client's non-repudiation checks are always on), plus iss/aud/exp/nonce claim validation; an optional cross-instance JWKS cache; back-channel logout rejects replayed `jti`s (`STATE_REUSED`) and requires `typ: "logout+jwt"` with the `events` claim.
 
 ---
 
@@ -991,7 +1109,7 @@ Real-world performance (AMD Ryzen 5 5600, Bun 1.3.14):
 | MFA Setup | 13.68 ms | 17.24 ms | 37.42 KB |
 | MFA Verify | 27.40 ms | 30.37 ms | 24.38 KB |
 
-**See [BENCHMARK.md](https://github.com/hallaxius/auth/blob/main/BENCHMARK.md) for detailed benchmarks.**
+**See [BENCHMARK.md](BENCHMARK.md) for detailed benchmarks.**
 
 ---
 
@@ -1255,6 +1373,56 @@ const auth = await discord({
 
 ---
 
+## Troubleshooting
+
+### Common Issues
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| `JWT_SECRET missing` | Env var not set | Set `JWT_SECRET` (min 32 chars, high entropy) |
+| `CSRF token mismatch` | Cookie not sent / cross-origin | Ensure `credentials: "include"` on fetch; check `SameSite` policy |
+| `Rate limit exceeded` | Too many requests | Wait for `Retry-After` header value; check `rateLimit()` config |
+| `Session not found` | Session expired or revoked | User must re-authenticate; check `sessionRevocationStorage` if configured |
+| `Brute force locked` | 5+ failed login attempts | Wait 30 minutes or clear lockout via storage |
+| `Captcha verification failed` | Invalid/missing captcha token | Verify site key + secret key; check domain allowlist in provider console |
+| `TENANT_MISMATCH` | `x-tenant-id` header doesn't resolve tenant | Header is cross-check only — must match subdomain-resolved tenant |
+| `TENANT_SUSPENDED` | Tenant record has `status: "suspended"` | Contact admin to reactivate tenant |
+| `WebAuthn challenge mismatch` | Challenge expired or already consumed | Generate a new challenge; challenges are single-use with 60s TTL |
+| `INVALID_STATE` (OIDC) | State already consumed or expired | Retry authorization flow; check clock sync if using custom TTL |
+| `INVALID_CODE` (SMS OTP) | Wrong code or code expired | Codes expire after configured TTL (default 10 min); max attempts enforced |
+
+### Debug Mode
+
+```bash
+# Run tests with verbose output
+bun test --verbose
+
+# Run E2E with visible browser
+bun run test:e2e:headed
+
+# Check server health
+curl http://localhost:3000/auth/health
+```
+
+### Storage Connectivity
+
+All storage operations are async and throw on connection failure. Common storage issues:
+
+- **Redis:** Check `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`
+- **Database:** Verify connection string and schema migrations
+- **KV:** Ensure KV namespace is bound correctly (Cloudflare Workers)
+
+### Cookie Issues
+
+If sessions aren't persisting across requests:
+
+1. Verify `Secure` flag is only set over HTTPS
+2. Check `SameSite` policy matches your deployment (lax for dev, strict for prod)
+3. Ensure `path` includes your auth routes (default: `/`)
+4. For cross-origin: use `SameSite=None; Secure` and set `credentials: "include"` on the client
+
+---
+
 ## Architecture Decision Records
 
 Architecture Decision Records (ADRs) document notable design decisions and are
@@ -1358,6 +1526,214 @@ back to the bot endpoint (`/guilds/{guild.id}/members/{userId}`) otherwise.
   documented meaning.
 - Non-member or failed fetches resolve to `false` (deny-by-default).
 
+### ADR-006 — Multi-tenancy v1 — tenant-scoped claims/keys; RLS belongs to the consumer
+
+**Status:** Accepted
+
+**Date:** 2026-08-12
+
+**Context:**
+
+Adds multi-tenant support for B2B/SaaS consumers. The design
+space is split between "package-managed isolation" (separate schemas/DBs per tenant)
+and "shared schema with consumer-owned row-level security (RLS)". The package is
+storage-agnostic and never touches the consumer's database directly (ADR-002 style
+division of responsibility), so it cannot enforce RLS.
+
+**Decision:**
+
+- **D2 — Shared schema + consumer-owned RLS.** The package only scopes what it can
+  see: session claims and storage keys. Consumers enforce per-tenant row isolation
+  via Drizzle `pgPolicy` / Prisma `current_setting` / equivalent.
+- **D3 — Tenant identification via subdomain.** `tenancy({ resolver })` derives the
+  tenant from the request host (first label, `subdomainResolver` default). A
+  `x-tenant-id` header is a **cross-check only** — it must match the resolved tenant
+  (or the tenant record id); divergence → `403 TENANT_MISMATCH`. The package never
+  accepts tenant identity from body/query/header for lookups.
+- **D4 — Global user + per-tenant membership.** Users are unique globally
+  (`AuthUserStorage` unchanged); per-tenant roles come from
+  `TenantMembershipStorage`. `middleware.role` reads roles per-tenant when
+  `tenantIdFromRequest` + `tenantMembership` are configured; the legacy
+  session-roles path is unchanged.
+- **Keys and claims scoped.** Session tokens carry a `tenantId` claim; brute-force
+  keys are per-tenant (`credentials-login:ip:tenantId:accountId`) and rate-limit
+  namespaces are per-tenant when tenancy is enabled. For non-tenant flows the legacy
+  key format is preserved (additivity).
+- **Suspended tenants.** `TenantRecord.status: "suspended"` → `403 TENANT_SUSPENDED`
+  on resolution. Suspended users are marked with the `suspended` role
+  (`SUSPENDED_ROLE`) → `403 TENANT_FORBIDDEN` in passwordless flows.
+- **`createSessionWithoutPassword` prerequisite.** `createSessionWithoutPassword` (used by SMS, magic-link, WebAuthn) mints
+  sessions without touching `verifyPassword` (ADR-002 intact), requires the user to
+  exist and not be suspended, and is rate-limited per tenant.
+
+**Consequences:**
+
+- Consumers with a single global user base must add their own membership/RLS layer;
+  the package never stores tenant data.
+- A non-tenant consumer (no `tenancy` config) is unaffected: no tenant resolution,
+  no new claims, legacy keys.
+- New errors `TENANT_NOT_FOUND` (404), `TENANT_SUSPENDED`, `TENANT_MISMATCH`,
+  `TENANT_REQUIRED`, `TENANT_FORBIDDEN` (403) are strictly additive.
+
+---
+
+### ADR-005 — Ephemeral tokens (magic link / email OTP) are hashed in storage and are not passwords
+
+**Status:** Accepted
+
+**Date:** 2026-08-12
+
+**Context:**
+
+Adds magic-link / email-OTP flows. The link or OTP code is a
+short-lived bearer secret that the consumer's email provider transports. Storing it
+in the clear (or deriving it from a stored secret) would turn the storage layer into
+a credential database — and repository reviewers might mistake it for a password
+flow. The package's ADR-002 line is drawn at passwords: the package never hashes
+passwords because hashing belongs to the consumer's KDF. Ephemeral login tokens are
+a different class (short TTL, high entropy, single-use), but they still must never
+be persisted raw.
+
+**Decision:**
+
+- **Tokens are `selector.validator` pairs** (blueprint: password-reset). The
+  `selector` is a public id; the `validator` carries 256 bits of CSPRNG entropy and
+  is the bearer secret. Only `tokenHash = SHA-256(validator)` is stored
+  (`MagicLinkTokenStorage`, `PendingMagicLink.tokenHash`).
+- **Verification is constant-time** — stored hash vs computed hash compared with
+  `constantTimeCompareStrings` (link mode) / hashed-code compare (code mode).
+- **Single-use and TTL-bound.** Consumption is atomic (`consume`); resending
+  invalidates every previous token of the recipient (`deleteByRecipient`); TTL is
+  clamped to 5–15 minutes (default 10).
+- **These are NOT passwords under ADR-002.** No consumer KDF is involved, no
+  `verifyPassword` exists on this path, and sessions are minted via
+  `createSessionWithoutPassword` — ADR-002 remains intact.
+
+**Consequences:**
+
+- A storage leak exposes only SHA-256 digests of 256-bit validadors (plus
+  cooldown/attempt counters) — no usable credentials.
+- The package never sends clickable secrets in plaintext inside its own storage;
+  the notifier (consumer-provided, D6) is the only component that ever sees the raw
+  token/code.
+- The same "hashed ephemeral secret" pattern is reused by SMS OTP (ADR-009) and
+  OIDC state (ADR-008).
+
+---
+
+### ADR-009 — SMS OTP codes are hashed, rate-limited, and never treated as passwords
+
+**Status:** Accepted
+
+**Date:** 2026-08-12
+
+**Context:**
+
+The F2.5 roadmap adds phone-based login and MFA enrollment. The 6-digit code is a
+short-lived bearer secret delivered by the consumer's SMS provider. Like magic
+links (ADR-005), it must never be persisted raw — a storage leak would otherwise
+expose live one-time passwords.
+
+**Decision:**
+
+- **Only `codeHash = SHA-256(code)` is stored** (`OtpCode.codeHash`), alongside
+  the phone's own `phoneHash = SHA-256(E.164)`. Raw codes exist only in the
+  notifier path and the consumer's SMS provider.
+- **Anti-enumeration by default.** Unknown phone numbers get an identical
+  response envelope, and neither the notifier nor the storage is touched
+  (dummy path). Verification surfaces the same `INVALID_CODE` error for unknown
+  phones and wrong codes on known phones.
+- **Layered rate limits.** Per-phone 3/10 min, per-IP 5/1 h, per-tenant 100/10 min,
+  configurable daily cap per phone, resend cooldown (default 30 s), and a verify
+  lockout: after `maxAttempts` failed verifications the code record is destroyed,
+  so even the correct code is rejected afterwards.
+- **These are NOT passwords under ADR-002.** Sessions are minted via
+  `createSessionWithoutPassword`; the optional `verifyPassword` hook is only a
+  consumer re-auth check when re-binding a different phone.
+
+**Consequences:**
+
+- A storage leak exposes only SHA-256 digests of 6-digit codes — unusable.
+- SMS-only passwordless login costs one unused verification per unknown phone
+  (the dummy path drains a small per-IP budget), the standard privacy trade-off
+  for enumeration resistance.
+- Same hashed-ephemeral pattern as ADR-005/ADR-008.
+
+---
+
+### ADR-008 — OIDC state records are single-use, PKCE-bound, and never contain secrets in the clear
+
+**Status:** Accepted
+
+**Date:** 2026-08-12
+
+**Context:**
+
+The F4 roadmap adds an OIDC client. The authorization-code flow must resist
+CSRF/login-confusion (state), replay (single-use state + code), and authorization
+code injection (PKCE). The state record also carries the `redirect_uri` so the
+token request can never be hijacked to a different redirect target.
+
+**Decision:**
+
+- **State records are single-use** (`getAndConsume`) and TTL-bound (default
+  600 s). The record freezes `redirect_uri`, `nonce`, `codeVerifier`, `userId`
+  and `tenantId` at authorize time; the callback must re-present the exact state.
+- **PKCE S256 always on by default** (`usePkce`, RFC 9700) for public clients;
+  `clientSecret` consumers may use `ClientSecretPost`.
+- **The ID token is signature-verified on every exchange** — openid-client's
+  opt-in non-repudiation checks are always enabled here, over the discovered
+  (or static) JWKS — plus iss/aud/exp/nonce claim validation.
+- **Back-channel logout validates `typ: "logout+jwt"`, the
+  `events` claim, and the signature, and rejects replayed `jti`s**
+  (`STATE_REUSED`) via an optional revocation store.
+- A `jwks` cache store is optional; if absent the JWKS is fetched per issuer.
+- `allowInsecureRequests` exists **only** for `http://` test doubles — it is
+  never to be enabled in production.
+
+**Consequences:**
+
+- A storage leak exposes random state strings and PKCE verifiers that expire
+  quickly — no reusable credentials.
+- Replay of a consumed state returns `401 INVALID_STATE`; a bad code or ID token
+  returns `401 INVALID_GRANT`.
+
+---
+
+### ADR-007 — WebAuthn credentials are stored base64url; challenges are single-use
+
+**Status:** Accepted
+
+**Date:** 2026-08-12
+
+**Context:**
+
+The F3 roadmap adds FIDO2/WebAuthn passkeys. Public keys are public by nature,
+but the knowledge graph for this package had no WebAuthn surface yet; this ADR
+fixes the storage and lifecycle contract.
+
+**Decision:**
+
+- **`publicKey` is stored base64url** (never raw key material) together with
+  `signCount`, `transports`, and a `credentialId`; `WebAuthnCredentialStorage`
+  keys by `{tenantId}:{credentialId}`.
+- **Challenges are single-use** (`getAndConsume`), TTL-bound, and carry
+  `rpId`, `origin` expectations (checked against the exact `rp.origins`
+  whitelist), the challenge type, and — when known — the owning `userId`.
+- **User-binding is enforced**: a registration/authentication challenge minted
+  for user A rejects credentials of user B (`INVALID_TOKEN`); userless
+  authentication is allowed only when the challenge was created without a user.
+- **Sign counter resynchronization** on every authentication
+  (`updateSignCount`), with replay detection if the counter goes backwards.
+- Verification delegates to `@simplewebauthn/server` with
+  `expectedChallenge/expectedOrigin/expectedRPID` always populated.
+
+**Consequences:**
+
+- Credential storage cannot be mistaken for a password store (ADR-002 intact).
+- Sessions are minted via `createSessionWithoutPassword` — the package never
+  sees plaintext passwords on this path.
+
 ---
 
 ## License
@@ -1368,7 +1744,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## Support
 
-- **Documentation:** [README.md](README.md), [BENCHMARK.md](https://github.com/hallaxius/auth/blob/main/BENCHMARK.md), [SECURITY.md](SECURITY.md)
+- **Documentation:** [README.md](README.md), [BENCHMARK.md](BENCHMARK.md), [SECURITY.md](SECURITY.md)
 - **Issues:** [GitHub Issues](https://github.com/hallaxius/auth/issues)
 - **Email:** support@hallaxi.us
 - **Security:** Report vulnerabilities to support@hallaxi.us

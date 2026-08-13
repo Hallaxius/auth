@@ -1,13 +1,29 @@
 import type {
+	OidcStateRecord,
+	OtpCode,
+	PendingMagicLink,
+	TenantRecord,
+	WebAuthnChallenge,
+	WebAuthnCredential,
+} from "../types";
+import type {
 	IAuthUserStore,
 	IBruteForceStore,
 	IComplianceStore,
+	IMagicLinkTokenStore,
 	IMfaStore,
+	IOidcJwksCacheStore,
+	IOidcStateStore,
+	IOtpStore,
 	IRateLimitStore,
 	IResetTokenStore,
 	IStateStore,
+	ITenantMembershipStore,
+	ITenantStore,
 	ITokenRevocationStore,
 	IUserStore,
+	IWebAuthnChallengeStore,
+	IWebAuthnCredentialStore,
 	SessionStore,
 	StorageAdapters,
 	StorageFactoryOptions,
@@ -38,6 +54,18 @@ export function createStorageAdapters(
 		session: new MemorySessionStore(),
 		resetToken: new MemoryResetTokenStore(),
 		compliance: new MemoryComplianceStore(),
+		tenant: new MemoryTenantStore(),
+		tenantMembership: new MemoryTenantMembershipStore(),
+		magicLink: new MemoryMagicLinkStore(),
+		otp: new MemoryOtpStore(),
+		webAuthn: {
+			credentials: new MemoryWebAuthnCredentialStore(),
+			challenges: new MemoryWebAuthnChallengeStore(),
+		},
+		oidc: {
+			state: new MemoryOidcStateStore(),
+			jwks: new MemoryOidcJwksCacheStore(),
+		},
 	};
 }
 
@@ -247,6 +275,317 @@ class MemoryMfaStore implements IMfaStore {
 		if (this.secrets.has(userId)) return false;
 		this.secrets.set(userId, encryptedSecret);
 		return true;
+	}
+
+	async ping(): Promise<boolean> {
+		return true;
+	}
+}
+
+export class MemoryTenantStore implements ITenantStore {
+	private tenants = new Map<string, TenantRecord>();
+	private byDomain = new Map<string, string>();
+
+	async getById(tenantId: string): Promise<TenantRecord | null> {
+		return this.tenants.get(tenantId) ?? null;
+	}
+
+	async getByDomain(domain: string): Promise<TenantRecord | null> {
+		const id = this.byDomain.get(domain);
+		if (!id) return null;
+		return this.tenants.get(id) ?? null;
+	}
+
+	async set(record: TenantRecord): Promise<void> {
+		const existing = this.tenants.get(record.id);
+		if (existing && existing.domain !== record.domain) {
+			this.byDomain.delete(existing.domain);
+		}
+		this.tenants.set(record.id, record);
+		this.byDomain.set(record.domain, record.id);
+	}
+
+	async delete(tenantId: string): Promise<void> {
+		const record = this.tenants.get(tenantId);
+		if (record) this.byDomain.delete(record.domain);
+		this.tenants.delete(tenantId);
+	}
+
+	async ping(): Promise<boolean> {
+		return true;
+	}
+}
+
+export class MemoryTenantMembershipStore implements ITenantMembershipStore {
+	private memberships = new Map<string, Map<string, string[]>>();
+
+	async getMemberships(
+		userId: string,
+	): Promise<Array<{ tenantId: string; roles: string[] }>> {
+		const result: Array<{ tenantId: string; roles: string[] }> = [];
+		for (const [tenantId, members] of this.memberships.entries()) {
+			const roles = members.get(userId);
+			if (roles) result.push({ tenantId, roles: [...roles] });
+		}
+		return result;
+	}
+
+	async getMembers(
+		tenantId: string,
+	): Promise<Array<{ userId: string; roles: string[] }>> {
+		const members = this.memberships.get(tenantId);
+		if (!members) return [];
+		const result: Array<{ userId: string; roles: string[] }> = [];
+		for (const [userId, roles] of members.entries()) {
+			result.push({ userId, roles: [...roles] });
+		}
+		return result;
+	}
+
+	async setMembership(
+		tenantId: string,
+		userId: string,
+		roles: string[],
+	): Promise<void> {
+		let members = this.memberships.get(tenantId);
+		if (!members) {
+			members = new Map();
+			this.memberships.set(tenantId, members);
+		}
+		members.set(userId, [...roles]);
+	}
+
+	async deleteMembership(tenantId: string, userId: string): Promise<void> {
+		this.memberships.get(tenantId)?.delete(userId);
+	}
+
+	async ping(): Promise<boolean> {
+		return true;
+	}
+}
+
+export class MemoryMagicLinkStore implements IMagicLinkTokenStore {
+	private tokens = new Map<string, Map<string, PendingMagicLink>>();
+	/** Tombstones of single-use tokens so replays surface as "already used", not "invalid". */
+	private consumed = new Map<string, Map<string, PendingMagicLink>>();
+
+	async findBySelector(
+		tenantId: string,
+		selector: string,
+	): Promise<PendingMagicLink | null> {
+		return (
+			this.tokens.get(tenantId)?.get(selector) ??
+			this.consumed.get(tenantId)?.get(selector) ??
+			null
+		);
+	}
+
+	async create(token: PendingMagicLink): Promise<void> {
+		let tenant = this.tokens.get(token.tenantId);
+		if (!tenant) {
+			tenant = new Map();
+			this.tokens.set(token.tenantId, tenant);
+		}
+		tenant.set(token.selector, { ...token });
+	}
+
+	async consume(
+		tenantId: string,
+		selector: string,
+	): Promise<PendingMagicLink | null> {
+		const tenant = this.tokens.get(tenantId);
+		if (!tenant) return null;
+		const token = tenant.get(selector);
+		if (!token) return null;
+		tenant.delete(selector);
+		let used = this.consumed.get(tenantId);
+		if (!used) {
+			used = new Map();
+			this.consumed.set(tenantId, used);
+		}
+		used.set(selector, { ...token });
+		return { ...token };
+	}
+
+	async deleteByRecipient(tenantId: string, recipient: string): Promise<void> {
+		const tenant = this.tokens.get(tenantId);
+		if (!tenant) return;
+		for (const [selector, token] of tenant.entries()) {
+			if (token.recipient === recipient) tenant.delete(selector);
+		}
+	}
+
+	async ping(): Promise<boolean> {
+		return true;
+	}
+}
+
+export class MemoryOtpStore implements IOtpStore {
+	private codes = new Map<string, OtpCode>();
+
+	private key(phoneHash: string, purpose: OtpCode["purpose"]): string {
+		return `${phoneHash}:${purpose}`;
+	}
+
+	async set(
+		phoneHash: string,
+		purpose: OtpCode["purpose"],
+		code: OtpCode,
+	): Promise<void> {
+		this.codes.set(this.key(phoneHash, purpose), { ...code });
+	}
+
+	async getAndConsume(
+		phoneHash: string,
+		purpose: OtpCode["purpose"],
+	): Promise<OtpCode | null> {
+		const key = this.key(phoneHash, purpose);
+		const code = this.codes.get(key);
+		if (!code) return null;
+		this.codes.delete(key);
+		return { ...code };
+	}
+
+	async delete(phoneHash: string, purpose: OtpCode["purpose"]): Promise<void> {
+		this.codes.delete(this.key(phoneHash, purpose));
+	}
+
+	async ping(): Promise<boolean> {
+		return true;
+	}
+}
+
+export class MemoryWebAuthnCredentialStore implements IWebAuthnCredentialStore {
+	private credentials = new Map<string, WebAuthnCredential>();
+
+	private key(tenantId: string, credentialId: string): string {
+		return `${tenantId}:${credentialId}`;
+	}
+
+	async findById(
+		tenantId: string,
+		credentialId: string,
+	): Promise<WebAuthnCredential | null> {
+		return this.credentials.get(this.key(tenantId, credentialId)) ?? null;
+	}
+
+	async listByUser(
+		tenantId: string,
+		userId: string,
+	): Promise<WebAuthnCredential[]> {
+		return [...this.credentials.values()].filter(
+			(c) => c.tenantId === tenantId && c.userId === userId,
+		);
+	}
+
+	async create(credential: WebAuthnCredential): Promise<void> {
+		this.credentials.set(
+			this.key(credential.tenantId, credential.credentialId),
+			{ ...credential },
+		);
+	}
+
+	async updateSignCount(
+		tenantId: string,
+		credentialId: string,
+		signCount: number,
+	): Promise<void> {
+		const existing = this.credentials.get(this.key(tenantId, credentialId));
+		if (!existing) return;
+		this.credentials.set(this.key(tenantId, credentialId), {
+			...existing,
+			signCount,
+			lastUsedAt: Date.now(),
+		});
+	}
+
+	async delete(tenantId: string, credentialId: string): Promise<void> {
+		this.credentials.delete(this.key(tenantId, credentialId));
+	}
+
+	async deleteByUser(tenantId: string, userId: string): Promise<void> {
+		for (const [key, credential] of this.credentials.entries()) {
+			if (credential.tenantId === tenantId && credential.userId === userId) {
+				this.credentials.delete(key);
+			}
+		}
+	}
+
+	async ping(): Promise<boolean> {
+		return true;
+	}
+}
+
+export class MemoryWebAuthnChallengeStore implements IWebAuthnChallengeStore {
+	private challenges = new Map<string, WebAuthnChallenge>();
+
+	private key(tenantId: string, challengeId: string): string {
+		return `${tenantId}:${challengeId}`;
+	}
+
+	async set(
+		tenantId: string,
+		challengeId: string,
+		challenge: WebAuthnChallenge,
+	): Promise<void> {
+		this.challenges.set(this.key(tenantId, challengeId), { ...challenge });
+	}
+
+	async getAndConsume(
+		tenantId: string,
+		challengeId: string,
+	): Promise<WebAuthnChallenge | null> {
+		const key = this.key(tenantId, challengeId);
+		const challenge = this.challenges.get(key);
+		if (!challenge) return null;
+		this.challenges.delete(key);
+		return { ...challenge };
+	}
+
+	async ping(): Promise<boolean> {
+		return true;
+	}
+}
+
+export class MemoryOidcStateStore implements IOidcStateStore {
+	private states = new Map<string, OidcStateRecord>();
+
+	async set(stateId: string, record: OidcStateRecord): Promise<void> {
+		this.states.set(stateId, { ...record });
+	}
+
+	async getAndConsume(stateId: string): Promise<OidcStateRecord | null> {
+		const record = this.states.get(stateId);
+		if (!record) return null;
+		this.states.delete(stateId);
+		return { ...record };
+	}
+
+	async ping(): Promise<boolean> {
+		return true;
+	}
+}
+
+export class MemoryOidcJwksCacheStore implements IOidcJwksCacheStore {
+	private cache = new Map<string, { keys: unknown; expiresAt: number }>();
+
+	async get(
+		issuer: string,
+	): Promise<{ keys: unknown; expiresAt: number } | null> {
+		const entry = this.cache.get(issuer);
+		if (!entry) return null;
+		if (entry.expiresAt < Date.now()) {
+			this.cache.delete(issuer);
+			return null;
+		}
+		return { ...entry, keys: entry.keys };
+	}
+
+	async set(issuer: string, keys: unknown, ttlSeconds: number): Promise<void> {
+		this.cache.set(issuer, {
+			keys,
+			expiresAt: Date.now() + ttlSeconds * 1000,
+		});
 	}
 
 	async ping(): Promise<boolean> {
