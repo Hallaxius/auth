@@ -6,7 +6,7 @@ import {
 	useImperativeHandle,
 	useRef,
 } from "react";
-import { CaptchaContext } from "./CaptchaContext";
+import { getCaptchaContext } from "./CaptchaContext";
 
 const HCAPTCHA_SCRIPT_ID = "hcaptcha-script";
 const HCAPTCHA_SCRIPT_URL = "https://js.hcaptcha.com/1.js";
@@ -83,7 +83,7 @@ export const Hcaptcha = forwardRef<HcaptchaRef, HcaptchaProps>(
 			report = true,
 		} = props;
 
-		const ctx = useContext(CaptchaContext);
+		const ctx = useContext(getCaptchaContext());
 
 		const containerRef = useRef<HTMLDivElement>(null);
 		const captchaIdRef = useRef<string | null>(null);

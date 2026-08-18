@@ -1,8 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { PerUserRateLimiter } from "../../../src/";
+import { MAX_USER_LIMITERS } from "../../../src/rate-limit/per-user";
 import type { UserTierConfig } from "../../../src/rate-limit/per-user";
-
-const MAX_USER_LIMITERS = 5_000;
 
 describe("PerUserRateLimiter - burst ceiling", () => {
 	const burstTier: UserTierConfig = {

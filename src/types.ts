@@ -446,7 +446,19 @@ export interface CreateCredentialsUserData {
 	username?: string;
 	email?: string;
 	password?: string;
+	/** @deprecated Use `password` instead. Provided for backward compatibility. */
+	passwordHash?: string;
 	roles?: string[];
+}
+
+/**
+ * @deprecated The library no longer hashes passwords internally (ADR-002).
+ * Consumers must hash passwords in their storage layer before persisting.
+ * This type is retained for backward compatibility with existing type references.
+ */
+export interface PasswordHasher {
+	hash(password: string): Promise<string>;
+	verify(password: string, hash: string): Promise<boolean>;
 }
 export interface AuthUserIdentifier {
 	username?: string;
@@ -540,6 +552,10 @@ export interface CredentialsConfig {
 		secret: string;
 		expiresIn?: string | number;
 		cookieName?: string;
+		cookiePath?: string;
+		httpOnly?: boolean;
+		secure?: boolean;
+		sameSite?: "lax" | "strict" | "none";
 	};
 	storage: AuthUserStorage;
 	bruteForce?: Partial<BruteForceConfig>;

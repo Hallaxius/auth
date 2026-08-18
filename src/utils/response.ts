@@ -6,7 +6,6 @@ export interface SecurityHeadersOptions {
 const DEFAULT_SECURITY_HEADERS: Record<string, string> = {
 	"X-Content-Type-Options": "nosniff",
 	"X-Frame-Options": "DENY",
-	"X-XSS-Protection": "1; mode=block",
 	"Referrer-Policy": "strict-origin-when-cross-origin",
 	"Permissions-Policy": "geolocation=(), microphone=(), camera=()",
 };
@@ -55,15 +54,6 @@ export function errorResponse(error: unknown, status?: number): Response {
 	return jsonResponse({ error: message, code }, status ?? 500);
 }
 
-function escapeHtml(value: string): string {
-	return value
-		.replaceAll("&", "&amp;")
-		.replaceAll("<", "&lt;")
-		.replaceAll(">", "&gt;")
-		.replaceAll('"', "&quot;")
-		.replaceAll("'", "&#39;");
-}
-
 export function htmlResponse(
 	body: string,
 	status = 200,
@@ -75,7 +65,7 @@ export function htmlResponse(
 	if (cookies) {
 		for (const c of cookies) headers.append("Set-Cookie", c);
 	}
-	return new Response(escapeHtml(body), { status, headers });
+	return new Response(body, { status, headers });
 }
 
 export function redirectResponse(url: string, cookies?: string[]): Response {

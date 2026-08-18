@@ -15,6 +15,7 @@ export function createMemoryComplianceStorage() {
 		DataExportRequest & { exportData?: UserDataExport }
 	>();
 	const deletionStore = new Map<string, DataDeletionRequest>();
+	const deletionByUserId = new Map<string, Set<string>>();
 	const consentStore = new Map<string, ConsentRecord[]>();
 	const consentHistoryStore = new Map<string, ConsentRecord[]>();
 	const retentionData = new Map<
@@ -65,6 +66,9 @@ export function createMemoryComplianceStorage() {
 	const deletionStorage: DeletionStorage = {
 		async saveRequest(request) {
 			deletionStore.set(request.id, { ...request });
+			const userSet = deletionByUserId.get(request.userId) ?? new Set();
+			userSet.add(request.id);
+			deletionByUserId.set(request.userId, userSet);
 		},
 		async getRequest(requestId) {
 			const req = deletionStore.get(requestId);
@@ -72,9 +76,12 @@ export function createMemoryComplianceStorage() {
 			return { ...req };
 		},
 		async getPendingRequestByUserId(userId) {
-			for (const req of deletionStore.values()) {
+			const ids = deletionByUserId.get(userId);
+			if (!ids) return null;
+			for (const id of ids) {
+				const req = deletionStore.get(id);
 				if (
-					req.userId === userId &&
+					req &&
 					(req.status === "pending" ||
 						req.status === "scheduled" ||
 						req.status === "processing")
@@ -167,15 +174,21 @@ export function createMemoryComplianceStorage() {
 				retentionData.set(userId, data);
 			}
 		},
-		async anonymizeData(userId, _categories) {
+		async anonymizeData(userId, categories) {
 			const data = retentionData.get(userId);
 			if (data) {
+				data.categories = data.categories.filter(
+					(c) => !categories.includes(c),
+				);
 				retentionData.set(userId, data);
 			}
 		},
-		async archiveData(userId, _categories) {
+		async archiveData(userId, categories) {
 			const data = retentionData.get(userId);
 			if (data) {
+				data.categories = data.categories.filter(
+					(c) => !categories.includes(c),
+				);
 				retentionData.set(userId, data);
 			}
 		},

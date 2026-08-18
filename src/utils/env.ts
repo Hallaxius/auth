@@ -1,5 +1,3 @@
-export { isProduction } from "./validation";
-
 export function secret(length: number = 32): string {
 	const array = new Uint8Array(length);
 	crypto.getRandomValues(array);

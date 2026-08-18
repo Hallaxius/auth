@@ -95,22 +95,29 @@ export class RefreshTokenManager {
 			}
 		}
 
-		let revoked = true;
-		try {
-			if (typeof this.revocationStorage.revokeIfPresent === "function") {
-				revoked =
-					(await this.revocationStorage.revokeIfPresent(
-						oldJti,
-						remainingSeconds,
-					)) ?? true;
-			} else {
-				await this.revocationStorage.revoke(oldJti, remainingSeconds);
+		if (typeof this.revocationStorage.revokeIfPresent === "function") {
+			let revoked: boolean;
+			try {
+				revoked = await this.revocationStorage.revokeIfPresent(
+					oldJti,
+					remainingSeconds,
+				);
+			} catch {
+				return null;
 			}
-		} catch {
-			return null;
-		}
-		if (!revoked) {
-			return null;
+			if (!revoked) {
+				return null;
+			}
+		} else {
+			try {
+				const alreadyRevoked = await this.revocationStorage.isRevoked(oldJti);
+				if (alreadyRevoked) {
+					return null;
+				}
+				await this.revocationStorage.revoke(oldJti, remainingSeconds);
+			} catch {
+				return null;
+			}
 		}
 
 		return this.issueRefreshToken(payload.userId, payload.familyId);

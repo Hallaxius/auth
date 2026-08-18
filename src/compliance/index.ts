@@ -17,6 +17,6 @@ export {
 } from "../utils/compliance";
 
 export {
-	type ComplianceHandlersConfig as ComplianceHandlersConfig2,
+	type ComplianceHandlersConfig,
 	createComplianceHandlers,
 } from "./handlers";

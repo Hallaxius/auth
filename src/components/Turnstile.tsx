@@ -6,7 +6,7 @@ import {
 	useImperativeHandle,
 	useRef,
 } from "react";
-import { CaptchaContext } from "./CaptchaContext";
+import { getCaptchaContext } from "./CaptchaContext";
 
 const TURNSTILE_SCRIPT_ID = "turnstile-script";
 const TURNSTILE_SCRIPT_URL =
@@ -88,7 +88,7 @@ export const Turnstile = forwardRef<TurnstileRef, TurnstileProps>(
 			customLanguages,
 		} = props;
 
-		const ctx = useContext(CaptchaContext);
+		const ctx = useContext(getCaptchaContext());
 
 		const containerRef = useRef<HTMLDivElement>(null);
 		const widgetIdRef = useRef<string | number | null>(null);

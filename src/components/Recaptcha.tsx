@@ -6,7 +6,7 @@ import {
 	useImperativeHandle,
 	useRef,
 } from "react";
-import { CaptchaContext } from "./CaptchaContext";
+import { getCaptchaContext } from "./CaptchaContext";
 
 const RECAPTCHA_SCRIPT_ID = "recaptcha-script";
 const RECAPTCHA_SCRIPT_URL = "https://www.google.com/recaptcha/api.js";
@@ -85,7 +85,7 @@ export const Recaptcha = forwardRef<RecaptchaRef, RecaptchaProps>(
 			tabIndex,
 		} = props;
 
-		const ctx = useContext(CaptchaContext);
+		const ctx = useContext(getCaptchaContext());
 
 		const containerRef = useRef<HTMLDivElement>(null);
 		const widgetIdRef = useRef<string | number | null>(null);

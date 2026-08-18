@@ -36,7 +36,9 @@ function isMemoryBacked<T extends { store: Map<unknown, unknown> }>(
 		typeof storage === "object" &&
 		storage !== null &&
 		"store" in storage &&
-		(storage as { store: unknown }).store instanceof Map
+		(storage as { store: unknown }).store instanceof Map &&
+		"ping" in storage &&
+		typeof (storage as { ping: unknown }).ping === "function"
 	);
 }
 
@@ -694,7 +696,8 @@ class MemoryUserStore implements IUserStore {
 	}> {
 		const existing = await this.findByDiscordId(discordId);
 		if (!existing) throw new Error(`User ${discordId} not found`);
-		const updated = { ...existing, ...data, updatedAt: new Date() };
+		const { id, createdAt, discordId: _, ...rest } = data;
+		const updated = { ...existing, ...rest, updatedAt: new Date() };
 		this.store.set(discordId, updated);
 		return updated;
 	}
@@ -808,12 +811,13 @@ class MemoryAuthUserStore implements IAuthUserStore {
 	}> {
 		const existing = await this.findById(userId);
 		if (!existing) throw new Error(`User ${userId} not found`);
-		const updated = { ...existing, ...data, updatedAt: new Date() };
-		if (data.username !== undefined && data.username !== existing.username) {
+		const { id, createdAt, password, ...rest } = data;
+		const updated = { ...existing, ...rest, updatedAt: new Date() };
+		if (rest.username !== undefined && rest.username !== existing.username) {
 			if (existing.username) this.usernameIndex.delete(existing.username);
 			if (updated.username) this.usernameIndex.set(updated.username, userId);
 		}
-		if (data.email !== undefined && data.email !== existing.email) {
+		if (rest.email !== undefined && rest.email !== existing.email) {
 			if (existing.email) this.emailIndex.delete(existing.email);
 			if (updated.email) this.emailIndex.set(updated.email, userId);
 		}
@@ -935,6 +939,14 @@ class MemorySessionStore implements SessionStore {
 	async delete(sessionId: string): Promise<void> {
 		this.store.delete(sessionId);
 	}
+
+	async extend(sessionId: string, ttlMs: number): Promise<void> {
+		const entry = this.store.get(sessionId);
+		if (entry) {
+			entry.expiresAt = Date.now() + ttlMs;
+		}
+	}
+
 	async ping(): Promise<boolean> {
 		return true;
 	}

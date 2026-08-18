@@ -5,6 +5,7 @@ import type {
 	DeletionStorage,
 	UserDataExport,
 } from "../utils/compliance";
+import { constantTimeCompareStrings } from "../utils/constant-time";
 import { createSecurityLogger } from "../utils/logger";
 
 const logger = createSecurityLogger("compliance");
@@ -199,7 +200,13 @@ export function createComplianceHandlers(config: ComplianceHandlersConfig) {
 			};
 
 			const request = await deletionStorage.getRequest(requestId);
-			if (!request || request.confirmationCode !== confirmationCode) {
+			if (
+				!request ||
+				!constantTimeCompareStrings(
+					request.confirmationCode ?? "",
+					confirmationCode,
+				)
+			) {
 				res.status(400).json({ error: "Invalid confirmation code" });
 				return;
 			}

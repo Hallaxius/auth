@@ -208,18 +208,30 @@ export class CredentialsClient {
 	}
 
 	async register(
-		data: CreateCredentialsUserData & { password: string },
+		data: CreateCredentialsUserData & {
+			password?: string;
+			passwordHash?: string;
+		},
 		_request?: Request,
 		tenantId?: string,
 	): Promise<CredentialsAuthResult> {
-		this.validateRegistrationFields(data);
+		const resolvedPassword = data.password ?? data.passwordHash;
+		if (!resolvedPassword) {
+			throw new AuthError(
+				ErrorCodes.CREDENTIALS_VALIDATION_ERROR,
+				"Password is required",
+				{ statusCode: 400 },
+			);
+		}
+		const registrationData = { ...data, password: resolvedPassword };
+		this.validateRegistrationFields(registrationData);
 
 		if (this.config.validatePassword) {
 			const validationOptions =
 				typeof this.config.validatePassword === "boolean"
 					? undefined
 					: this.config.validatePassword;
-			validatePasswordOrThrow(data.password, {
+			validatePasswordOrThrow(resolvedPassword, {
 				minLength: this.config.minPasswordLength,
 				...validationOptions,
 			});
@@ -230,7 +242,7 @@ export class CredentialsClient {
 		const user = await this.storage.create({
 			username: data.username ?? null,
 			email: data.email ?? null,
-			password: data.password,
+			password: resolvedPassword,
 			roles: data.roles ?? this.config.defaultRoles,
 		});
 
@@ -935,10 +947,10 @@ export function credentials(config: CredentialsConfig): CredentialsResult {
 	const handlers = createCredentialsHandlers({
 		client,
 		cookieName,
-		cookiePath: config.cookiePath ?? "/",
-		sameSite: config.sameSite ?? defaultSameSite(),
-		secure: config.secure ?? defaultSecureCookie(),
-		httpOnly: config.httpOnly ?? true,
+		cookiePath: config.cookiePath ?? config.session.cookiePath ?? "/",
+		sameSite: config.sameSite ?? config.session.sameSite ?? defaultSameSite(),
+		secure: config.secure ?? config.session.secure ?? defaultSecureCookie(),
+		httpOnly: config.httpOnly ?? config.session.httpOnly ?? true,
 		maxAge: sessionMaxAge,
 		rateLimiter: meRateLimiter,
 		loginRateLimiter,

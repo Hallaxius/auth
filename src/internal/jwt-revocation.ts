@@ -1,7 +1,4 @@
 import type { TokenRevocationStorage } from "../types";
-import { createSecurityLogger } from "../utils/logger";
-
-const _logger = createSecurityLogger("jwt-revocation");
 
 interface FamilyMemberEntry {
 	userId: string;

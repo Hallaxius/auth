@@ -1,7 +1,7 @@
 import type { RateLimitCheckResult, RateLimitStorage } from "../types";
 import { getRequestIP } from "../utils/ip";
 
-const MAX_USER_LIMITERS = 5_000;
+export const MAX_USER_LIMITERS = 2_000;
 
 export interface UserTierConfig {
 	tierName: string;

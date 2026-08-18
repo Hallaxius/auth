@@ -1,21 +1,15 @@
 import type {
+	ComplianceConfig,
 	ComplianceManager as ComplianceManagerType,
-	ConsentStorage,
-	DataExportStorage,
-	DeletionStorage,
-	RetentionPolicy,
-	RetentionStorage,
 } from "./utils/compliance";
 import { createComplianceManager } from "./utils/compliance";
 
-export interface ComplianceConfig {
-	exportStorage: DataExportStorage;
-	deletionStorage: DeletionStorage;
-	consentStorage: ConsentStorage;
-	retentionStorage: RetentionStorage;
-	retentionPolicies?: RetentionPolicy[];
-}
+export type { ComplianceConfig } from "./utils/compliance";
 
+/**
+ * @deprecated Use `createComplianceManager` from `./utils/compliance` directly.
+ * This wrapper is kept for backward compatibility and will be removed in v2.
+ */
 export function compliance(config: ComplianceConfig): ComplianceManagerType {
 	return createComplianceManager({
 		exportStorage: config.exportStorage,

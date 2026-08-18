@@ -7,7 +7,7 @@ import { validateConfig } from "./validation";
 
 const logger = createSecurityLogger("utils");
 
-export { secretFn as secret, validateConfig as validate, validateConfig };
+export { secretFn as secret, validateConfig, validateConfig as validate };
 
 export async function hasRole(
 	userId: string,
@@ -141,8 +141,6 @@ export async function revoke(
 		const user = await storage.findByDiscordId(discordId);
 
 		if (user) {
-			await storage.delete(discordId);
-
 			try {
 				await client.revokeToken({
 					clientId,
@@ -158,6 +156,8 @@ export async function revoke(
 							: String(revokeError),
 				});
 			}
+
+			await storage.delete(discordId);
 		}
 	} catch (error) {
 		throw new AuthError(

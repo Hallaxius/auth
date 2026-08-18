@@ -20,10 +20,14 @@
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [API Reference](#api-reference)
+- [Multi-Tenancy](#multi-tenancy)
+- [Magic Link / Email OTP](#magic-link--email-otp)
+- [Login Anomaly Detection](#login-anomaly-detection)
 - [Configuration](#configuration)
 - [Storage Implementation](#storage-implementation)
 - [Captcha](#captcha-react-components)
 - [Security](#security)
+- [Migration & Breaking Changes](#migration--breaking-changes)
 - [Performance](#performance)
 - [Testing](#testing)
 - [Deployment](#deployment)
@@ -69,7 +73,7 @@ Secure authentication toolkit for **Bun** and **Next.js 16+** with Discord OAuth
 - ✅ **Input Validation** - Zod schemas, email format, password strength
 - ✅ **Timing Attack Prevention** - Constant-time comparison
 - ✅ **Captcha Verification** - Bot protection via hCaptcha, reCAPTCHA, and Cloudflare Turnstile
-- ✅ **Security Headers** - CSP, HSTS, X-Frame-Options, Permissions-Policy
+- ✅ **Security Headers** - CSP, HSTS, X-Frame-Options, Permissions-Policy, Cross-Origin-Opener-Policy, Cross-Origin-Embedder-Policy, Cross-Origin-Resource-Policy, Cache-Control, Referrer-Policy
 - ✅ **Secret Validation** - Min 32 chars, high entropy enforcement
 
 ---
@@ -199,14 +203,11 @@ const storage = {
   async findById(id: string) { /* return AuthUser | null */ },
   async findByUsername(username: string) { /* return AuthUser | null */ },
   async findByEmail(email: string) { /* return AuthUser | null */ },
-  async create(data) { /* return AuthUser */ },
+  async create(data) { /* hash with Argon2id BEFORE persisting — see "Your responsibility: password hashing" below */ },
   async update(userId: string, data) { /* return AuthUser — required by AuthUserStorage */ },
   async delete(userId: string) { /* required by AuthUserStorage */ },
   async verifyPassword(userId: string, password: string) {
     /* required by AuthUserStorage — compare against your stored hash (see "Your responsibility: password hashing" below) */
-  },
-  async create(data) {
-    /* hash with Argon2id BEFORE persisting — see "Your responsibility: password hashing" below */
   },
 }
 
@@ -227,6 +228,8 @@ export const { handleRegister, handleLogin, handleLogout, handleMe } = credentia
 ```
 
 **Note:** if `bruteForce.storage` is omitted, `BruteForceProtection` falls back to an in-memory store (a warning is logged) — fine for development, but provide a shared `BruteForceStorage` (Redis/KV/database) in production so lockouts work across instances.
+
+**Suspended role:** When multi-tenancy is enabled, users with the `suspended` role (exported as `SUSPENDED_ROLE` constant, value: `"suspended"`) are blocked from passwordless flows with `403 TENANT_FORBIDDEN`. This role is set automatically when a tenant is suspended.
 
 **3. Create API Routes**
 
@@ -454,6 +457,8 @@ export async function handler(request: Request) {
 
 **Note:** `storage` is **required** — `rateLimit()` throws a `ConfigurationError` when no storage is provided. Use the [storage adapters](#storage-adapters) (`createStorageAdapters({ type: 'memory' }).rateLimit`) for development/tests, or implement `RateLimitStorage` backed by Redis/KV/database in production.
 
+**`MAX_USER_LIMITERS`** (exported constant, value: `2000`) — The `PerUserRateLimiter` caps the number of per-user limiter instances held in memory. When the limit is reached, new users are rejected with `RATE_LIMITED` until existing user entries expire or are evicted. This prevents unbounded memory growth in long-running processes with many unique users.
+
 **Headers (RFC 6585 / 8683):**
 - `RateLimit-Limit` - Maximum requests per window
 - `RateLimit-Remaining` - Remaining requests
@@ -565,6 +570,108 @@ client.handleBackchannelLogout(request)  // POST: logout_token validation + jti 
 
 ---
 
+### Multi-Tenancy
+
+```typescript
+import { tenancy, subdomainResolver } from '@hallaxius/auth'
+
+const tenantManager = tenancy({
+  enabled: true,
+  baseDomains: ['example.com'],        // acme.example.com → tenant "acme"
+  required: true,                       // throw 403 if no tenant resolved
+  storage: {
+    tenant: TenantStore,               // ITenantStore — resolve/get tenant records
+    tenantMembership: TenantMembershipStore, // ITenantMembershipStore — per-tenant roles
+  },
+  resolver?: customResolver,           // Optional: override subdomainResolver
+  defaultTenantId?: 'default',         // Fallback when resolver returns null
+})
+
+// Resolve tenant from request (subdomain-based by default)
+const tenantId = await tenantManager.resolveTenantId(request)
+
+// Require a tenant (throws TenantRequiredError if missing)
+const tenantId = await tenantManager.requireTenant(request)
+
+// Per-tenant role lookup
+const roles = await tenantManager.getRoles(tenantId, userId)
+
+// Membership check
+const isMember = await tenantManager.isMember(tenantId, userId)
+```
+
+**Tenant identification:** Tenant is derived from the request subdomain (D3). A `x-tenant-id` header is cross-check only — it must match the resolved tenant or `403 TENANT_MISMATCH` is thrown. The package never accepts tenant identity from body/query/header for lookups.
+
+**`subdomainResolver(options?)`** extracts the first label from `Host` / `x-forwarded-host` as the tenant ID. Pass `baseDomains` to restrict which domains are tenant-scoped (e.g. `acme.example.com` → `acme` under `example.com`). Returns `null` for single-label hosts like `localhost`.
+
+---
+
+### Magic Link / Email OTP
+
+```typescript
+import { magicLink } from '@hallaxius/auth'
+
+const handlers = magicLink({
+  storage: MagicLinkTokenStorage,       // Required: MagicLinkTokenStorage
+  notifier: {
+    sendEmail: async ({ to, link, code, ttlMinutes, tenantId }) => {
+      // Send the magic link or OTP code via your email provider
+    },
+  },
+  mode?: 'link' | 'code',              // Default: 'link'
+  ttlMinutes?: number,                  // Default: 10, clamped to 5–15
+  codeLength?: number,                  // Default: 6, clamped to 6–8
+  linkPath?: string,                    // Default: '/auth/magic-link'
+  trustProxy?: boolean,                 // Default: false
+  userLookup?: (email) => Promise<{ userId: string } | null>,
+  tenantIdFromRequest?: (request) => Promise<string | null>,
+  onVerified?: (result) => Promise<Response>,
+  requestLimit?: { maxAttempts?, windowMs?, blockDurationMs?, storage? },
+  recipientLimit?: { maxAttempts?, windowMs?, blockDurationMs?, storage? },
+  verifyLimit?: { maxAttempts?, windowMs?, blockDurationMs?, storage? },
+})
+
+handlers.handleRequest(request)    // POST: send magic link or code
+handlers.handleVerify(request)     // POST: verify token/code → session
+handlers.sendTo(recipient, request) // Programmatic send
+handlers.verify({ token?, code?, recipient?, request? }) // Programmatic verify
+```
+
+**Modes:** `link` sends a clickable `selector.validator` URL; `code` sends a 6-digit OTP. Both use SHA-256 hashed storage (ADR-005), constant-time comparison, atomic single-use consumption, and anti-enumeration (identical responses for known and unknown recipients). Rate limits: 3 requests/hour per IP, 3 per recipient/10 min, 10 verify attempts/15 min per IP.
+
+---
+
+### Login Anomaly Detection
+
+```typescript
+import { AnomalyDetector, LoginAnomalyError } from '@hallaxius/auth'
+
+const detector = new AnomalyDetector({
+  enabled: true,
+  storage: LoginHistoryStore,            // LoginHistoryStore for login records
+  geolocation?: GeolocationProvider,     // Optional: IP → coordinates
+  torExitProvider?: TorExitProvider,     // Optional: IP → is Tor exit node
+
+  // Checks (all enabled by default)
+  checkNewLocation?: true,
+  checkNewDevice?: true,
+  checkUnusualHour?: true,              // Default window: 22:00–06:00 UTC
+  checkMultipleCountries?: true,        // 2+ countries within 1 hour
+  checkImpossibleTravel?: true,         // Speed > 800 km/h between logins
+  checkCredentialStuffing?: true,       // 20+ failed attempts in 5 min
+  checkTorUsage?: true,
+
+  // Response actions
+  onAnomaly?: 'log' | 'challenge_mfa' | 'block' | 'notify',
+  onAnomalyDetected?: async (event) => { /* custom handler */ },
+})
+
+// Analyze a login attempt — returns anomaly events
+const events = await detector.analyze(request, userId, success)
+```
+
+---
+
 ### Password Reset
 
 ```typescript
@@ -588,16 +695,22 @@ Reset tokens use a `selector.validator` format; only a SHA-256 hash of the valid
 
 ### Compliance (GDPR / CCPA)
 
-```typescript
-import { compliance, createMemoryComplianceStorage } from '@hallaxius/auth'
+> **Deprecated:** `compliance()` is deprecated and will be removed in v2. Use `createComplianceManager` instead.
 
-const manager = compliance({
+```typescript
+import { compliance, createComplianceManager, createMemoryComplianceStorage } from '@hallaxius/auth'
+
+// Recommended (new)
+const manager = createComplianceManager({
   exportStorage: DataExportStorage,
   deletionStorage: DeletionStorage,
   consentStorage: ConsentStorage,
   retentionStorage: RetentionStorage,
   retentionPolicies?: RetentionPolicy[],
 })
+
+// Deprecated wrapper (kept for backward compatibility)
+const manager = compliance({ /* same config */ })
 ```
 
 **Key methods:**
@@ -778,7 +891,7 @@ try { /* ... */ } catch (error) {
 }
 ```
 
-**Exported error classes:** `AuthError` (base), `ConfigurationError`, `InvalidStateError`, `ExpiredStateError`, `StateReusedError`, `StateBindingError`, `InvalidCodeError`, `InvalidGrantError`, `TokenExchangeError`, `InvalidTokenError`, `TokenExpiredError`, `TokenRefreshError`, `TokenRevokedError`, `MfaRequiredError`, `RateLimitError`, `InteractionRequiredError`, `InvalidCredentialsError`, `CredentialsValidationError`, `EmailTakenError`, `UsernameTakenError`, `PasswordTooShortError`, `PasswordTooLongError`, `PasswordInvalidFormatError`, `PKCEValidationError`, `GuildJoinError`, `GuildSyncError`, `StorageReadError`, `StorageWriteError`, `StorageUnavailableError`, `UserNotFoundError`, `NetworkError`, `UpstreamError`, `BruteForceBlockedError`.
+**Exported error classes:** `AuthError` (base), `ConfigurationError`, `InvalidStateError`, `ExpiredStateError`, `StateReusedError`, `StateBindingError`, `InvalidCodeError`, `InvalidGrantError`, `TokenExchangeError`, `InvalidTokenError`, `TokenExpiredError`, `TokenRefreshError`, `TokenRevokedError`, `MfaRequiredError`, `RateLimitError`, `InteractionRequiredError`, `InvalidCredentialsError`, `CredentialsValidationError`, `EmailTakenError`, `UsernameTakenError`, `PasswordTooShortError`, `PasswordTooLongError`, `PasswordInvalidFormatError`, `PKCEValidationError`, `GuildJoinError`, `GuildSyncError`, `StorageReadError`, `StorageWriteError`, `StorageUnavailableError`, `UserNotFoundError`, `NetworkError`, `UpstreamError`, `BruteForceBlockedError`, `CaptchaFailedError`, `LoginAnomalyError`, `TenantNotFoundError`, `TenantSuspendedError`, `TenantMismatchError`, `TenantRequiredError`, `TenantForbiddenError`, `MagicLinkInvalidError`, `MagicLinkExpiredError`, `MagicLinkUsedError`.
 
 ---
 
@@ -826,7 +939,23 @@ import {
   isIPv6, isPrivateIP, isCloudflareIP, isTrustedSource, sha256Hex,
   isProduction, validateConfig, validateJwtSecret,
   validateCookieValue, validateSecretEntropy,
+  constantTimeCompare, constantTimeCompareStrings, constantTimeCompareHex,
 } from '@hallaxius/auth'
+```
+
+**Constant-time comparison helpers** — use these instead of `===` to prevent timing attacks when comparing secrets:
+
+| Function | Signature | Use Case |
+|----------|-----------|----------|
+| `constantTimeCompare(a, b)` | `(Uint8Array, Uint8Array) => boolean` | Raw byte comparison (e.g. TOTP hashes) |
+| `constantTimeCompareStrings(a, b)` | `(string, string) => boolean` | String secrets (e.g. token validators, reset codes) |
+| `constantTimeCompareHex(a, b)` | `(string, string) => boolean` | Hex-encoded secrets (e.g. SHA-256 digests) |
+
+```typescript
+import { constantTimeCompareStrings } from '@hallaxius/auth'
+
+// Compare a computed hash against a stored hash — constant-time to prevent timing attacks
+const isValid = constantTimeCompareStrings(computedHash, storedHash)
 ```
 
 Also exported: `jsonResponse`, `errorResponse`, `htmlResponse`, `redirectResponse` (response helpers); `validatePassword`, `validatePasswordOrThrow`; Zod schemas (`SessionConfigSchema`, `DiscordAuthConfigSchema`, `BruteForceConfigSchema`, `RateLimitConfigSchema`, `CredentialsClientConfigSchema`, `DiscordScopeSchema` + their `validate*` wrappers); crypto helpers (`sha256`, `toBase64URL`, `fromBase64URL`, hex encode/decode, `constantTimeCompare*`); formatting helpers (`parseDuration`, `formatDuration`, `formatBytes`, `formatNumber`, `truncate`); `MemoryCacheAdapter`, `DiscordClient`, `BruteForceProtection`, `CredentialsClient`, `MemoryTokenRevocationStorage`, and `createMemoryComplianceStorage()`.
@@ -882,6 +1011,26 @@ For brute-force protection to work correctly behind a reverse proxy, set `TRUSTE
 ## Storage Implementation
 
 External storage is **REQUIRED** for all production deployments.
+
+### Development / Testing
+
+Use `createStorageAdapters` to get a full set of in-memory storage adapters — perfect for local development and tests:
+
+```typescript
+import { createStorageAdapters } from '@hallaxius/auth'
+
+const adapters = createStorageAdapters({ type: 'memory' })
+
+// Use individual adapters
+const auth = credentials({
+  storage: adapters.authUser,
+  session: { secret: process.env.JWT_SECRET! },
+  bruteForce: { enabled: true, storage: adapters.bruteForce },
+  rateLimitStorage: adapters.rateLimit,
+})
+```
+
+`createStorageAdapters({ type: 'memory' })` returns all required storage implementations (`authUser`, `bruteForce`, `rateLimit`, `mfa`, `state`, `tokenRevocation`, `session`, `resetToken`, `compliance`, `tenant`, `tenantMembership`, `magicLink`, `otp`, `webAuthn`, `oidc`) backed by `Map`-based stores. **Never use in production** — all data is lost on process exit.
 
 ### Redis (Upstash) - Recommended for Serverless
 
@@ -1065,10 +1214,30 @@ export function middleware(request: NextRequest) {
   response.headers.set('X-Frame-Options', 'DENY')
   response.headers.set('X-Content-Type-Options', 'nosniff')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+  response.headers.set('Cross-Origin-Opener-Policy', 'same-origin')
+  response.headers.set('Cross-Origin-Embedder-Policy', 'require-corp')
+  response.headers.set('Cross-Origin-Resource-Policy', 'same-origin')
+  response.headers.set('Cache-Control', 'no-store')
   
   return response
 }
 ```
+
+**Default headers** (when using `defaultSecurityHeaders`):
+
+| Header | Default Value |
+|--------|---------------|
+| `Content-Security-Policy` | Restrictive baseline (no external sources) |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `DENY` |
+| `X-XSS-Protection` | `0` (disabled — modern browsers use CSP) |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | All permissions disabled |
+| `Cross-Origin-Opener-Policy` | `same-origin` |
+| `Cross-Origin-Embedder-Policy` | `require-corp` |
+| `Cross-Origin-Resource-Policy` | `same-origin` |
+| `Cache-Control` | `no-store` |
 
 ### Cookie Security
 
@@ -1077,6 +1246,17 @@ Session cookies use:
 - `HttpOnly` flag (no JavaScript access)
 - `SameSite` defaults to `lax` in development and `strict` in production (configurable to `none` with `secure`); `Secure` in production
 - `Path=/` for all cookies
+
+**Cookie configuration options** (when using `credentials()` or `discord()`):
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `httpOnly` | `boolean` | `true` | Prevents JavaScript access to the cookie |
+| `secure` | `boolean` | `true` in production | HTTPS-only transmission |
+| `sameSite` | `'lax' \| 'strict' \| 'none'` | `'lax'` (dev) / `'strict'` (prod) | CSRF protection policy |
+| `cookiePath` | `string` | `'/'` | Cookie path scope |
+
+**Refresh tokens are server-side only.** Discord refresh tokens (`discordRefreshToken`) are **never included in JWT claims** — they are stored in your `UserStorage` and used only by the server for token refresh. This prevents token leakage if JWTs are intercepted or decoded client-side.
 
 ### Brute Force Protection
 
@@ -1206,8 +1386,11 @@ import {
   Hcaptcha,
   Recaptcha,
   useCaptcha,
+  getCaptchaContext,
 } from "@hallaxius/auth/components";
 ```
+
+`getCaptchaContext()` returns the React context for captcha state. Use it when you need direct context access outside of the `useCaptcha()` hook (e.g. in custom components that need to read captcha state without a hook, or in React Server Components compatibility layers). It lazily creates the context to avoid module-scope `createContext` calls that break React Server Components in Next.js 16+.
 
 #### Environment Variables
 
@@ -1420,6 +1603,20 @@ If sessions aren't persisting across requests:
 2. Check `SameSite` policy matches your deployment (lax for dev, strict for prod)
 3. Ensure `path` includes your auth routes (default: `/`)
 4. For cross-origin: use `SameSite=None; Secure` and set `credentials: "include"` on the client
+
+---
+
+## Migration & Breaking Changes
+
+### v1.x Breaking Changes
+
+| Change | Impact | Migration |
+|--------|--------|-----------|
+| `discordRefreshToken` removed from JWT claims | Refresh tokens are no longer included in JWT payloads. | Store refresh tokens in your `UserStorage` only. No client-side changes needed — the library handles token refresh server-side. |
+| `verifyPassword` is mandatory on `AuthUserStorage` | `ConfigurationError` thrown at construction if missing. | Implement `verifyPassword(userId, password): Promise<boolean>` on your storage. See [password hashing](#your-responsibility-password-hashing). |
+| `compliance()` deprecated | `compliance()` wrapper is deprecated, will be removed in v2. | Use `createComplianceManager` directly: `import { createComplianceManager } from '@hallaxius/auth'` |
+| `PasswordHasher` interface deprecated | Type retained for backward compatibility only. | Implement password hashing in your storage layer directly. The library never hashes passwords (ADR-002). |
+| `trustProxy` defaults to `false` | Was previously treated as enabled for brute-force IP resolution. | If deploying behind a proxy (Cloudflare, nginx, Vercel), set `trustProxy: true` explicitly on `credentials()` so the real client IP is resolved from `x-forwarded-for` / `x-real-ip`. |
 
 ---
 

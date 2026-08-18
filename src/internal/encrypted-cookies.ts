@@ -1,7 +1,10 @@
 import { serialize } from "cookie";
 import type { SessionCookieOptions } from "../types";
+import { createSecurityLogger } from "../utils/logger";
 import { decrypt, encrypt } from "./crypto-aes";
 import { DEFAULT_SESSION_TTL_SECONDS } from "./defaults";
+
+const logger = createSecurityLogger("encrypted-cookies");
 
 export async function encryptCookieValue(
 	value: string,
@@ -49,7 +52,12 @@ export async function parseEncryptedCookies(
 			let value = trimmed.slice(idx + 1).trim();
 			try {
 				value = decodeURIComponent(value);
-			} catch {}
+			} catch {
+				logger.warn("Failed to decode cookie value", {
+					key,
+					error: "Malformed URI component",
+				});
+			}
 			entries.push({ key, value });
 		}
 	}

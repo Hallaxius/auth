@@ -71,7 +71,6 @@ export {
 	join,
 	revoke,
 	sync,
-	validate,
 } from "./utils";
 export {
 	isProduction,

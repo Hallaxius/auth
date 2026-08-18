@@ -417,8 +417,7 @@ export class ComplianceManager {
 	async getPrivacySettings(userId: string): Promise<PrivacySettings> {
 		const [consents, deletionRequest] = await Promise.all([
 			this.consentStorage.getConsents(userId),
-			this.deletionStorage.getPendingRequestByUserId?.(userId) ??
-				Promise.resolve(null),
+			await this.deletionStorage.getPendingRequestByUserId(userId),
 		]);
 
 		const consentMap = new Map(consents.map((c) => [c.consentType, c.granted]));
@@ -456,7 +455,7 @@ export interface DataExportStorage {
 export interface DeletionStorage {
 	saveRequest(request: DataDeletionRequest): Promise<void>;
 	getRequest(requestId: string): Promise<DataDeletionRequest | null>;
-	getPendingRequestByUserId?(
+	getPendingRequestByUserId(
 		userId: string,
 	): Promise<DataDeletionRequest | null>;
 	updateStatus(

@@ -8,6 +8,7 @@ export {
 	CaptchaProvider,
 	type CaptchaProviderProps,
 	type CaptchaProviderType,
+	getCaptchaContext,
 	Hcaptcha,
 	type HcaptchaProps,
 	type HcaptchaRef,
@@ -79,13 +80,13 @@ import {
 	revoke,
 	secret,
 	sync,
-	validate,
+	validateConfig,
 } from "./utils";
 import { GuildRoleSync } from "./utils/guild";
 
 export const utils = {
 	secret,
-	validate,
+	validate: validateConfig,
 	guild: {
 		join,
 		hasRole,
@@ -147,6 +148,7 @@ export type { ErrorCode } from "./errors";
 export {
 	AuthError,
 	BruteForceBlockedError,
+	CaptchaFailedError,
 	ConfigurationError,
 	CredentialsValidationError,
 	EmailTakenError,
@@ -245,6 +247,7 @@ export {
 	createEndpointSpecificLimiter,
 	createPerUserLimiter,
 	EndpointSpecificLimiter,
+	MAX_USER_LIMITERS,
 	PerUserRateLimiter,
 } from "./rate-limit/per-user";
 export {
@@ -321,6 +324,7 @@ export type {
 	OidcUserClaims,
 	OtpCode,
 	OtpStorage,
+	PasswordHasher,
 	PasswordResetConfig,
 	PendingMagicLink,
 	PendingTokenEntry,
@@ -361,7 +365,6 @@ export {
 	revoke,
 	secret,
 	sync,
-	validate,
 } from "./utils";
 export {
 	type AuditEvent,
@@ -447,6 +450,7 @@ export {
 export {
 	isProduction,
 	validateConfig,
+	validateConfig as validate,
 	validateCookieValue,
 	validateJwtSecret,
 	validateSecretEntropy,

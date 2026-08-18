@@ -15,6 +15,7 @@ import {
 	parseCookies,
 } from "./internal/cookies";
 import {
+	errorResponse,
 	htmlResponse,
 	jsonResponse,
 	redirectResponse,
@@ -435,11 +436,11 @@ function createHandlers(ctx: HandlerContext) {
 			if (!captchaToken) {
 				const captchaErr = new AuthError(
 					ErrorCodes.CAPTCHA_FAILED,
-					"Captcha verification failed",
-					{ statusCode: 400 },
+					"Captcha token is required but was not provided",
+					{ statusCode: 403 },
 				);
 				await config.callbacks.onError(captchaErr, "callback");
-				return htmlResponse(captchaErr.message, 400);
+				return errorResponse(captchaErr, 403);
 			}
 			const captchaResult = await verifyCaptcha(
 				config.captcha as NonNullable<typeof config.captcha>,
@@ -449,11 +450,11 @@ function createHandlers(ctx: HandlerContext) {
 			if (!captchaResult.success) {
 				const captchaErr = new AuthError(
 					ErrorCodes.CAPTCHA_FAILED,
-					"Captcha verification failed",
+					captchaResult.message ?? "Captcha verification failed",
 					{ statusCode: 403 },
 				);
 				await config.callbacks.onError(captchaErr, "callback");
-				return htmlResponse(captchaErr.message, 403);
+				return errorResponse(captchaErr, 403);
 			}
 		}
 		if (loginRateLimiter) {
@@ -722,7 +723,19 @@ export async function discord(
 		clientSecret,
 		secret,
 		callbackUrl,
-		session: { type: "jwt", secret, cookieName: COOKIE_NAME },
+		session: {
+			type: "jwt",
+			secret,
+			cookieName: COOKIE_NAME,
+			...config.session,
+			// Merge top-level `cookies` config (secure, sameSite) — session properties take precedence
+			...(config.cookies
+				? {
+						secure: config.session?.secure ?? config.cookies.secure,
+						sameSite: config.session?.sameSite ?? config.cookies.sameSite,
+					}
+				: {}),
+		},
 		scopes,
 		prompt,
 		routes: { ...routes, callback: callbackUrl },

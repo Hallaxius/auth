@@ -1,10 +1,4 @@
-import React, {
-	createContext,
-	useCallback,
-	useEffect,
-	useRef,
-	useState,
-} from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 export type CaptchaProviderType = "turnstile" | "recaptcha" | "hcaptcha";
 
@@ -29,9 +23,31 @@ interface InternalContextValue extends CaptchaContextValue {
 	resetToken: () => void;
 }
 
-export const CaptchaContext = createContext<InternalContextValue | undefined>(
-	undefined,
-);
+let _CaptchaContext:
+	| React.Context<InternalContextValue | undefined>
+	| undefined;
+
+export function getCaptchaContext(): React.Context<
+	InternalContextValue | undefined
+> {
+	if (!_CaptchaContext) {
+		_CaptchaContext = React.createContext<InternalContextValue | undefined>(
+			undefined,
+		);
+	}
+	return _CaptchaContext;
+}
+
+/**
+ * Lazy context access — avoids module-scope `createContext` call that breaks
+ * React Server Components in Next.js 16+. Use `getCaptchaContext()` directly
+ * for React contexts; this export preserves backward-compatible named access.
+ */
+export function CaptchaContextConsumer(): React.Context<
+	InternalContextValue | undefined
+> {
+	return getCaptchaContext();
+}
 
 const TOKEN_TTL_MS = 110_000;
 
@@ -195,13 +211,13 @@ export function CaptchaProvider({
 		resetToken: handleExpiry,
 	};
 
-	return (
-		<CaptchaContext.Provider value={value}>{children}</CaptchaContext.Provider>
-	);
+	const Context = getCaptchaContext();
+
+	return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 
 export const useCaptcha = () => {
-	const ctx = React.useContext(CaptchaContext);
+	const ctx = React.useContext(getCaptchaContext());
 	if (!ctx) {
 		throw new Error("useCaptcha() must be used within a <CaptchaProvider>");
 	}

@@ -1,3 +1,5 @@
+import { sha256 } from "./crypto-helpers";
+
 export function hexEncode(bytes: Uint8Array): string {
 	return Array.from(bytes)
 		.map((b) => b.toString(16).padStart(2, "0"))
@@ -28,10 +30,4 @@ export function hexToBuffer(hex: string): Uint8Array | null {
 	return hexDecode(hex);
 }
 
-export async function sha256(text: string): Promise<string> {
-	const encoder = new TextEncoder();
-	const data = encoder.encode(text);
-	const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-	const hashArray = Array.from(new Uint8Array(hashBuffer));
-	return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+export { sha256 };

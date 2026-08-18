@@ -12,7 +12,7 @@ import {
 } from "bun:test";
 import { createRoot } from "react-dom/client";
 import {
-	CaptchaContext,
+	getCaptchaContext,
 	CaptchaProvider,
 	useCaptcha,
 	type CaptchaProviderType,
@@ -67,7 +67,7 @@ function renderWithProvider(
 }
 
 function useInternalContext() {
-	const ctx = useContext(CaptchaContext);
+	const ctx = useContext(getCaptchaContext());
 	if (!ctx) {
 		throw new Error("Context not available");
 	}

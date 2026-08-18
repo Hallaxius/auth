@@ -3,6 +3,7 @@ import type {
 	OidcJwksCache,
 	OidcStateStorage,
 	OtpStorage,
+	RateLimitStorage,
 	TenantMembershipStorage,
 	TenantRepository,
 	WebAuthnChallengeStorage,
@@ -17,6 +18,7 @@ export interface SessionStore {
 		ttlMs?: number,
 	): Promise<void>;
 	delete(sessionId: string): Promise<void>;
+	extend?(sessionId: string, ttlMs: number): Promise<void>;
 	dispose?(): void;
 	ping?(): Promise<boolean>;
 }
@@ -32,15 +34,7 @@ export interface IBruteForceStore {
 	ping?(): Promise<boolean>;
 }
 
-export interface IRateLimitStore {
-	increment(
-		key: string,
-		windowMs: number,
-	): Promise<{ count: number; resetAt: number }>;
-	reset(key: string): Promise<void>;
-	dispose?(): void;
-	ping?(): Promise<boolean>;
-}
+export interface IRateLimitStore extends RateLimitStorage {}
 
 export interface IStateStore {
 	has(state: string): Promise<boolean>;

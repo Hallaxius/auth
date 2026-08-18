@@ -25,7 +25,6 @@ export const SessionClaimsSchema = z.object({
 	flags: z.number().optional(),
 	avatarDecoration: z.string().nullable().optional(),
 	storedUserId: z.string().optional(),
-	discordRefreshToken: z.string().optional(),
 });
 
 export const CredentialsClaimsSchema = z.object({

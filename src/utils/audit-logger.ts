@@ -405,7 +405,43 @@ class MemoryAuditLogStorage implements AuditLogStorage {
 	}
 
 	async query(filter: AuditLogFilter): Promise<AuditLogQueryResult> {
-		let results = Array.from(this.entries.values());
+		let results: AuditLogEntry[];
+
+		if (
+			filter.type &&
+			!filter.userId &&
+			!filter.ipAddress &&
+			!filter.severity &&
+			!filter.status &&
+			!filter.category &&
+			!filter.startDate &&
+			!filter.endDate
+		) {
+			const ids = this.indexByType.get(filter.type);
+			results = ids
+				? Array.from(ids)
+						.map((id) => this.entries.get(id)!)
+						.filter(Boolean)
+				: [];
+		} else if (
+			filter.userId &&
+			!filter.type &&
+			!filter.ipAddress &&
+			!filter.severity &&
+			!filter.status &&
+			!filter.category &&
+			!filter.startDate &&
+			!filter.endDate
+		) {
+			const ids = this.indexByUser.get(filter.userId);
+			results = ids
+				? Array.from(ids)
+						.map((id) => this.entries.get(id)!)
+						.filter(Boolean)
+				: [];
+		} else {
+			results = Array.from(this.entries.values());
+		}
 
 		if (filter.type) {
 			results = results.filter((e) => e.type === filter.type);
@@ -569,40 +605,6 @@ export function createAuditLogger(config: AuditLoggerConfig = {}): AuditLogger {
 				error: err instanceof Error ? err.message : String(err),
 			});
 		}
-	}
-
-	async function _logAsync(event: AuditEvent): Promise<void> {
-		if (!enabled) {
-			return;
-		}
-
-		const sanitizedContext = sanitizeContext(
-			event.context,
-			includeSensitiveData,
-		);
-
-		const logMessage = `[AUDIT] ${event.type} - ${event.description}`;
-		const logContext = {
-			...event,
-			context: sanitizedContext,
-		};
-
-		switch (logLevel) {
-			case "debug":
-				logger?.debug(logMessage, logContext);
-				break;
-			case "info":
-				logger?.info(logMessage, logContext);
-				break;
-			case "warn":
-				logger?.warn(logMessage, logContext);
-				break;
-			case "error":
-				logger?.error(logMessage, logContext);
-				break;
-		}
-
-		await storage.store(event);
 	}
 
 	function createEvent(

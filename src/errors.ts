@@ -573,3 +573,15 @@ export class MagicLinkUsedError extends AuthError {
 		});
 	}
 }
+
+export class CaptchaFailedError extends AuthError {
+	constructor(
+		message = "Captcha verification failed",
+		options?: { cause?: Error },
+	) {
+		super(ErrorCodes.CAPTCHA_FAILED, message, {
+			statusCode: 403,
+			cause: options?.cause,
+		});
+	}
+}
